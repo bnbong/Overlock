@@ -1,0 +1,117 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/MainMenu.gd" id="1_main"]
+[ext_resource type="Texture2D" uid="uid://xdycstxi1dc2" path="res://assets/gfx/menu_bg.png" id="2_menubg"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12, 0.11, 0.14, 1)
+
+[node name="BackgroundArt" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_menubg")
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Menu" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -280.0
+offset_right = 220.0
+offset_bottom = 280.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="TitleLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.91, 0.82, 1)
+theme_override_font_sizes/font_size = 66
+text = "OVERLOCK"
+horizontal_alignment = 1
+
+[node name="SubtitleLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.5, 0.78, 1)
+theme_override_font_sizes/font_size = 17
+text = "· SEWING TIME ATTACK ·"
+horizontal_alignment = 1
+
+[node name="Preview" type="Control" parent="Menu"]
+custom_minimum_size = Vector2(300, 180)
+layout_mode = 2
+
+[node name="Selector" type="HBoxContainer" parent="Menu"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PrevButton" type="Button" parent="Menu/Selector"]
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "◀"
+
+[node name="TrackLabel" type="Label" parent="Menu/Selector"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "Cotton Warm-up"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NextButton" type="Button" parent="Menu/Selector"]
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "▶"
+
+[node name="InfoLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "NORMAL    3206 px    (1 / 5)"
+horizontal_alignment = 1
+
+[node name="BestTimeLabel" type="Label" parent="Menu"]
+layout_mode = 2
+text = "Best: --:--.---"
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.62, 0.58, 0.7, 1)
+text = "◀ ▶  or  ← →  to change track"
+horizontal_alignment = 1
+
+[node name="StartButton" type="Button" parent="Menu"]
+layout_mode = 2
+text = "Start"
+
+[node name="QuitButton" type="Button" parent="Menu"]
+layout_mode = 2
+text = "Quit"

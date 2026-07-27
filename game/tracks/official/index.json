@@ -1,0 +1,9 @@
+{
+  "tracks": [
+    { "track_id": "cotton_01", "name": "Cotton Warm-up", "difficulty": "normal" },
+    { "track_id": "heart_01", "name": "Sweetheart Seam", "difficulty": "normal" },
+    { "track_id": "cat_01", "name": "Cat's Cradle", "difficulty": "normal" },
+    { "track_id": "star_01", "name": "Five-Point Finish", "difficulty": "expert" },
+    { "track_id": "fish_01", "name": "Overlock Koi", "difficulty": "expert" }
+  ]
+}

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<defs>
+<radialGradient id="mspot" cx="0.5" cy="0.42" r="0.75"><stop offset="0" stop-color="#2a2030"/><stop offset="0.55" stop-color="#191320"/><stop offset="1" stop-color="#120d18"/></radialGradient>
+<radialGradient id="mglow" cx="0.5" cy="0.38" r="0.5"><stop offset="0" stop-color="#e8b25e" stop-opacity="0.18"/><stop offset="1" stop-color="#e8b25e" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1280" height="720" fill="url(#mspot)"/>
+<rect width="1280" height="720" fill="url(#mglow)"/>
+<path d="M -40 560 C 300 470, 980 650, 1320 540" fill="none" stroke="#8a5cb0" stroke-width="4" stroke-dasharray="16 12" opacity="0.5"/>
+<path d="M -40 150 C 320 240, 900 90, 1320 190" fill="none" stroke="#d13030" stroke-width="3" stroke-dasharray="14 12" opacity="0.35"/>
+<rect x="93.0" y="571.0" width="54" height="6" rx="2" fill="#54392e"/>
+<rect x="93.0" y="643.0" width="54" height="6" rx="2" fill="#54392e"/>
+<rect x="100.56" y="576.0" width="38.879999999999995" height="68" rx="3" fill="#8a5cb0"/>
+<rect x="100.56" y="576.0" width="10.8" height="68" rx="3" fill="#ffffff" opacity="0.14"/>
+<rect x="187.0" y="593.0" width="46" height="6" rx="2" fill="#54392e"/>
+<rect x="187.0" y="653.0" width="46" height="6" rx="2" fill="#54392e"/>
+<rect x="193.44" y="598.0" width="33.12" height="56" rx="3" fill="#8f9a3f"/>
+<rect x="193.44" y="598.0" width="9.200000000000001" height="56" rx="3" fill="#ffffff" opacity="0.14"/>
+<rect x="1133.0" y="561.0" width="54" height="6" rx="2" fill="#54392e"/>
+<rect x="1133.0" y="633.0" width="54" height="6" rx="2" fill="#54392e"/>
+<rect x="1140.56" y="566.0" width="38.879999999999995" height="68" rx="3" fill="#d13030"/>
+<rect x="1140.56" y="566.0" width="10.8" height="68" rx="3" fill="#ffffff" opacity="0.14"/>
+<rect x="1052.0" y="590.0" width="46" height="6" rx="2" fill="#54392e"/>
+<rect x="1052.0" y="648.0" width="46" height="6" rx="2" fill="#54392e"/>
+<rect x="1058.44" y="595.0" width="33.12" height="54" rx="3" fill="#c9a94a"/>
+<rect x="1058.44" y="595.0" width="9.200000000000001" height="54" rx="3" fill="#ffffff" opacity="0.14"/>
+<g opacity="0.22" transform="translate(1000 120) rotate(24)"><rect x="-3" y="0" width="6" height="150" rx="2" fill="#c9cdd4"/><ellipse cx="0" cy="40" rx="2.4" ry="9" fill="#191320"/><path d="M -3 150 L 3 150 L 0 172 Z" fill="#ebeef3"/></g>
+<rect x="6" y="6" width="1268" height="708" rx="10" fill="none" stroke="#6f4791" stroke-width="2" opacity="0.25"/>
+</svg>

@@ -1,0 +1,171 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/ResultScreen.gd" id="1_result"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="2_skin"]
+
+[sub_resource type="StyleBoxFlat" id="btn_normal"]
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 20.0
+content_margin_bottom = 10.0
+bg_color = Color(0.831, 0.753, 0.6, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.553, 0.384, 0.725, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_hover"]
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 20.0
+content_margin_bottom = 10.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.616, 0.435, 0.784, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_pressed"]
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 20.0
+content_margin_bottom = 10.0
+bg_color = Color(0.761, 0.682, 0.541, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.478, 0.333, 0.243, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_focus"]
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 20.0
+content_margin_bottom = 10.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.831, 0.278, 0.263, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[node name="Result" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_result")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.11, 0.086, 0.072, 1)
+
+[node name="PanelBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -262.0
+offset_top = -324.0
+offset_right = 262.0
+offset_bottom = 324.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_skin")
+
+[node name="Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -270.0
+offset_right = 220.0
+offset_bottom = 270.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 36
+text = "RESULT"
+horizontal_alignment = 1
+
+[node name="GradeLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.92, 0.55, 1)
+theme_override_font_sizes/font_size = 64
+text = "A"
+horizontal_alignment = 1
+
+[node name="StatsLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.32, 0.24, 0.19, 1)
+theme_override_font_sizes/font_size = 16
+text = "..."
+horizontal_alignment = 1
+
+[node name="NewRecordLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.831, 0.278, 0.263, 1)
+theme_override_font_sizes/font_size = 22
+text = "NEW RECORD!"
+horizontal_alignment = 1
+
+[node name="RetryButton" type="Button" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("btn_normal")
+theme_override_styles/hover = SubResource("btn_hover")
+theme_override_styles/pressed = SubResource("btn_pressed")
+theme_override_styles/focus = SubResource("btn_focus")
+text = "Retry"
+
+[node name="MenuButton" type="Button" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("btn_normal")
+theme_override_styles/hover = SubResource("btn_hover")
+theme_override_styles/pressed = SubResource("btn_pressed")
+theme_override_styles/focus = SubResource("btn_focus")
+text = "Menu"

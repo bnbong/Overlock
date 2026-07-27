@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<defs>
+<radialGradient id="cheek" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#d13030" stop-opacity="0.16"/><stop offset="1" stop-color="#d13030" stop-opacity="0"/></radialGradient>
+<linearGradient id="faceshade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7c2a3"/><stop offset="0.7" stop-color="#dbae8e"/><stop offset="1" stop-color="#c39476"/></linearGradient>
+</defs>
+<path d="M 150 -80 C 150 90, 250 300, 640 330 C 1030 300, 1130 90, 1130 -80 Z" fill="url(#faceshade)"/>
+<path d="M 250 250 C 360 320, 920 320, 1030 250 C 940 322, 340 322, 250 250 Z" fill="#c39476" opacity="0.5"/>
+<path d="M 120 -90 C 120 40, 180 150, 250 150 C 250 70, 330 40, 430 44 C 560 50, 720 50, 850 44 C 950 40, 1030 70, 1030 150 C 1100 150, 1160 40, 1160 -90 Z" fill="#33272e"/>
+<path d="M 300 -60 C 360 40, 480 40, 560 30 C 470 20, 360 10, 320 -60 Z" fill="#4a3a44" opacity="0.8"/>
+<path d="M 232 150 C 430 186, 850 186, 1038 150 L 1038 102 C 850 138, 430 138, 232 102 Z" fill="#8a5cb0"/>
+<path d="M 240 116 C 430 152, 850 152, 1030 116" fill="none" stroke="#6f4791" stroke-width="6" opacity="0.6"/>
+<path d="M 240 134 C 430 170, 850 170, 1030 134" fill="none" stroke="#efe6cf" stroke-width="4" stroke-dasharray="13 10" opacity="0.9"/>
+<path d="M 631 214 C 629 246, 628 272, 640 286 C 652 272, 651 246, 649 214 Z" fill="#c39476" opacity="0.32"/>
+<ellipse cx="632" cy="286" rx="6" ry="4" fill="#c39476" opacity="0.4"/>
+<ellipse cx="648" cy="286" rx="6" ry="4" fill="#c39476" opacity="0.4"/>
+<ellipse cx="397" cy="238" rx="62" ry="36" fill="#c39476" opacity="0.28"/>
+<path d="M 349 214 Q 397 194 445 214" fill="none" stroke="#c39476" stroke-width="3" opacity="0.45"/>
+<ellipse cx="883" cy="238" rx="62" ry="36" fill="#c39476" opacity="0.28"/>
+<path d="M 835 214 Q 883 194 931 214" fill="none" stroke="#c39476" stroke-width="3" opacity="0.45"/>
+<ellipse cx="400" cy="292" rx="70" ry="44" fill="url(#cheek)"/>
+<ellipse cx="880" cy="292" rx="70" ry="44" fill="url(#cheek)"/>
+</svg>

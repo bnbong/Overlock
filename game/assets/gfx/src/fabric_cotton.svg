@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<rect width="128" height="128" fill="#c2c866"/>
+<line x1="8.0" y1="0" x2="8.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="8.0" x2="128" y2="8.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="24.0" y1="0" x2="24.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="24.0" x2="128" y2="24.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="40.0" y1="0" x2="40.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="40.0" x2="128" y2="40.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="56.0" y1="0" x2="56.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="56.0" x2="128" y2="56.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="72.0" y1="0" x2="72.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="72.0" x2="128" y2="72.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="88.0" y1="0" x2="88.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="88.0" x2="128" y2="88.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="104.0" y1="0" x2="104.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="104.0" x2="128" y2="104.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<line x1="120.0" y1="0" x2="120.0" y2="128" stroke="#a9b048" stroke-width="2" opacity="0.45"/>
+<line x1="0" y1="120.0" x2="128" y2="120.0" stroke="#a9b048" stroke-width="2" opacity="0.36000000000000004"/>
+<circle cx="22" cy="40" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+<circle cx="70" cy="18" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+<circle cx="100" cy="64" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+<circle cx="44" cy="96" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+<circle cx="88" cy="110" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+<circle cx="14" cy="78" r="1.6" fill="#d7dc8f" opacity="0.5"/>
+</svg>

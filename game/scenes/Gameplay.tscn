@@ -1,0 +1,376 @@
+[gd_scene load_steps=27 format=3]
+
+[ext_resource type="Script" path="res://scripts/systems/RaceDirector.gd" id="1_dir"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="25_skin"]
+[ext_resource type="Script" path="res://scripts/track/TrackRenderer.gd" id="2_trk"]
+[ext_resource type="Script" path="res://scripts/player/PlayerController.gd" id="3_ply"]
+[ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="4_hud"]
+[ext_resource type="Script" path="res://scripts/ui/Stopwatch.gd" id="5_sw"]
+[ext_resource type="Script" path="res://scripts/ui/SpeedGauge.gd" id="6_sg"]
+[ext_resource type="Script" path="res://scripts/ui/RiskMeter.gd" id="7_rm"]
+[ext_resource type="Script" path="res://scripts/ui/MiniMap.gd" id="8_mm"]
+[ext_resource type="Script" path="res://scripts/ui/Countdown.gd" id="9_cd"]
+[ext_resource type="Script" path="res://scripts/track/FinishLine.gd" id="10_fin"]
+[ext_resource type="Script" path="res://scripts/presentation/FabricSurface.gd" id="11_fab"]
+[ext_resource type="Script" path="res://scripts/presentation/StitchTrail.gd" id="12_st"]
+[ext_resource type="Script" path="res://scripts/presentation/BackgroundFace.gd" id="13_face"]
+[ext_resource type="Script" path="res://scripts/presentation/NeedleView.gd" id="14_ndl"]
+[ext_resource type="Script" path="res://scripts/presentation/HandView.gd" id="15_hand"]
+[ext_resource type="Script" path="res://scripts/presentation/PresentationController.gd" id="16_pres"]
+[ext_resource type="Script" path="res://scripts/ui/ProgressBar.gd" id="17_pb"]
+[ext_resource type="Shader" path="res://shaders/fabric_mode7.gdshader" id="18_shdr"]
+[ext_resource type="Script" path="res://scripts/presentation/FinishView.gd" id="19_fv"]
+[ext_resource type="Texture2D" uid="uid://d15xqx2pa1sjc" path="res://assets/gfx/face_base.png" id="20_facetex"]
+[ext_resource type="Texture2D" uid="uid://de7yc1lj0bon" path="res://assets/gfx/hand.png" id="21_handtex"]
+[ext_resource type="Texture2D" uid="uid://dtjlr4p7k0crn" path="res://assets/gfx/presser_foot.png" id="22_foottex"]
+[ext_resource type="Texture2D" uid="uid://ca21sxevoaycy" path="res://assets/gfx/needle.png" id="23_ndltex"]
+[ext_resource type="Texture2D" uid="uid://cea2vkh0tkphq" path="res://assets/gfx/backdrop_room.png" id="24_bgtex"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_warp"]
+shader = ExtResource("18_shdr")
+
+[node name="Gameplay" type="Node2D"]
+script = ExtResource("1_dir")
+
+[node name="SimHost" type="Node2D" parent="."]
+
+[node name="FabricSource" type="SubViewport" parent="SimHost"]
+size = Vector2i(512, 512)
+render_target_update_mode = 4
+msaa_2d = 1
+disable_3d = true
+
+[node name="World" type="Node2D" parent="SimHost/FabricSource"]
+
+[node name="FabricSurface" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("11_fab")
+
+[node name="TrackRenderer" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("2_trk")
+
+[node name="StitchTrail" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("12_st")
+
+[node name="FinishLine" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("10_fin")
+
+[node name="Player" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("3_ply")
+
+[node name="NeedleVisual" type="Polygon2D" parent="SimHost/FabricSource/World/Player"]
+visible = false
+color = Color(0.9, 0.92, 1, 1)
+polygon = PackedVector2Array(12, 0, -8, -6, -8, 6)
+
+[node name="Camera2D" type="Camera2D" parent="SimHost/FabricSource/World/Player"]
+zoom = Vector2(0.853333, 0.853333)
+position_smoothing_enabled = false
+
+[node name="BackdropLayer" type="CanvasLayer" parent="."]
+process_mode = 1
+layer = -20
+
+[node name="SkyRect" type="ColorRect" parent="BackdropLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.1, 0.09, 0.12, 1)
+
+[node name="BackdropArt" type="TextureRect" parent="BackdropLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("24_bgtex")
+expand_mode = 1
+stretch_mode = 0
+
+[node name="FaceView" type="Control" parent="BackdropLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("13_face")
+texture = ExtResource("20_facetex")
+
+[node name="FabricLayer" type="CanvasLayer" parent="."]
+process_mode = 1
+layer = -10
+
+[node name="FabricWarp" type="ColorRect" parent="FabricLayer"]
+material = SubResource("ShaderMaterial_warp")
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ForegroundLayer" type="CanvasLayer" parent="."]
+process_mode = 1
+
+[node name="LeftHand" type="Node2D" parent="ForegroundLayer"]
+position = Vector2(460, 445)
+script = ExtResource("15_hand")
+texture = ExtResource("21_handtex")
+
+[node name="RightHand" type="Node2D" parent="ForegroundLayer"]
+position = Vector2(820, 445)
+script = ExtResource("15_hand")
+mirror = true
+texture = ExtResource("21_handtex")
+
+[node name="NeedleView" type="Node2D" parent="ForegroundLayer"]
+position = Vector2(640, 432)
+script = ExtResource("14_ndl")
+foot_texture = ExtResource("22_foottex")
+needle_texture = ExtResource("23_ndltex")
+
+[node name="Presenter" type="Node" parent="."]
+process_mode = 1
+script = ExtResource("16_pres")
+
+[node name="FinishViewLayer" type="CanvasLayer" parent="."]
+layer = 15
+
+[node name="FinishView" type="Control" parent="FinishViewLayer"]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("19_fv")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+process_mode = 1
+layer = 10
+script = ExtResource("4_hud")
+
+[node name="MiniMap" type="Control" parent="HUD"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 216.0
+offset_bottom = 216.0
+script = ExtResource("8_mm")
+
+[node name="ProgressBar" type="Control" parent="HUD"]
+offset_left = 16.0
+offset_top = 226.0
+offset_right = 216.0
+offset_bottom = 250.0
+script = ExtResource("17_pb")
+
+[node name="TimePanel" type="Control" parent="HUD"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -238.0
+offset_top = 6.0
+offset_right = -8.0
+offset_bottom = 92.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("25_skin")
+
+[node name="TimeCaption" type="Label" parent="HUD"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -238.0
+offset_top = 13.0
+offset_right = -8.0
+offset_bottom = 35.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(0.553, 0.384, 0.725, 1)
+theme_override_font_sizes/font_size = 15
+text = "TIME"
+horizontal_alignment = 1
+
+[node name="Stopwatch" type="Label" parent="HUD"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -238.0
+offset_top = 35.0
+offset_right = -8.0
+offset_bottom = 87.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 40
+text = "0.00"
+horizontal_alignment = 1
+script = ExtResource("5_sw")
+
+[node name="SpeedPanel" type="Control" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -278.0
+offset_right = -8.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("25_skin")
+
+[node name="SpeedHintUp" type="Label" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -268.0
+offset_right = -18.0
+offset_bottom = -250.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 13
+text = "W / ↑  FASTER"
+horizontal_alignment = 1
+
+[node name="SpeedGauge" type="Control" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -111.0
+offset_top = -240.0
+offset_right = -47.0
+offset_bottom = -82.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("6_sg")
+
+[node name="SpeedHintDown" type="Label" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -74.0
+offset_right = -18.0
+offset_bottom = -56.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 13
+text = "S / ↓  SLOWER"
+horizontal_alignment = 1
+
+[node name="SteerHint" type="Label" parent="HUD"]
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -110.0
+offset_top = -36.0
+offset_right = 110.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 0.9)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 15
+text = "←  /  →   TURN"
+horizontal_alignment = 1
+
+[node name="RiskMeter" type="Control" parent="HUD"]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -186.0
+offset_right = 136.0
+offset_bottom = -36.0
+grow_vertical = 0
+script = ExtResource("7_rm")
+
+[node name="StatusLabel" type="Label" parent="HUD"]
+anchor_right = 1.0
+offset_top = 556.0
+offset_bottom = 596.0
+grow_horizontal = 2
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 26
+text = ""
+horizontal_alignment = 1
+
+[node name="Countdown" type="Label" parent="HUD"]
+anchor_right = 1.0
+offset_top = 250.0
+offset_bottom = 420.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
+theme_override_colors/font_outline_color = Color(0.2, 0.13, 0.1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.35)
+theme_override_constants/outline_size = 8
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 4
+theme_override_font_sizes/font_size = 118
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+script = ExtResource("9_cd")
+
+[node name="PauseOverlay" type="Control" parent="HUD"]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dim" type="ColorRect" parent="HUD/PauseOverlay"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.09, 0.07, 0.06, 0.62)
+
+[node name="PausePanel" type="Control" parent="HUD/PauseOverlay"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -110.0
+offset_right = 240.0
+offset_bottom = 110.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("25_skin")
+
+[node name="PauseTitle" type="Label" parent="HUD/PauseOverlay"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -74.0
+offset_right = 240.0
+offset_bottom = -10.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 46
+text = "PAUSED"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PauseHint" type="Label" parent="HUD/PauseOverlay"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = 20.0
+offset_right = 240.0
+offset_bottom = 60.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 22
+text = "[Esc] Resume      [R] Restart"
+horizontal_alignment = 1
+vertical_alignment = 1

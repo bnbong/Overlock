@@ -1,0 +1,15 @@
+{
+  "steer_charge_rate": 1.8,
+  "steer_return_rate": 2.4,
+  "foot_response_rate": 1.1,
+  "turn_power": 4.0,
+  "steer_speed_floor": 0.825,
+  "risk_gain_rate": 2.8,
+  "risk_recover_rate": 0.5,
+  "danger_threshold": 0.09,
+  "risk_speed_exp": 1.5,
+  "risk_proximity_base": 0.35,
+  "risk_static_bias": 0.14,
+  "stun_duration": 2.0,
+  "stun_steer_return_rate": 1.1
+}
