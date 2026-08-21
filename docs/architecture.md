@@ -315,18 +315,25 @@ func _update_steering(input: InputFrame, delta: float) -> void:
     if stun_timer > 0.0:
         stun_timer -= delta
         target_steer = move_toward(target_steer, 0.0, T.stun_steer_return_rate * delta)
-    elif input.steer < 0.0:
-        target_steer -= T.steer_charge_rate * delta
-    elif input.steer > 0.0:
-        target_steer += T.steer_charge_rate * delta
+    elif input.steer != 0.0:
+        var rate := T.steer_charge_rate
+        if input.steer * target_steer < 0.0:      # 입력 부호 ≠ target 부호 → 반전 부스트
+            rate *= T.steer_reversal_boost
+        target_steer += signf(input.steer) * rate * delta
     else:
         target_steer = move_toward(target_steer, 0.0, T.steer_return_rate * delta)
     target_steer = clampf(target_steer, -1.0, 1.0)
-    # 지연: actual이 target을 느리게 추종 (steer_charge_rate > foot_response_rate 이므로 항상 뒤처짐)
-    actual_steer = move_toward(actual_steer, target_steer, T.foot_response_rate * delta)
+    # 지연: actual이 target을 지수 평활(갭 비례)로 추종. steer_tau가 랙 질감(≈시간지연)을 정한다.
+    actual_steer += (target_steer - actual_steer) * (1.0 - exp(-delta / T.steer_tau))
 ```
 
 (`T`는 `Tuning`. `stun_steer_return_rate`는 §19에 없으므로 `foot_response_rate`를 재사용하거나 별도 기본값 추가.)
+
+> **조향 동역학 재설계(조작감 v4 — "방향 전환이 힘들다" 대응).** 구(舊) 모델은 이중 지연이 과했다: target이 `steer_charge_rate=1.8`로 충전(풀 0.56s)되고 actual이 `move_toward(foot_response_rate=1.1)`로 추종(풀 0.91s)한다. `move_toward`는 갭이 커도 **고정 속도**라, 풀 반전(+1→−1)에서 actual이 2.0 구간을 1.1/s로 기어가 **실효 90% 반전에 ~1.65s**가 걸렸다(레이싱에 치명적). 재설계는 두 축을 바꾼다:
+> 1. **actual 추종을 지수 평활로 교체** — `actual += (target−actual)·(1−exp(−dt/steer_tau))`. 갭 비례 속도라 반전 같은 큰 갭에선 즉시 빠르고 목표 근처에선 부드럽게 수렴한다. `move_toward`와 달리 추종 속도 상한이 없어 **병목이 follower에서 사라지고 charge_rate가 반전 시간을 직접 지배**한다. `steer_tau`(=0.16s)가 램프 입력에 대한 시간지연(≈랙 질감)을 정한다 — 지연을 0으로 없애지 않고 §4.3 정체성을 보존한다.
+> 2. **충전 상향 + 반전 부스트** — `steer_charge_rate` 1.8→3.2, 그리고 입력 부호가 현재 `target` 부호와 반대일 때만(`input.steer*target_steer<0`) `steer_reversal_boost`(=2.0)를 곱한다. 같은 방향 누적은 평소 속도(§4.3 "누를수록 커진다" 유지), 잠긴 방향의 **되감기만 민첩**하다. `steer_return_rate` 2.4→4.5로 키 해제 직진 복귀도 빠르게 한다.
+>
+> 결과(Python 리플리카=Godot 4.6.1 헤드리스 비트 일치 검증): 무입력→체감 회전 0.12s / 무입력→풀 조향 실효 0.55s / **풀 반전 실효 90% 0.62s(구 1.65s)** / 키 해제 직진 복귀 0.50s / target 대비 actual 랙 ~0.12s. **회전반경(24/36/52/70/75px)은 불변** — steady 조향에서 actual이 여전히 1.0으로 수렴하고 `turn_power`·`steer_speed_floor`를 건드리지 않았다. `foot_response_rate`는 미사용이 된다(back-compat용 잔존).
 
 ### 6.3 이동 (§7.4)
 
@@ -343,7 +350,7 @@ func _update_movement(delta: float) -> void:
 
 속도 단계 변경은 이산 입력으로 `speed_index`를 1..5로 clamp 후 `speed = SPEED_TABLE[speed_index]`(80/120/170/230/300)로 매핑. 부상 발생 시 `speed_index`를 1로 강제 하락(§7.5).
 
-> **조향 응답 튜닝(§21 "조작감이 답답함" 대응).** 구(舊) 모델은 `speed_factor = speed / max_speed`라 최소 회전반경이 `max_speed / turn_power`로 **전 속도 동일**(≈136px)이었다. cotton_01의 최소 곡률반경(≈53px, seg4 헤어핀)보다 커서 저속에서도 코너를 못 돌았다. `steer_speed_floor`(하한) + `turn_power`로 저속 최소 회전반경을 1단 24px / 2단 36px(≤ 0.7×53)로 낮춰 1~2단에서 모든 커브를 여유 있게 추종하게 했다. 조향 지연(`steer_charge_rate 1.8 > foot_response_rate 1.1`)은 그대로 유지한다(§4.3 핵심 기믹).
+> **조향 응답 튜닝(§21 "조작감이 답답함" 대응).** 구(舊) 모델은 `speed_factor = speed / max_speed`라 최소 회전반경이 `max_speed / turn_power`로 **전 속도 동일**(≈136px)이었다. cotton_01의 최소 곡률반경(≈53px, seg4 헤어핀)보다 커서 저속에서도 코너를 못 돌았다. `steer_speed_floor`(하한) + `turn_power`로 저속 최소 회전반경을 1단 24px / 2단 36px(≤ 0.7×53)로 낮춰 1~2단에서 모든 커브를 여유 있게 추종하게 했다. 조향 지연(§6.2 `steer_tau` 지수 추종)은 그대로 유지한다(§4.3 핵심 기믹). **동역학 v4는 회전반경 공식을 건드리지 않으므로 이 절의 회전반경(24/36/51/70px, 5단 75px)은 전부 불변이다.**
 >
 > **고속 코너링 완화(플레이테스트 v3).** 5단 최소 회전반경 91px가 헤어핀(53.5px)에 비해 과해 "고속 코너링이 어렵다"는 피드백을 받았다. `steer_speed_floor`는 `turn_speed_factor = max(speed/max_speed, floor)`의 하한이므로, floor를 **4단 비율(230/300=0.767)과 5단 비율(1.0) 사이인 0.825**로 낮추면 1~4단은 여전히 floor에 고정(factor=0.825)되고 5단만 자기 비율(1.0)을 쓴다. 여기에 `turn_power`를 3.3→4.0으로 올리되 `turn_power × floor = 3.3`을 유지해, **1~4단 회전반경은 24/36/51/70px로 완전히 동일(저속 조작감 불변)**하고 5단만 `300/4.0 = 75px`로 완화된다(헤어핀 53.5px보다 크게 유지해 감속 강제는 보존). 파라미터 전용 조정이며 `_update_movement` 공식은 그대로다.
 
@@ -379,6 +386,8 @@ func _trigger_cut() -> void:
 ```
 
 `_finger_proximity(steer_mag)`는 조향 편향에 비례한 동적 근접값을 반환한다. 확장 시 실제 손 위치 모델로 교체하는 지점. 결정론(60Hz 고정 스텝)은 불변이다. **부상 빈도 상향(플레이테스트 v3)**: "부상이 너무 드물다"는 피드백에 따라 `risk_gain_rate`(2.4→2.8)·`risk_static_bias`(0.10→0.14)·`risk_speed_exp`(2.0→1.5)를 재튜닝했다. 검증 결과 5단 급반전은 1회 내, 4단 급반전은 2~4회 내 부상, 5단 풀조향 유지는 경고 ~0.8s·부상 ~2.0s, 3단 급반전은 peak risk ≈0.33(경고만, 부상 없음), 1~2단은 어떤 조향에도 부상 불가(1단은 `speed_gate=0`으로 구조적 불가, 2단은 gain이 `danger_threshold`를 넘지 못함)로 나타난다.
+
+**리스크 재튜닝(조향 동역학 v4).** §6.2에서 actual 추종을 지수 평활로 바꾸면 반전이 부드럽게 수렴해 `steer_gap`의 시간적분이 예전보다 짧아진다(구 모델은 느린 `move_toward`가 큰 갭을 ~1.65s 유지). 공식은 그대로 두고 파라미터만 다시 맞춰 기존 수용 기준을 보존한다: `risk_gain_rate` 2.8→3.6(짧아진 갭 보상), `danger_threshold` 0.09→0.07(3단 급반전 갭이 게이지에 반영되게), `risk_speed_exp` 1.5→1.1(3단이 경고 영역까지 게이지를 채우도록 속도별 위험을 완만화하되 1~2단은 여전히 무해), `risk_static_bias` 0.14→0.09(짧아진 갭 분포에서 5단 풀조향 유지 부상을 ~2.1s로), `risk_recover_rate` 0.5→0.65(3단 급반전을 40회 반복해도 누적→부상되지 않고 peak~0.48에서 정체). **Godot 4.6.1 헤드리스 검증**: 5단 급반전 1회 부상 / 4단 2회 / 3단 부상 불가(단발 peak 0.22·연속 peak 0.48로 경고만) / 1~2단 부상 불가 / 5단 풀조향 유지 경고 0.63s·부상 2.08s / 4~5단 완만 조향 무위험. Python 리플리카와 비트 일치. `risk_proximity_base`(0.35)·`stun_duration`(2.0)·`stun_steer_return_rate`(1.1)는 불변.
 
 경고 연출 임계(0.50/0.70/0.85/0.95)는 `RiskMeter.gd`가 `risk` 값을 받아 색/점멸만 처리(MVP는 시각 최소 구현).
 
@@ -527,17 +536,19 @@ var min_speed := 80.0
 var max_speed := 300.0
 var speed_step_count := 5
 var speed_table := [80.0, 120.0, 170.0, 230.0, 300.0]   # index 1..5
-var steer_charge_rate := 1.8
-var steer_return_rate := 2.4
-var foot_response_rate := 1.1        # steer_charge_rate > foot_response_rate (지연 발생)
+var steer_charge_rate := 3.2         # 조향 v4: 충전 상향(구 1.8) — 반전/복귀 민첩화
+var steer_return_rate := 4.5         # 조향 v4: 키 해제 직진 복귀 상향(구 2.4)
+var foot_response_rate := 1.1        # (구 move_toward 추종) steer_tau 지수 평활로 대체 → 미사용
+var steer_tau := 0.16                # §19에 없음 → 지수 추종 시간상수(랙 질감). actual+=(target-actual)*(1-exp(-dt/tau))
+var steer_reversal_boost := 2.0      # §19에 없음 → 입력 부호≠target 부호일 때 충전 배수(반전만 민첩)
 var turn_power := 4.0                 # 고속 코너링 완화 재튜닝(구 3.3), steer_speed_floor와 함께
 var steer_speed_floor := 0.825        # 4단 비율(0.767)과 5단 비율(1.0) 사이 → 5단만 완화(§6.3)
-var risk_gain_rate := 2.8           # 부상 빈도 상향 재튜닝(구 2.4)
-var risk_recover_rate := 0.5         # (구 0.65)
-var danger_threshold := 0.09         # §19에 없음 → v2 공식 기준 재튜닝(구 0.15)
-var risk_speed_exp := 1.5            # §19에 없음 → 속도 계수 지수(하향으로 3~4단 위험 상향, 구 2.0)
+var risk_gain_rate := 3.6           # 조향 v4: 짧아진 갭 보상 상향(구 2.8)
+var risk_recover_rate := 0.65        # 조향 v4: 3단 급반전 반복이 부상으로 누적되지 않게(구 0.5)
+var danger_threshold := 0.07         # 조향 v4: 3단 급반전 갭을 게이지에 반영(구 0.09)
+var risk_speed_exp := 1.1            # 조향 v4: 3단이 경고 영역까지(속도별 위험 완만화, 구 1.5)
 var risk_proximity_base := 0.35      # §19에 없음 → 바늘 근접 계수 하한(동적 근접의 base)
-var risk_static_bias := 0.14         # §19에 없음 → 조향 지연항 상시 바이어스(5단 유지 부상 앞당김, 구 0.10)
+var risk_static_bias := 0.09         # 조향 v4: 짧아진 갭 분포에서 5단 유지 부상 ~2.1s(구 0.14)
 var stun_duration := 2.0
 var stun_steer_return_rate := 1.1    # §19에 없음 → foot_response_rate 재사용
 

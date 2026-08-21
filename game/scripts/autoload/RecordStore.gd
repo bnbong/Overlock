@@ -36,6 +36,20 @@ func submit(result: Dictionary) -> bool:
 	return false
 
 
+## track_id에 걸린 모든 난이도 기록을 지운다(커스텀 트랙 삭제 정리용, §7.4).
+## 지운 항목이 있으면서 저장까지 성공했을 때만 true.
+func purge(track_id: String) -> bool:
+	var prefix: String = track_id + "|"
+	var removed: bool = false
+	for key in _data.keys():
+		if str(key).begins_with(prefix):
+			_data.erase(key)
+			removed = true
+	if not removed:
+		return false
+	return _save()
+
+
 func _key(id: String, diff: String) -> String:
 	return id + "|" + diff
 

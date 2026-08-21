@@ -8,11 +8,22 @@ extends Node
 ## 방지한다. 오디오 훅은 /root/AudioManager를 런타임 조회해 가드한다(미등록 시 무시).
 
 # --- Mode 7 투영 상수 (단일 소스) ---
-const HORIZON: float = 0.40
+# HORIZON: 수평선 스크린 행. 참고작 구도(수평선 ~40%, 얼굴 눈·코가 그 위에 온전히)
+# 에 맞춰 얼굴 스트립을 넓히려 0.40→0.42로 소폭 내렸다(참고작 대조, 최대 0.44 이내).
+# v_needle·노루발 y·셰이더 horizon이 모두 이 상수에서 유도된다(§9 함정 5).
+const HORIZON: float = 0.42
 const DEPTH_SCALE: float = 28.0
 const CAM_BACK: float = 140.0
 const SPREAD: float = 0.9
 const COVERAGE: float = 600.0
+
+# --- 수평선-원단 이음새 상수 (단일 소스, 셰이더 uniform으로 전달) ---
+# HORIZON_FADE: 수평선 근처를 원단 대표색으로 흐리는 대역(원경 앨리어싱 완화).
+# EDGE_WIDTH/EDGE_DARKNESS: 수평선 바로 아래에 얇은 테이블 모서리 트림(어두운 라인)을
+# 그려 원단이 테이블에 '놓여 있는' 느낌으로 봉합한다(떠 보임 해소, 참고작 구도).
+const HORIZON_FADE: float = 0.028
+const EDGE_WIDTH: float = 0.022
+const EDGE_DARKNESS: float = 0.55
 
 const INJURY_SHAKE: float = 14.0
 const SHAKE_DECAY: float = 34.0
@@ -84,6 +95,10 @@ func _setup_projection() -> void:
 		_mat.set_shader_parameter("cam_back", CAM_BACK)
 		_mat.set_shader_parameter("spread", SPREAD)
 		_mat.set_shader_parameter("coverage", COVERAGE)
+		# 이음새(수평선 페이드 + 테이블 모서리 트림) 상수도 여기서 유도(단일 소스).
+		_mat.set_shader_parameter("horizon_fade", HORIZON_FADE)
+		_mat.set_shader_parameter("edge_width", EDGE_WIDTH)
+		_mat.set_shader_parameter("edge_darkness", EDGE_DARKNESS)
 	# 소스가 coverage 월드 px를 512 텍셀에 담도록 카메라를 축소(zoom<1).
 	if _camera != null and _viewport != null:
 		var vp_w: float = float(_viewport.size.x)

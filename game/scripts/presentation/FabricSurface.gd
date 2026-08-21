@@ -16,12 +16,13 @@ const HALF_EXTENT: float = 3000.0 # 트랙 전체(약 1546×1111)를 여유 있�
 ## set_fabric로 주입한다. 없는 타입이면 texture=null 유지 → 절차적 격자 폴백.
 const FABRIC_DIR: String = "res://assets/gfx/"
 ## 원단 타입별 대표색(셰이더 OOB 폴백 + 수평선 페이드용). 타일 텍스처의 지배색과
-## 맞춰 원경이 자연스럽게 해당 원단색으로 흐려지게 한다.
+## 맞춰 원경이 자연스럽게 해당 원단색으로 흐려지게 한다. 값은 각 타일 PNG의 실제
+## 평균색으로 맞췄다(수평선 페이드 대역이 단색 띠로 뜨지 않게 — 구도 결함 수정 3).
 const FABRIC_BASE: Dictionary = {
-	"cotton": Color(0.74, 0.78, 0.40, 1.0),
-	"denim": Color(0.22, 0.31, 0.48, 1.0),
-	"silk": Color(0.79, 0.72, 0.85, 1.0),
-	"knit": Color(0.81, 0.62, 0.41, 1.0),
+	"cotton": Color(0.695, 0.686, 0.308, 1.0),
+	"denim": Color(0.159, 0.233, 0.402, 1.0),
+	"silk": Color(0.775, 0.670, 0.795, 1.0),
+	"knit": Color(0.747, 0.497, 0.291, 1.0),
 }
 
 ## null이면 _draw 도형, 지정되면 스프라이트로 렌더(presentation.md §9 함정 13).

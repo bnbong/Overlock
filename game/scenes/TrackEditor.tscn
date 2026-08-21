@@ -1,0 +1,233 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/editor/TrackEditor.gd" id="1_edit"]
+[ext_resource type="Script" path="res://scripts/editor/DrawCanvas.gd" id="2_canvas"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="3_skin"]
+
+[node name="TrackEditor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_edit")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12, 0.11, 0.14, 1)
+
+[node name="Canvas" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_canvas")
+
+[node name="ToolbarBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 56.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("3_skin")
+fill_color = Color(0.16, 0.11, 0.1, 0.96)
+corner_radius = 10.0
+stitch_inset = 6.0
+corner_buttons = false
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 14.0
+offset_right = -20.0
+offset_bottom = 50.0
+grow_horizontal = 2
+theme_override_constants/separation = 8
+
+[node name="ModeDraw" type="Button" parent="Toolbar"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "그리기"
+
+[node name="ModeErase" type="Button" parent="Toolbar"]
+layout_mode = 2
+toggle_mode = true
+text = "지우기"
+
+[node name="CloseToggle" type="CheckButton" parent="Toolbar"]
+layout_mode = 2
+text = "루프 닫기"
+
+[node name="Spacer" type="Control" parent="Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UndoButton" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "실행취소"
+
+[node name="ClearButton" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "전체 지우기"
+
+[node name="AutoFixButton" type="Button" parent="Toolbar"]
+layout_mode = 2
+disabled = true
+text = "자동 수정"
+
+[node name="LengthFitButton" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "길이 맞추기"
+
+[node name="ValidateButton" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "검증"
+
+[node name="StatusLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 66.0
+offset_right = -20.0
+offset_bottom = 96.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 18
+text = "좌클릭 드래그로 트랙을 그리세요. 중클릭 드래그=이동, 휠=줌."
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -128.0
+offset_right = -20.0
+offset_bottom = -110.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.62, 0.58, 0.7, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 13
+text = "Ctrl+Z 실행취소   C 루프닫기   Backspace 끝 지우기   Delete 전체   Enter 검증   Esc 나가기"
+horizontal_alignment = 1
+
+[node name="MetaBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -104.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_skin")
+fill_color = Color(0.16, 0.11, 0.1, 0.96)
+corner_radius = 10.0
+stitch_inset = 6.0
+corner_buttons = false
+
+[node name="MetaPanel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -94.0
+offset_right = -20.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="Row1" type="HBoxContainer" parent="MetaPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="NameLabel" type="Label" parent="MetaPanel/Row1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
+text = "이름"
+
+[node name="NameEdit" type="LineEdit" parent="MetaPanel/Row1"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+max_length = 24
+placeholder_text = "My Track"
+
+[node name="DifficultyLabel" type="Label" parent="MetaPanel/Row1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
+text = "난이도"
+
+[node name="DifficultyOption" type="OptionButton" parent="MetaPanel/Row1"]
+layout_mode = 2
+
+[node name="FabricLabel" type="Label" parent="MetaPanel/Row1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
+text = "원단"
+
+[node name="FabricOption" type="OptionButton" parent="MetaPanel/Row1"]
+layout_mode = 2
+
+[node name="Row2" type="HBoxContainer" parent="MetaPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SaveButton" type="Button" parent="MetaPanel/Row2"]
+layout_mode = 2
+disabled = true
+text = "저장"
+
+[node name="TestPlayButton" type="Button" parent="MetaPanel/Row2"]
+layout_mode = 2
+disabled = true
+text = "테스트 플레이"
+
+[node name="ImportButton" type="Button" parent="MetaPanel/Row2"]
+layout_mode = 2
+text = "불러오기"
+
+[node name="Spacer2" type="Control" parent="MetaPanel/Row2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BackButton" type="Button" parent="MetaPanel/Row2"]
+layout_mode = 2
+text = "메뉴로"
+
+[node name="ImportDialog" type="FileDialog" parent="."]
+title = "트랙 JSON 불러오기"
+initial_position = 2
+size = Vector2i(560, 420)
+ok_button_text = "열기"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.json ; Track JSON")

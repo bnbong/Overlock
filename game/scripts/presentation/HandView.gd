@@ -2,11 +2,13 @@ class_name HandView
 extends Node2D
 ## 원단을 좌우에서 누르는 손 플레이스홀더 (presentation.md §2.1 / §5.1 참고작 구도).
 ##
-## 캐릭터 얼굴이 지평선 위에서 카메라를 마주보므로, 손은 화면 좌우측(원단 건너편)에서
-## 뻗어 나와 손등이 위를 향하고 손끝(손톱)이 재봉선 쪽(화면 중앙~하단)을 향한다.
-## mirror=true면 좌우 반전(반대편 손). 속도에 비례해 미세 진동하고, 조향 입력 시
-## 조향 방향의 손이 원단을 더 누른다(아래+안쪽 이동 + 약간 확대, 반대 손은 이완).
-## texture 지정 시 스프라이트로 교체(presentation.md §9 함정 13).
+## 캐릭터가 화면 건너편에서 카메라를 향해 손을 앞으로 뻗은 구도다. 손은 화면 좌우
+## 가장자리에서 크게 들어오며, 손목·소매가 위·바깥(수평선 너머 캐릭터 몸 쪽)으로 빠져
+## 화면 밖으로 잘리고, 손끝(손톱)이 아래·안쪽(카메라 쪽 재봉선)을 향한다. 손등·손톱이
+## 카메라를 마주본다. 기준 텍스처(hand.png, mirror=false)는 우측 손(손목 우상단·손끝
+## 좌하단)이고, mirror=true면 좌우 반전해 좌측 손(손목 좌상단·손끝 우하단)이 된다.
+## 속도에 비례해 미세 진동하고, 조향 입력 시 조향 방향의 손이 원단을 더 누른다(아래+
+## 안쪽 이동 + 약간 확대, 반대 손은 이완). texture 지정 시 스프라이트로 교체(§9 함정 13).
 
 const SKIN_COLOR: Color = Color(0.85, 0.66, 0.54, 1.0)
 const SKIN_SHADOW: Color = Color(0.72, 0.54, 0.44, 1.0)
@@ -19,7 +21,7 @@ const PRESS_INWARD: float = 16.0  # 누를 때 안쪽(재봉선)으로 이동(px
 const PRESS_DOWN: float = 12.0  # 누를 때 아래(원단)로 이동(px)
 const STEER_LERP: float = 9.0  # 조향 값 보간 속도(1/s)
 
-## 반대편 손이면 좌우 반전.
+## true면 좌측 손(기준 우측 손 텍스처를 좌우 반전).
 @export var mirror: bool = false
 ## null이면 _draw 도형, 지정되면 스프라이트로 렌더.
 @export var texture: Texture2D = null
@@ -37,8 +39,9 @@ func _process(delta: float) -> void:
 	_jitter = Vector2(randf_range(-amount, amount), randf_range(-amount, amount))
 	# 조향 값 보간(프레임 독립적 지수 감쇠).
 	_steer += (_steer_target - _steer) * clampf(STEER_LERP * delta, 0.0, 1.0)
-	# 이 손 방향으로 조향할수록 press>0(누름), 반대면 press<0(이완).
-	var own_side: float = 1.0 if mirror else -1.0
+	# 이 손 쪽으로 조향할수록 press>0(누름), 반대면 press<0(이완). mirror=false=우측 손은
+	# 우조향(steer>0), mirror=true=좌측 손은 좌조향(steer<0)에서 누른다.
+	var own_side: float = -1.0 if mirror else 1.0
 	_press = clampf(_steer * own_side, -1.0, 1.0)
 	queue_redraw()
 
@@ -56,7 +59,9 @@ func set_steer(steer: float) -> void:
 func _draw() -> void:
 	var flip: float = -1.0 if mirror else 1.0
 	var s: float = 1.0 + PRESS_SCALE * _press
-	var offset: Vector2 = _jitter + Vector2(PRESS_INWARD * _press * flip, PRESS_DOWN * _press)
+	# 누름은 아래(+y)로, 그리고 재봉선 쪽(안쪽)으로 이동한다. 안쪽은 우측 손이 -x,
+	# 좌측 손이 +x이므로 flip 부호를 뒤집어(-flip) 양쪽 다 화면 중앙을 향하게 한다.
+	var offset: Vector2 = _jitter + Vector2(-PRESS_INWARD * _press * flip, PRESS_DOWN * _press)
 	draw_set_transform(offset, 0.0, Vector2(flip * s, s))
 	if texture != null:
 		var ts: Vector2 = texture.get_size()

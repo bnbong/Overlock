@@ -64,22 +64,29 @@ func _update_steering(input: InputFrame, delta: float) -> void:
 			stun_timer = 0.0
 		# 부상 중 조작 잠금: 입력 무시하고 조향을 0으로 복귀.
 		target_steer = move_toward(target_steer, 0.0, Tuning.stun_steer_return_rate * delta)
-	elif input.steer < 0.0:
-		target_steer -= Tuning.steer_charge_rate * delta
-	elif input.steer > 0.0:
-		target_steer += Tuning.steer_charge_rate * delta
+	elif input.steer != 0.0:
+		# 반전 부스트(§4.3 "누적" 유지 + 반전만 민첩): 입력 부호가 현재 target 부호와
+		# 반대일 때만 충전을 가속해, 잠긴 방향을 빠르게 풀고 새 방향은 평소 속도로 쌓는다.
+		var rate: float = Tuning.steer_charge_rate
+		if input.steer * target_steer < 0.0:
+			rate *= Tuning.steer_reversal_boost
+		target_steer += signf(input.steer) * rate * delta
 	else:
 		target_steer = move_toward(target_steer, 0.0, Tuning.steer_return_rate * delta)
 	target_steer = clampf(target_steer, -1.0, 1.0)
-	# 지연 추종: actual이 target을 느리게 따라감(charge_rate > foot_response_rate).
-	actual_steer = move_toward(actual_steer, target_steer, Tuning.foot_response_rate * delta)
+	# 지연 추종: 지수 평활(갭 비례 속도)로 actual이 target을 부드럽게 따라간다.
+	# steer_tau가 랙의 질감(≈시간지연)을 정한다. move_toward(선형 고정 속도) 대비
+	# 반전 같은 큰 갭에서 즉시 빠르게 움직이고 목표 근처에서 부드럽게 수렴한다(§4.3 지연 유지).
+	# 60Hz 고정 스텝에서 follow_alpha는 상수라 결정론 불변.
+	var follow_alpha: float = 1.0 - exp(-delta / Tuning.steer_tau)
+	actual_steer += (target_steer - actual_steer) * follow_alpha
 
 
 func _update_movement(delta: float) -> void:
 	# 조향 회전율(각속도)은 저속에서도 유지되도록 speed_factor에 하한(steer_speed_floor)을 둔다.
 	# floor=1.0이면 회전각속도가 속도와 무관 → 회전반경 ∝ 속도(저속=급회전, 고속=완만한 큰 호).
 	# 이는 저속에서도 코너를 못 도는 구(舊) "전 속도 동일 최소반경(≈136px)" 문제를 해소한다.
-	# 조향 지연(charge_rate > foot_response_rate)이라는 핵심 기믹(§4.3)은 그대로 살아 있다.
+	# 조향 지연(steer_tau 지수 추종)이라는 핵심 기믹(§4.3)은 그대로 살아 있다.
 	var turn_speed_factor: float = maxf(speed / Tuning.max_speed, Tuning.steer_speed_floor)
 	heading += actual_steer * Tuning.turn_power * turn_speed_factor * delta
 	var forward: Vector2 = Vector2(cos(heading), sin(heading))

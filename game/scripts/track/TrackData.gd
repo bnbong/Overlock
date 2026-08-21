@@ -30,25 +30,56 @@ var fabric: String = ""
 var modifiers: Array = []
 
 
+## path 세그먼트를 폴리라인으로 베이크한다. type별 분기(가산적 확장):
+## bezier(공식 트랙)는 기존 De Casteljau 근사, polyline(커스텀 트랙)은 ≤6px 세분.
+## 두 타입은 같은 배열 안에 공존할 수 있으며 s는 항상 선형으로 이어붙인다.
 func bake(path_json: Array) -> void:
 	points = PackedVector2Array()
 	s_arr = PackedFloat32Array()
 	for seg in path_json:
-		var p0: Vector2 = _to_vec(seg["p0"])
-		var p1: Vector2 = _to_vec(seg["p1"])
-		var p2: Vector2 = _to_vec(seg["p2"])
-		var p3: Vector2 = _to_vec(seg["p3"])
-		var rough: float = p0.distance_to(p1) + p1.distance_to(p2) + p2.distance_to(p3)
-		var steps: int = maxi(2, ceili(rough / BAKE_INTERVAL))
-		for j in range(steps + 1):
-			if j == 0 and points.size() > 0:
-				continue  # 이전 세그먼트 끝점과 공유 → 중복 제거
-			var t: float = float(j) / float(steps)
-			_append(_bezier(p0, p1, p2, p3, t))
+		var seg_dict: Dictionary = seg
+		match str(seg_dict.get("type", "bezier")):
+			"polyline":
+				_bake_polyline(seg_dict)
+			_:
+				_bake_bezier(seg_dict)
 	if s_arr.size() > 0:
 		length = s_arr[s_arr.size() - 1]
 	else:
 		length = 0.0
+
+
+## cubic bezier 1개를 균일 근사 샘플링해 폴리라인에 잇는다(기존 동작 불변).
+func _bake_bezier(seg: Dictionary) -> void:
+	var p0: Vector2 = _to_vec(seg["p0"])
+	var p1: Vector2 = _to_vec(seg["p1"])
+	var p2: Vector2 = _to_vec(seg["p2"])
+	var p3: Vector2 = _to_vec(seg["p3"])
+	var rough: float = p0.distance_to(p1) + p1.distance_to(p2) + p2.distance_to(p3)
+	var steps: int = maxi(2, ceili(rough / BAKE_INTERVAL))
+	for j in range(steps + 1):
+		if j == 0 and points.size() > 0:
+			continue  # 이전 세그먼트 끝점과 공유 → 중복 제거
+		var t: float = float(j) / float(steps)
+		_append(_bezier(p0, p1, p2, p3, t))
+
+
+## polyline 세그먼트를 ≤BAKE_INTERVAL(6px)로 세분해 잇는다(아키텍처 §5.3의 윈도
+## 추적은 점 간격 ≈6px를 전제하므로 성긴 폴리라인은 반드시 잘게 나눠 넣는다).
+func _bake_polyline(seg: Dictionary) -> void:
+	var raw: Array = seg.get("points", [])
+	for k in range(raw.size()):
+		var q: Vector2 = _to_vec(raw[k])
+		if points.is_empty():
+			_append(q)
+			continue
+		var last: Vector2 = points[points.size() - 1]
+		if k == 0 and last.distance_to(q) < 0.01:
+			continue  # 이전 세그먼트 끝점과 공유 → 중복 제거
+		var n: int = maxi(1, ceili(last.distance_to(q) / BAKE_INTERVAL))
+		for m in range(1, n):
+			_append(last.lerp(q, float(m) / float(n)))
+		_append(q)
 
 
 func start_heading() -> float:

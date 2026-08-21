@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3]
+[gd_scene load_steps=30 format=3]
 
 [ext_resource type="Script" path="res://scripts/systems/RaceDirector.gd" id="1_dir"]
 [ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="25_skin"]
@@ -25,6 +25,9 @@
 [ext_resource type="Texture2D" uid="uid://dtjlr4p7k0crn" path="res://assets/gfx/presser_foot.png" id="22_foottex"]
 [ext_resource type="Texture2D" uid="uid://ca21sxevoaycy" path="res://assets/gfx/needle.png" id="23_ndltex"]
 [ext_resource type="Texture2D" uid="uid://cea2vkh0tkphq" path="res://assets/gfx/backdrop_room.png" id="24_bgtex"]
+[ext_resource type="Texture2D" uid="uid://ccc6niucjfsyg" path="res://assets/gfx/face_normal.png" id="26_facenrm"]
+[ext_resource type="Texture2D" uid="uid://prgo0lwyvpgb" path="res://assets/gfx/face_focus.png" id="27_facefoc"]
+[ext_resource type="Texture2D" uid="uid://8pidi5sr0u32" path="res://assets/gfx/face_injured.png" id="28_faceinj"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_warp"]
 shader = ExtResource("18_shdr")
@@ -95,6 +98,11 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("13_face")
 texture = ExtResource("20_facetex")
+face_normal = ExtResource("26_facenrm")
+face_focus = ExtResource("27_facefoc")
+face_injured = ExtResource("28_faceinj")
+face_draw_scale = 0.72
+face_offset_y = -24.0
 
 [node name="FabricLayer" type="CanvasLayer" parent="."]
 process_mode = 1
@@ -111,18 +119,20 @@ grow_vertical = 2
 process_mode = 1
 
 [node name="LeftHand" type="Node2D" parent="ForegroundLayer"]
-position = Vector2(460, 445)
-script = ExtResource("15_hand")
-texture = ExtResource("21_handtex")
-
-[node name="RightHand" type="Node2D" parent="ForegroundLayer"]
-position = Vector2(820, 445)
+position = Vector2(175, 276)
+scale = Vector2(1.2, 1.2)
 script = ExtResource("15_hand")
 mirror = true
 texture = ExtResource("21_handtex")
 
+[node name="RightHand" type="Node2D" parent="ForegroundLayer"]
+position = Vector2(1105, 276)
+scale = Vector2(1.2, 1.2)
+script = ExtResource("15_hand")
+texture = ExtResource("21_handtex")
+
 [node name="NeedleView" type="Node2D" parent="ForegroundLayer"]
-position = Vector2(640, 432)
+position = Vector2(640, 446)
 script = ExtResource("14_ndl")
 foot_texture = ExtResource("22_foottex")
 needle_texture = ExtResource("23_ndltex")
