@@ -1,0 +1,26 @@
+# 빌드 컨텍스트에서 제외(이미지 용량·빌드 속도·재현성).
+# 런타임에는 requirements.txt 와 app/ 만 있으면 된다.
+
+# 가상환경 / 바이트코드 캐시
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# 로컬 SQLite DB (컨테이너는 /data 볼륨을 쓴다)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 환경 설정(비밀·로컬 값이 이미지에 굳지 않도록)
+.env
+
+# 테스트 / 개발 전용
+tests/
+.pytest_cache/
+requirements-dev.txt
+
+# 문서 / 메타(런타임 불필요)
+README.md
+.gitignore

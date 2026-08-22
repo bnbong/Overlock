@@ -13,6 +13,7 @@ const _INK_HOVER: Color = Color(0.2, 0.14, 0.1)
 
 @onready var _nick_edit: LineEdit = $Panel/NickRow/NickEdit
 @onready var _url_edit: LineEdit = $Panel/UrlRow/UrlEdit
+@onready var _hint_label: Label = $Panel/HintLabel
 @onready var _status_label: Label = $Panel/StatusLabel
 @onready var _test_button: Button = $Panel/TestButton
 @onready var _save_button: Button = $Panel/SaveButton
@@ -23,7 +24,12 @@ func _ready() -> void:
 	_nick_edit.max_length = LeaderboardClient.NICKNAME_MAX
 	_nick_edit.text = LeaderboardClient.nickname
 	_url_edit.text = LeaderboardClient.base_url
-	_url_edit.placeholder_text = LeaderboardClient.DEFAULT_BASE_URL
+	if OS.has_feature("web"):
+		# 웹 배포는 게임·API가 동일 도메인이라 비워두면 현재 사이트를 자동 사용한다.
+		_url_edit.placeholder_text = "비우면 현재 사이트 사용"
+		_hint_label.text = "Server URL을 비우면 현재 사이트를 자동 사용합니다."
+	else:
+		_url_edit.placeholder_text = LeaderboardClient.DEFAULT_BASE_URL
 	_apply_skin()
 	_test_button.pressed.connect(_on_test_pressed)
 	_save_button.pressed.connect(_on_save_pressed)

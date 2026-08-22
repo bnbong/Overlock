@@ -199,22 +199,23 @@ server {
 
 ### 2) Docker
 
-`server/` 안에서:
-```dockerfile
-# Dockerfile
-FROM python:3.13-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
-ENV OVERLOCK_DB_URL=sqlite:////data/overlock.db
-VOLUME /data
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+이미지 정의는 `server/Dockerfile` 에 있습니다(`python:3.13-slim` · 비루트 실행 · `/api/health` HEALTHCHECK 포함). 
+
+DB 는 `/data` 볼륨의 SQLite 파일에 저장합니다(`ENV OVERLOCK_DB_URL=sqlite:////data/overlock.db`). 빌드 컨텍스트는 `server/.dockerignore` 로 `.venv`·`__pycache__`·`*.db`·`tests` 등을 제외합니다.
+
 ```bash
 docker build -t overlock-server ./server
 docker run -d -p 8000:8000 -v overlock-data:/data overlock-server
+curl http://127.0.0.1:8000/api/health   # {"status":"ok","version":"..."}
+```
+
+컨테이너 내부 포트는 `8000` 고정입니다. 다른 호스트 포트로 노출하려면 매핑만 바꿉니다(예: `-p 8010:8000`). 오리진 제한·프록시 뒤 실제 IP 사용 등은 환경변수로 켭니다.
+
+```bash
+docker run -d -p 8010:8000 -v overlock-data:/data \
+  -e OVERLOCK_TRUST_FORWARDED_FOR=true \
+  -e OVERLOCK_CORS_ORIGINS=https://overlock.example.com \
+  overlock-server
 ```
 
 ---

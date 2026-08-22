@@ -8,6 +8,9 @@ extends Node
 ##
 ## 설정(닉네임·서버 URL)은 user://settings.json에서 로드/저장한다(SettingsStore 역할
 ## 내장). 서버 URL이 비어 있으면 온라인 기능은 비활성(모든 요청이 조용히 실패)된다.
+## 단, 웹 export에서는 사용자가 URL을 지정하지 않았으면(기본값 그대로/빈 값) 현재 페이지
+## origin(window.location.origin)을 자동으로 base URL로 사용한다(게임·API 동일 도메인
+## 배포 전제). 데스크톱 경로와 사용자가 명시한 URL은 이 분기의 영향을 받지 않는다.
 ##
 ## 서버 계약(POST /api/runs, GET /api/leaderboard, GET /api/health)은 §13.3 스키마를
 ## 따른다. RunStats.finalize 결과 dict는 이미 대부분 필드가 정합하며, 여기서
@@ -42,6 +45,11 @@ var view_track_name: String = ""
 # 맵 선택 화면 재진입 시 복원할 마지막 선택 트랙 id(user://settings.json에 함께 저장).
 var last_track_id: String = ""
 
+# 웹 export의 현재 페이지 origin 캐시(예: https://overlock.bnbong.com). 세션 내 불변이라
+# 첫 조회 후 재사용한다. 데스크톱에서는 항상 빈 문자열이며 JavaScriptBridge를 건드리지 않는다.
+var _web_origin_cache: String = ""
+var _web_origin_resolved: bool = false
+
 
 func _ready() -> void:
 	_load_settings()
@@ -50,9 +58,9 @@ func _ready() -> void:
 # --- 설정(SettingsStore) API ---
 
 
-## 서버 URL이 설정돼 있으면 온라인 기능 활성(true).
+## 실질 base URL(웹 origin 폴백 포함)이 비어 있지 않으면 온라인 기능 활성(true).
 func is_online_enabled() -> bool:
-	return not base_url.strip_edges().is_empty()
+	return not _effective_base_url().is_empty()
 
 
 ## 닉네임이 1~16자로 설정돼 있으면 true(제출 가능 조건).
@@ -250,9 +258,41 @@ func _extract_entries(data: Variant) -> Array:
 	return []
 
 
-## 트레일링 슬래시를 제거한 정규화 base URL.
+## 트레일링 슬래시를 제거한 정규화 base URL(실질 URL 기준 = 웹 origin 폴백 반영).
 func _base() -> String:
-	return base_url.strip_edges().trim_suffix("/")
+	return _effective_base_url().trim_suffix("/")
+
+
+## 실제 요청에 사용할 base URL. 웹 export에서 사용자가 URL을 지정하지 않았으면(기본값/빈 값)
+## 현재 페이지 origin을 쓰고, 사용자가 명시한 URL은 그대로 우선한다. 데스크톱에서는 저장된
+## base_url을 그대로 반환한다(기존 동작 불변).
+func _effective_base_url() -> String:
+	return _resolve_base_url(base_url, OS.has_feature("web"), _web_origin())
+
+
+## _effective_base_url의 순수 결정 로직. 플랫폼·JS 의존을 인자로 분리해 데스크톱에서도
+## 웹 분기(is_web=true)를 강제로 태워 단위 검증할 수 있게 한다.
+static func _resolve_base_url(raw: String, is_web: bool, origin: String) -> String:
+	var url: String = raw.strip_edges()
+	if is_web and (url.is_empty() or url == DEFAULT_BASE_URL):
+		var trimmed_origin: String = origin.strip_edges()
+		if not trimmed_origin.is_empty():
+			return trimmed_origin
+	return url
+
+
+## 웹 export의 현재 페이지 origin을 반환한다(데스크톱에서는 "" — JavaScriptBridge 미접촉).
+## 세션 내 불변이므로 첫 조회 결과를 캐시한다.
+func _web_origin() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	if _web_origin_resolved:
+		return _web_origin_cache
+	_web_origin_resolved = true
+	var origin: Variant = JavaScriptBridge.eval("window.location.origin")
+	if origin is String:
+		_web_origin_cache = (origin as String).strip_edges()
+	return _web_origin_cache
 
 
 ## POST /api/runs 비정상 응답 코드를 사용자 표시 문구로 구분한다(서버 계약: 422 거부,
