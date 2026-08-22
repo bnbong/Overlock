@@ -4,6 +4,11 @@
     { "track_id": "heart_01", "name": "Sweetheart Seam", "difficulty": "normal" },
     { "track_id": "cat_01", "name": "Cat's Cradle", "difficulty": "normal" },
     { "track_id": "star_01", "name": "Five-Point Finish", "difficulty": "expert" },
-    { "track_id": "fish_01", "name": "Overlock Koi", "difficulty": "expert" }
+    { "track_id": "fish_01", "name": "Overlock Koi", "difficulty": "expert" },
+    { "track_id": "spool_01", "name": "Spool Sprint", "difficulty": "expert" },
+    { "track_id": "basin_01", "name": "Backstitch Basin", "difficulty": "expert" },
+    { "track_id": "selvedge_01", "name": "Selvedge Sweep", "difficulty": "expert" },
+    { "track_id": "harbor_01", "name": "Harbor Hem", "difficulty": "master" },
+    { "track_id": "summit_01", "name": "Serge Summit", "difficulty": "master" }
   ]
 }
