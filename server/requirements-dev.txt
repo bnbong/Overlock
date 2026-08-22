@@ -1,0 +1,5 @@
+# 개발/테스트 의존성. 런타임 의존성 위에 얹어 설치한다.
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest>=8
+httpx>=0.27

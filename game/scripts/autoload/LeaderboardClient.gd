@@ -1,0 +1,309 @@
+extends Node
+## 온라인 리더보드 클라이언트 오토로드 (기획서 §13/§14, 아키텍처 §11 확장 지점).
+##
+## HTTPRequest 기반 비동기 통신으로 기록 제출·리더보드 조회·헬스체크를 수행한다.
+## 결과는 항상 시그널로만 통지하고, 오프라인/서버 없음/타임아웃은 조용히 실패한다
+## (크래시·행 없음). 물리 루프·시뮬레이션과 완전히 분리되어 있으며 게임 값·판정에
+## 관여하지 않는다.
+##
+## 설정(닉네임·서버 URL)은 user://settings.json에서 로드/저장한다(SettingsStore 역할
+## 내장). 서버 URL이 비어 있으면 온라인 기능은 비활성(모든 요청이 조용히 실패)된다.
+##
+## 서버 계약(POST /api/runs, GET /api/leaderboard, GET /api/health)은 §13.3 스키마를
+## 따른다. RunStats.finalize 결과 dict는 이미 대부분 필드가 정합하며, 여기서
+## player_name·game_version·track_checksum만 보강해 매핑한다.
+##
+## 호출 규약: 결과 시그널에 먼저 connect한 뒤 메서드를 호출한다. 오프라인·닉네임 없음
+## 같은 가드 실패는 메서드 호출 중 동기적으로 시그널을 방출하므로, "호출 후 await" 패턴은
+## 그 경우를 놓친다(UI는 모두 connect-먼저-후-호출로 안전하다).
+
+signal submit_completed(success: bool, rank: int, status: String, message: String)
+signal leaderboard_fetched(success: bool, entries: Array, message: String)
+signal health_checked(ok: bool, message: String)
+
+const GAME_VERSION: String = "0.2.0"  # §13.3 game_version. 클라이언트 릴리스 버전.
+const DEFAULT_BASE_URL: String = "http://localhost:8000"
+const SETTINGS_PATH: String = "user://settings.json"
+const REQUEST_TIMEOUT: float = 5.0  # 초. 오프라인/무응답 서버에서 조용히 실패시키는 상한.
+const NICKNAME_MAX: int = 16
+const OFFICIAL_DIR: String = "res://tracks/official/"
+const CUSTOM_PREFIX: String = "custom_"  # TrackLoader와 동일 네임스페이스. 제출/조회 제외 판별용.
+
+# 설정(user://settings.json 미러). 비어 있는 base_url = 온라인 비활성.
+var base_url: String = DEFAULT_BASE_URL
+var nickname: String = ""
+
+# 리더보드 조회 화면으로 넘길 대상(메인 메뉴 선택 → Leaderboard 씬). 오토로드가 영속이라
+# 씬 전환 사이 상태 버스로 쓴다(GameState.track_id는 런 전용이라 여기서 분리 보관).
+var view_track_id: String = ""
+var view_difficulty: String = "normal"
+var view_track_name: String = ""
+
+# 맵 선택 화면 재진입 시 복원할 마지막 선택 트랙 id(user://settings.json에 함께 저장).
+var last_track_id: String = ""
+
+
+func _ready() -> void:
+	_load_settings()
+
+
+# --- 설정(SettingsStore) API ---
+
+
+## 서버 URL이 설정돼 있으면 온라인 기능 활성(true).
+func is_online_enabled() -> bool:
+	return not base_url.strip_edges().is_empty()
+
+
+## 닉네임이 1~16자로 설정돼 있으면 true(제출 가능 조건).
+func has_nickname() -> bool:
+	var trimmed: String = nickname.strip_edges()
+	return trimmed.length() >= 1 and trimmed.length() <= NICKNAME_MAX
+
+
+## 닉네임·서버 URL을 갱신하고 user://settings.json에 저장한다. 저장 성공 시 true.
+func save_settings(new_nickname: String, new_base_url: String) -> bool:
+	nickname = new_nickname.strip_edges()
+	base_url = new_base_url.strip_edges()
+	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		push_error("LeaderboardClient: 설정 저장 실패 " + SETTINGS_PATH)
+		return false
+	file.store_string(
+		JSON.stringify({"nickname": nickname, "base_url": base_url, "last_track_id": last_track_id})
+	)
+	file.close()
+	return true
+
+
+## 맵 선택 화면에서 마지막으로 고른 트랙 id를 settings.json에 기록한다(재진입 복원용).
+## 닉네임·서버 URL은 그대로 두고 last_track_id 키만 함께 다시 쓴다.
+func remember_last_track(track_id: String) -> void:
+	last_track_id = track_id
+	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(
+		JSON.stringify({"nickname": nickname, "base_url": base_url, "last_track_id": last_track_id})
+	)
+	file.close()
+
+
+## 리더보드 조회 대상(메인 메뉴에서 선택한 트랙)을 보관한다.
+func set_view_target(track_id: String, difficulty: String, track_name: String) -> void:
+	view_track_id = track_id
+	view_difficulty = difficulty
+	view_track_name = track_name
+
+
+# --- 체크섬 (§13.3 track_checksum) ---
+
+
+## 공식 트랙 JSON 파일 바이트의 SHA-256("sha256:" 접두). 커스텀 트랙은 제출 대상이
+## 아니므로 공식 경로만 대상으로 한다. 서버는 동일 파일 바이트로 동일 값을 재현해야 한다.
+func track_checksum(track_id: String) -> String:
+	if track_id.begins_with(CUSTOM_PREFIX):
+		return ""
+	var path: String = OFFICIAL_DIR + track_id + ".json"
+	if not FileAccess.file_exists(path):
+		return ""
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var bytes: PackedByteArray = file.get_buffer(file.get_length())
+	file.close()
+	var ctx: HashingContext = HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(bytes)
+	return "sha256:" + ctx.finish().hex_encode()
+
+
+# --- 비동기 API (결과는 시그널로 통지) ---
+
+
+## 결과 dict를 §13.3 스키마로 매핑해 POST /api/runs. 결과는 submit_completed로 통지.
+## 오프라인·닉네임 없음·연결 실패·서버 거부 모두 success=false로 조용히 통지한다.
+func submit_run(result: Dictionary) -> void:
+	if not is_online_enabled():
+		submit_completed.emit(false, -1, "", "오프라인 (서버 URL 미설정)")
+		return
+	if not has_nickname():
+		submit_completed.emit(false, -1, "", "닉네임을 먼저 설정하세요")
+		return
+	var body: String = JSON.stringify(_build_submit_body(result))
+	var resp: Dictionary = await _request(HTTPClient.METHOD_POST, _base() + "/api/runs", body)
+	if not bool(resp["ok"]):
+		submit_completed.emit(false, -1, "", _friendly_reason(resp))
+		return
+	var code: int = int(resp["code"])
+	if code < 200 or code >= 300:
+		submit_completed.emit(false, -1, "", _submit_error_message(code))
+		return
+	var data: Variant = JSON.parse_string(str(resp["body"]))
+	var rank: int = -1
+	var status: String = ""
+	if data is Dictionary:
+		rank = int((data as Dictionary).get("rank", -1))
+		status = str((data as Dictionary).get("verification_status", ""))
+	submit_completed.emit(true, rank, status, "")
+
+
+## GET /api/leaderboard?track_id=&difficulty=&limit=. 결과는 leaderboard_fetched로 통지.
+## 응답 최상위 구조가 달라도 관대하게 파싱한다(_extract_entries).
+func fetch_leaderboard(track_id: String, difficulty: String, limit: int = 100) -> void:
+	if not is_online_enabled():
+		leaderboard_fetched.emit(false, [], "오프라인 (서버 URL 미설정)")
+		return
+	var url: String = (
+		"%s/api/leaderboard?track_id=%s&difficulty=%s&limit=%d"
+		% [_base(), track_id.uri_encode(), difficulty.uri_encode(), limit]
+	)
+	var resp: Dictionary = await _request(HTTPClient.METHOD_GET, url, "")
+	if not bool(resp["ok"]):
+		leaderboard_fetched.emit(false, [], _friendly_reason(resp))
+		return
+	var code: int = int(resp["code"])
+	if code < 200 or code >= 300:
+		var msg: String = "트랙을 찾을 수 없음" if code == 404 else "서버 오류 (HTTP %d)" % code
+		leaderboard_fetched.emit(false, [], msg)
+		return
+	var data: Variant = JSON.parse_string(str(resp["body"]))
+	leaderboard_fetched.emit(true, _extract_entries(data), "")
+
+
+## GET /api/health → {status, version}. 결과는 health_checked로 통지(서버 연결 확인용).
+## 성공 시 message에 서버 버전을 담아 UI가 표시할 수 있게 한다.
+func health_check() -> void:
+	if not is_online_enabled():
+		health_checked.emit(false, "오프라인 (서버 URL 미설정)")
+		return
+	var resp: Dictionary = await _request(HTTPClient.METHOD_GET, _base() + "/api/health", "")
+	var ok: bool = bool(resp["ok"]) and int(resp["code"]) >= 200 and int(resp["code"]) < 300
+	if not ok:
+		health_checked.emit(false, _friendly_reason(resp))
+		return
+	var version: String = ""
+	var data: Variant = JSON.parse_string(str(resp["body"]))
+	if data is Dictionary and (data as Dictionary).has("version"):
+		version = str((data as Dictionary)["version"])
+	health_checked.emit(true, version)
+
+
+# --- 내부 구현 ---
+
+
+## 요청마다 새 HTTPRequest 자식을 만들어 동시 요청 충돌을 피한다. await로 완료를
+## 기다린 뒤 노드를 정리하고 {ok, code, result, body}를 반환한다.
+func _request(method: int, url: String, body: String) -> Dictionary:
+	var http: HTTPRequest = HTTPRequest.new()
+	http.timeout = REQUEST_TIMEOUT
+	add_child(http)
+	var headers: PackedStringArray = PackedStringArray(
+		["Content-Type: application/json", "Accept: application/json"]
+	)
+	var err: int = http.request(url, headers, method, body)
+	if err != OK:
+		http.queue_free()
+		return {"ok": false, "code": 0, "result": -1, "body": ""}
+	var res: Array = await http.request_completed
+	http.queue_free()
+	var result_code: int = int(res[0])
+	var response_code: int = int(res[1])
+	if result_code != HTTPRequest.RESULT_SUCCESS:
+		return {"ok": false, "code": response_code, "result": result_code, "body": ""}
+	var body_bytes: PackedByteArray = res[3]
+	return {
+		"ok": true,
+		"code": response_code,
+		"result": result_code,
+		"body": body_bytes.get_string_from_utf8(),
+	}
+
+
+## 결과 dict → §13.3 POST /api/runs 바디. replay_hash는 지금 생략(§14.2 Unverified 운영).
+func _build_submit_body(result: Dictionary) -> Dictionary:
+	var track_id: String = str(result.get("track_id", ""))
+	return {
+		"player_name": nickname.strip_edges(),
+		"track_id": track_id,
+		"difficulty": str(result.get("difficulty", "")),
+		"time_ms": int(result.get("finish_ms", 0)),
+		"penalty_ms": int(result.get("penalty_ms", 0)),
+		"final_time_ms": int(result.get("final_time_ms", 0)),
+		"accuracy": float(result.get("accuracy", 0.0)),
+		"cuts": int(result.get("cuts", 0)),
+		"off_seam_ms": int(result.get("off_seam_ms", 0)),
+		"game_version": GAME_VERSION,
+		"track_checksum": track_checksum(track_id),
+	}
+
+
+## 응답 최상위 구조가 달라도 entries 배열을 관대하게 추출한다.
+func _extract_entries(data: Variant) -> Array:
+	if data is Array:
+		return data
+	if data is Dictionary:
+		var dict: Dictionary = data
+		for key in ["entries", "leaderboard", "runs", "results", "data"]:
+			if dict.has(key) and dict[key] is Array:
+				return dict[key]
+	return []
+
+
+## 트레일링 슬래시를 제거한 정규화 base URL.
+func _base() -> String:
+	return base_url.strip_edges().trim_suffix("/")
+
+
+## POST /api/runs 비정상 응답 코드를 사용자 표시 문구로 구분한다(서버 계약: 422 거부,
+## 429 레이트리밋, 404 미등록 트랙).
+func _submit_error_message(code: int) -> String:
+	match code:
+		422:
+			return "기록이 거부됨 (검증 실패)"
+		429:
+			return "요청이 너무 잦습니다 (잠시 후 재시도)"
+		404:
+			return "트랙을 찾을 수 없음"
+	if code >= 500:
+		return "서버 오류 (HTTP %d)" % code
+	return "서버가 기록을 거부함 (HTTP %d)" % code
+
+
+## HTTPRequest 실패 결과를 한 줄 사유 문자열로 변환한다.
+func _friendly_reason(resp: Dictionary) -> String:
+	var result_code: int = int(resp.get("result", -1))
+	match result_code:
+		HTTPRequest.RESULT_TIMEOUT:
+			return "서버 응답 없음 (타임아웃)"
+		HTTPRequest.RESULT_CANT_CONNECT, HTTPRequest.RESULT_CANT_RESOLVE:
+			return "서버에 연결할 수 없음"
+		HTTPRequest.RESULT_CONNECTION_ERROR:
+			return "서버에 연결할 수 없음"
+	var code: int = int(resp.get("code", 0))
+	if code >= 400:
+		return "서버 오류 (HTTP %d)" % code
+	return "연결 실패"
+
+
+func _load_settings() -> void:
+	base_url = DEFAULT_BASE_URL
+	nickname = ""
+	last_track_id = ""
+	if not FileAccess.file_exists(SETTINGS_PATH):
+		return
+	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var text: String = file.get_as_text()
+	file.close()
+	var parsed: Variant = JSON.parse_string(text)
+	if not (parsed is Dictionary):
+		return
+	var dict: Dictionary = parsed
+	if dict.has("base_url"):
+		base_url = str(dict["base_url"])
+	if dict.has("nickname"):
+		nickname = str(dict["nickname"])
+	if dict.has("last_track_id"):
+		last_track_id = str(dict["last_track_id"])

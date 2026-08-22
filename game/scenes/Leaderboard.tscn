@@ -1,0 +1,114 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/LeaderboardScreen.gd" id="1_lb"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="2_skin"]
+
+[node name="Leaderboard" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lb")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.11, 0.086, 0.072, 1)
+
+[node name="PanelBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -318.0
+offset_right = 300.0
+offset_bottom = 318.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_skin")
+
+[node name="Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -262.0
+offset_top = -282.0
+offset_right = 262.0
+offset_bottom = 282.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 30
+text = "LEADERBOARD"
+horizontal_alignment = 1
+
+[node name="TrackNav" type="HBoxContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PrevButton" type="Button" parent="Panel/TrackNav"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+focus_mode = 0
+text = "◀"
+
+[node name="SubLabel" type="Label" parent="Panel/TrackNav"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 16
+text = "Cotton Warm-up — NORMAL"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NextButton" type="Button" parent="Panel/TrackNav"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+focus_mode = 0
+text = "▶"
+
+[node name="StatusLabel" type="Label" parent="Panel"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478, 0.333, 0.243, 1)
+theme_override_font_sizes/font_size = 15
+horizontal_alignment = 1
+
+[node name="HeaderRow" type="HBoxContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Scroll" type="ScrollContainer" parent="Panel"]
+custom_minimum_size = Vector2(0, 360)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="Panel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="BackButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "뒤로"

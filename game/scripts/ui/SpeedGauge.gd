@@ -34,6 +34,29 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	# 사용자 제공 시트: 쉐브론 텍스처 5개를 상태별 modulate 틴트로. 플래그(SKIN_SPEED_CHEVRON)가
+	# 꺼져 있거나 텍스처가 없으면 절차 폴백(세로 폴리라인 쉐브론)으로 원복한다.
+	var tex: Texture2D = UiSkin.tex("chevron") if UiSkin.SKIN_SPEED_CHEVRON else null
+	if tex != null:
+		_draw_textured(tex)
+	else:
+		_draw_procedural()
+
+
+func _draw_textured(tex: Texture2D) -> void:
+	var w: float = size.x
+	var h: float = size.y
+	var slot_h: float = h / 5.0
+	var cw: float = w - 2.0 * PAD_X
+	var ch: float = minf(cw * float(tex.get_height()) / float(tex.get_width()), slot_h * 1.2)
+	for stage_num in range(1, 6):
+		var slot_from_top: int = 5 - stage_num
+		var cy: float = float(slot_from_top) * slot_h + (slot_h - ch) * 0.5
+		var filled: bool = stage_num <= _stage
+		draw_texture_rect(tex, Rect2(PAD_X, cy, cw, ch), false, _stage_color(stage_num, filled))
+
+
+func _draw_procedural() -> void:
 	var w: float = size.x
 	var h: float = size.y
 	var slot_h: float = h / 5.0

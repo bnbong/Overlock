@@ -26,6 +26,7 @@ TrackLoader="*res://scripts/autoload/TrackLoader.gd"
 RecordStore="*res://scripts/autoload/RecordStore.gd"
 GameState="*res://scripts/autoload/GameState.gd"
 AudioManager="*res://scripts/autoload/AudioManager.gd"
+LeaderboardClient="*res://scripts/autoload/LeaderboardClient.gd"
 
 [display]
 

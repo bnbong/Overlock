@@ -1,0 +1,329 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/TrackSelectScreen.gd" id="1_select"]
+[ext_resource type="Texture2D" uid="uid://xdycstxi1dc2" path="res://assets/gfx/menu_bg.png" id="2_menubg"]
+
+[sub_resource type="StyleBoxFlat" id="btn_normal"]
+content_margin_left = 20.0
+content_margin_top = 11.0
+content_margin_right = 20.0
+content_margin_bottom = 11.0
+bg_color = Color(0.831, 0.753, 0.6, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.553, 0.384, 0.725, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_hover"]
+content_margin_left = 20.0
+content_margin_top = 11.0
+content_margin_right = 20.0
+content_margin_bottom = 11.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.616, 0.435, 0.784, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_pressed"]
+content_margin_left = 20.0
+content_margin_top = 11.0
+content_margin_right = 20.0
+content_margin_bottom = 11.0
+bg_color = Color(0.761, 0.682, 0.541, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.478, 0.333, 0.243, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="btn_focus"]
+content_margin_left = 20.0
+content_margin_top = 11.0
+content_margin_right = 20.0
+content_margin_bottom = 11.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.831, 0.278, 0.263, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="nav_btn_normal"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.831, 0.753, 0.6, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.553, 0.384, 0.725, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="nav_btn_hover"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.616, 0.435, 0.784, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="nav_btn_pressed"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.761, 0.682, 0.541, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.478, 0.333, 0.243, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="nav_btn_focus"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.906, 0.835, 0.686, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.831, 0.278, 0.263, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[node name="TrackSelect" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_select")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12, 0.11, 0.14, 1)
+
+[node name="BackgroundArt" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_menubg")
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Scrim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.09, 0.07, 0.09, 0.34)
+
+[node name="Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -230.0
+offset_top = -320.0
+offset_right = 230.0
+offset_bottom = 320.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="HeaderLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.97, 0.93, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0.26, 0.11, 0.15, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 32
+text = "SELECT TRACK"
+horizontal_alignment = 1
+
+[node name="Preview" type="Control" parent="Panel"]
+custom_minimum_size = Vector2(360, 168)
+layout_mode = 2
+
+[node name="Selector" type="HBoxContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PrevButton" type="Button" parent="Panel/Selector"]
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("nav_btn_normal")
+theme_override_styles/hover = SubResource("nav_btn_hover")
+theme_override_styles/pressed = SubResource("nav_btn_pressed")
+theme_override_styles/focus = SubResource("nav_btn_focus")
+text = "◀"
+
+[node name="TrackLabel" type="Label" parent="Panel/Selector"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.97, 0.93, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 24
+text = "Cotton Warm-up"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NextButton" type="Button" parent="Panel/Selector"]
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("nav_btn_normal")
+theme_override_styles/hover = SubResource("nav_btn_hover")
+theme_override_styles/pressed = SubResource("nav_btn_pressed")
+theme_override_styles/focus = SubResource("nav_btn_focus")
+text = "▶"
+
+[node name="InfoLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.86, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "NORMAL    3206 px    (1 / 5)"
+horizontal_alignment = 1
+
+[node name="BestTimeLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.86, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_constants/outline_size = 4
+text = "Best: --:--.---"
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.78, 0.72, 0.86, 1)
+theme_override_colors/font_outline_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_constants/outline_size = 3
+text = "◀ ▶  or  ← →  change track      Enter  play      Esc  back"
+horizontal_alignment = 1
+
+[node name="PlayButton" type="Button" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("btn_normal")
+theme_override_styles/hover = SubResource("btn_hover")
+theme_override_styles/pressed = SubResource("btn_pressed")
+theme_override_styles/focus = SubResource("btn_focus")
+text = "▶  Play"
+
+[node name="ActionRow" type="HBoxContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CreateButton" type="Button" parent="Panel/ActionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "트랙 만들기"
+
+[node name="ImportButton" type="Button" parent="Panel/ActionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "불러오기"
+
+[node name="DeleteButton" type="Button" parent="Panel/ActionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "삭제"
+
+[node name="LeaderboardButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "이 트랙 리더보드"
+
+[node name="BackButton" type="Button" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("btn_normal")
+theme_override_styles/hover = SubResource("btn_hover")
+theme_override_styles/pressed = SubResource("btn_pressed")
+theme_override_styles/focus = SubResource("btn_focus")
+text = "뒤로"
+
+[node name="ImportDialog" type="FileDialog" parent="."]
+title = "트랙 JSON 불러오기"
+initial_position = 2
+size = Vector2i(560, 420)
+ok_button_text = "열기"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.json ; Track JSON")

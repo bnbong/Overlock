@@ -22,6 +22,39 @@ func set_progress(fraction: float) -> void:
 
 
 func _draw() -> void:
+	# 사용자 제공 시트: 원단 홈 + 은색 바늘 마커 텍스처. 없으면 절차 폴백.
+	var groove: Texture2D = UiSkin.tex("progress_groove")
+	if groove == null:
+		_draw_procedural()
+		return
+	var w: float = size.x
+	var h: float = size.y
+	draw_texture_rect(groove, Rect2(Vector2.ZERO, size), false)
+	# 홈 슬롯(그루브 텍스처 안쪽 실 통로에 맞춘 채움 영역; 좌우 끝단추 사이).
+	var chan: Rect2 = Rect2(Vector2(w * 0.12, h * 0.32), Vector2(w * 0.76, h * 0.36))
+	var fill_w: float = chan.size.x * _progress
+	if fill_w > 1.0:
+		var fill_sb: StyleBoxFlat = StyleBoxFlat.new()
+		fill_sb.bg_color = SEAM_FILL
+		fill_sb.set_corner_radius_all(int(chan.size.y * 0.5))
+		draw_style_box(fill_sb, Rect2(chan.position, Vector2(fill_w, chan.size.y)))
+		var cy: float = chan.position.y + chan.size.y * 0.5
+		var line: PackedVector2Array = PackedVector2Array(
+			[Vector2(chan.position.x + 2.0, cy), Vector2(chan.position.x + fill_w - 2.0, cy)]
+		)
+		SewingSkin.draw_running_stitch(self, line, false, SEAM_STITCH, 6.0, 4.0, 2.0)
+	# 진행 위치 은색 바늘 마커(텍스처).
+	var x: float = chan.position.x + chan.size.x * _progress
+	var needle: Texture2D = UiSkin.tex("needle_marker")
+	if needle != null:
+		var nh: float = h * 1.5
+		var nw: float = nh * float(needle.get_width()) / float(needle.get_height())
+		draw_texture_rect(needle, Rect2(x - nw * 0.5, h * 0.5 - nh * 0.5, nw, nh), false)
+	else:
+		_draw_needle_marker(Vector2(x, h * 0.5), h)
+
+
+func _draw_procedural() -> void:
 	var w: float = size.x
 	var h: float = size.y
 	var rect: Rect2 = Rect2(Vector2.ZERO, size)

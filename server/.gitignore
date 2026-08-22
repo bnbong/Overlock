@@ -1,0 +1,12 @@
+# 로컬 SQLite DB 파일 (배포/실행 시 생성)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+overlock.db
+
+# 환경 설정
+.env
+
+# uv / 가상환경
+.venv/

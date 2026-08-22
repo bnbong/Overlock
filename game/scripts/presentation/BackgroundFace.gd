@@ -8,17 +8,23 @@ extends Control
 ## 눈을 잘라버리던 문제를 해소한다. 표정 오버레이·고개꺾기 피벗도 모두 이 face_rect
 ## 기준으로 유도해 재배치와 정합을 유지한다.
 ##
-## 표정 표현은 두 모드를 지원한다:
-##  1) 텍스처 스왑(권장, 이미지 준비 시): face_normal/face_focus/face_injured 슬롯이
-##     하나라도 지정되면 상태별 얼굴 텍스처를 크로스페이드로 교체한다(눈 영역만 다른
-##     동일 구도 3종). 부상(stun)→injured, 집중 강도 임계 이상→focus, 그 외→normal.
-##  2) 레거시(슬롯 전부 비었을 때): 단일 face_base 텍스처 + 절차적 라인아트 오버레이.
+## 표정 표현은 세 모드를 우선순위대로 지원한다:
+##  1) 눈 오버레이 스왑(현행 기본, 스크립트 preload 배선): 눈 없는 고정 베이스
+##     (base_clean) 위에 상태별 눈 오버레이(eyes_normal/eyes_focus/eyes_injured)를
+##     얹고, 상태 전환 시 **눈 오버레이만** 크로스페이드한다. 베이스가 고정이라
+##     크로스페이드 중에도 머리카락·헤어밴드·볼 외곽이 전혀 떨리지 않는다(구
+##     전체-얼굴 스왑 방식의 얼굴 떨림·눈 주변 밴드 경계 원천 차단). 땀방울은
+##     sweat_texture 스프라이트로 집중 강도에 비례해 표시한다.
+##  2) 전체-얼굴 텍스처 스왑(레거시): face_normal/face_focus/face_injured 슬롯이
+##     하나라도 지정되고 오버레이 모드가 꺼졌을 때만. 상태별 얼굴 텍스처를
+##     크로스페이드로 교체한다(눈 영역만 다른 동일 구도 3종).
+##  3) 단일 base + 절차적 라인아트(레거시): 위 슬롯이 전부 비었을 때.
 ##     2차 아트의 앞머리가 눈을 덮는 구도라, 평상시엔 오버레이를 그리지 않고(가려진
 ##     콘셉트) 상태(집중/부상)일 때만 앞머리 사이 피부 창에 라인아트를 얹는다.
-## 슬롯이 비어 있으면 레거시 동작을 완전히 유지한다(회귀 금지).
-## 조향 고개 꺾기는 두 모드 공통(노드 트랜스폼).
+## 슬롯이 비어 있으면 순차적으로 하위 레거시 동작으로 복귀한다(회귀 금지).
+## 조향 고개 꺾기는 모든 모드 공통(노드 트랜스폼).
 
-## 표정 상태(텍스처 스왑용). 부상 > 집중 > 평상 우선순위로 결정.
+## 표정 상태(스왑용). 부상 > 집중 > 평상 우선순위로 결정.
 enum FaceState { NORMAL, FOCUS, INJURED }
 
 const SKIN_COLOR: Color = Color(0.86, 0.68, 0.56, 1.0)
@@ -45,11 +51,46 @@ const FOCUS_THRESHOLD: float = 0.5
 ## 상태 전환 크로스페이드 지속(초).
 const FACE_FADE_DUR: float = 0.2
 
+## 눈 앵커 중점(캔버스 텍셀 640,248)의 오버레이 텍스처 대비 비율. eyes_scale 피벗.
+## 눈동자 좌 (454,248)·우 (826,248)의 중점 = (640,248), 텍스처 1280×720 기준.
+const EYE_ANCHOR_FRAC: Vector2 = Vector2(0.5, 248.0 / 720.0)
+
+## 집중 땀방울 앵커(눈 오버레이 eye_rect 대비 비율). 오른쪽 눈(뷰어-우, 동공 앵커
+## 826,248 → eye_rect 비율 ≈ 0.645,0.344) 바깥 관자놀이 부근 — 애니메이션 관례 위치.
+## eye_rect가 eyes_offset_y·eyes_scale을 이미 반영하므로, 두 값을 바꿔도 땀 위치·크기가
+## 자동으로 눈을 따라온다(구 독립 앵커 expr_sweat_frac은 절차 폴백 전용으로만 잔존).
+## 우 동공에서 바깥으로 약 +0.07·아래로 약 +0.006 떨어진 관자놀이에 방울 꼬리를 앉힌다.
+const EYE_SWEAT_FRAC: Vector2 = Vector2(0.715, 0.35)
+
+## --- 눈 오버레이 스왑 모드(현행 기본) — 스크립트 preload 배선 ---
+## Gameplay.tscn을 수정하지 않고 새 모드를 기본 활성화하기 위해 preload 기본값으로
+## 배선한다(씬은 아래 face_normal/face_focus/face_injured만 지정 → 레거시 슬롯).
+## base_clean이 지정되고 눈 오버레이가 하나라도 있으면 이 모드가 우선한다.
+@export var base_clean: Texture2D = preload("res://assets/gfx/face_base_clean.png")
+@export var eyes_normal: Texture2D = preload("res://assets/gfx/eyes_normal.png")
+@export var eyes_focus: Texture2D = preload("res://assets/gfx/eyes_focus.png")
+@export var eyes_injured: Texture2D = preload("res://assets/gfx/eyes_injured.png")
+## 집중 땀방울 스프라이트(절차적 땀 대체). null이면 절차적 _draw_drop 폴백.
+@export var sweat_texture: Texture2D = preload("res://assets/gfx/sweat.png")
+## 땀방울 스프라이트 크기 배율(캔버스 기준 추가 배율). face_draw_scale과 곱해진다.
+@export var sweat_scale: float = 1.0
+## 눈 오버레이 세로 미세 조정(px, 캔버스 기준). 앞머리 위 눈 구도가 어색하면 조정.
+## 사용자 확정값(2026-08-22): 50.0 — 취향 확정이므로 워커가 임의로 되돌리지 말 것.
+@export var eyes_offset_y: float = 50.0
+## 눈 오버레이 전체 스케일(앵커 중점 기준). 1.0=원본 PNG 크기. PNG 재가공 없이 눈
+## 크기를 취향대로 미세 조정한다(eyes_offset_y와 동일 성격). 앵커 중점(640,248)을
+## 고정점으로 확대/축소하므로 1.0보다 크면 두 눈이 함께 커지며 살짝 벌어진다. 눈
+## 파츠 자체는 각 동공 중심 기준으로 이미 확대되어 PNG에 구워져 있고(앵커 유지),
+## 이 값은 그 위에 얹는 런타임 미세 배율이다.
+## 사용자 확정값(2026-08-22): 0.9 — 취향 확정이므로 워커가 임의로 되돌리지 말 것.
+@export var eyes_scale: float = 0.9
+
 ## null이면 _draw 도형, 지정되면 스프라이트로 렌더(레거시 base + 오버레이).
 @export var texture: Texture2D = null
 
-## 상태별 얼굴 텍스처 슬롯(추후 사용자 제공). 하나라도 지정되면 텍스처 스왑 모드.
-## 규격: face_base와 동일 캔버스(1280×720)·동일 구도, 눈 영역만 다름(§ 보고 규격 계약).
+## @deprecated 전체-얼굴 텍스처 스왑(레거시). Gameplay.tscn이 여전히 값을 할당하므로
+## 프로퍼티는 유지하되, 위 눈 오버레이 스왑 모드가 우선한다(base_clean 지정 시 미사용).
+## 오버레이 슬롯을 전부 비워야 이 레거시 스왑 경로가 활성화된다.
 @export var face_normal: Texture2D = null
 @export var face_focus: Texture2D = null
 @export var face_injured: Texture2D = null
@@ -62,14 +103,18 @@ const FACE_FADE_DUR: float = 0.2
 ## 표정 오버레이 앵커(face_rect 대비 비율). 앞머리 사이 피부 창(눈·땀) 위치.
 @export var expr_eye_dx_frac: float = 0.145  # 중앙 대비 좌우 눈 간격
 @export var expr_eye_y_frac: float = 0.345  # 눈 세로 위치
-@export var expr_sweat_frac: Vector2 = Vector2(0.69, 0.375)  # 집중 땀방울 위치
+## @deprecated 집중 땀방울 위치(face_rect 대비, 눈과 독립). 현행 눈 오버레이 스왑 모드는
+## EYE_SWEAT_FRAC(eye_rect 기준)으로 땀을 파생시키므로 쓰지 않는다. 이 값은 최하위 절차
+## 라인아트 폴백(_draw_state_overlay → _draw_sweat)에서만 사용된다(그 모드엔 눈 오버레이가
+## 없어 face_rect 앵커가 필요).
+@export var expr_sweat_frac: Vector2 = Vector2(0.69, 0.375)  # (레거시 절차 폴백 전용)
 
 var _tension: float = 0.0  # 0..1 (부상>고위험>속도 집중 통합 강도)
 var _stunned: bool = false
 var _steer: float = 0.0
 var _steer_target: float = 0.0
 
-var _state: int = FaceState.NORMAL  # 현재 표정 상태(텍스처 스왑용)
+var _state: int = FaceState.NORMAL  # 현재 표정 상태(스왑용)
 var _fade_from: int = FaceState.NORMAL  # 크로스페이드 시작 상태
 var _fade_t: float = 1.0  # 0..1, 1이면 전환 완료
 var _ovl_scale: float = 1.0  # 오버레이 도형 크기 스케일(face_rect에 비례)
@@ -91,7 +136,7 @@ func set_expression(risk: float, stunned: bool, speed_index: int) -> void:
 	_tension = tension
 	_stunned = stunned
 	if new_state != _state:
-		# 텍스처 스왑 크로스페이드 시작(레거시 모드에선 _fade_*가 그려지지 않아 무해).
+		# 스왑 크로스페이드 시작(절차적 폴백 모드에선 _fade_*가 그려지지 않아 무해).
 		_fade_from = _state
 		_state = new_state
 		_fade_t = 0.0
@@ -117,7 +162,7 @@ func _process(delta: float) -> void:
 	_steer += (_steer_target - _steer) * clampf(STEER_LERP * delta, 0.0, 1.0)
 	if absf(_steer - prev) > 0.0005:
 		need_redraw = true
-	# 상태 전환 크로스페이드 진행(텍스처 스왑 모드에서만 시각 효과).
+	# 상태 전환 크로스페이드 진행(스왑/오버레이 모드에서만 시각 효과).
 	if _fade_t < 1.0:
 		_fade_t = minf(_fade_t + delta / FACE_FADE_DUR, 1.0)
 		need_redraw = true
@@ -125,7 +170,14 @@ func _process(delta: float) -> void:
 		queue_redraw()
 
 
-## 상태별 얼굴 텍스처 슬롯이 하나라도 지정되면 텍스처 스왑 모드.
+## 눈 오버레이 스왑 모드 활성 조건: 고정 베이스 + 눈 오버레이가 하나라도 지정.
+func _overlay_active() -> bool:
+	if base_clean == null:
+		return false
+	return eyes_normal != null or eyes_focus != null or eyes_injured != null
+
+
+## 전체-얼굴 텍스처 스왑(레거시) 활성 조건: face_* 슬롯이 하나라도 지정.
 func _swap_active() -> bool:
 	return face_normal != null or face_focus != null or face_injured != null
 
@@ -149,7 +201,9 @@ func _draw() -> void:
 	var angle: float = _steer * MAX_HEAD_TILT
 	var lean: Vector2 = Vector2(_steer * HEAD_LEAN_PX, 0.0)
 	draw_set_transform(lean + pivot - pivot.rotated(angle), angle, Vector2.ONE)
-	if _swap_active():
+	if _overlay_active():
+		_draw_overlay(rect)
+	elif _swap_active():
 		_draw_swap(rect)
 	elif texture != null:
 		# 레거시: base 스프라이트 + 상태(집중/부상)일 때만 앞머리 사이 피부 창 오버레이.
@@ -159,9 +213,83 @@ func _draw() -> void:
 		_draw_fallback(rect)
 
 
-## 텍스처 스왑 모드: 상태별 얼굴 텍스처를 크로스페이드로 그린다(눈 영역만 다른 동일
-## 구도라 오버레이 불요 — 표정이 텍스처에 베이크됨). 슬롯이 일부만 채워졌으면
-## face_normal → base texture 순으로 폴백한다.
+## 눈 오버레이 스왑 모드(현행 기본): 고정 베이스를 불투명하게 깐 뒤, 상태별 눈
+## 오버레이를 그 위에 얹는다. 상태 전환 시 눈 오버레이만 크로스페이드(옛→새 알파
+## 상보 디졸브)한다. 베이스는 매 프레임 동일·불투명이라 얼굴 윤곽이 절대 떨리지 않고,
+## 오버레이는 투명 배경이라 눈 주변 밴드 경계가 생기지 않는다.
+func _draw_overlay(rect: Rect2) -> void:
+	if base_clean != null:
+		draw_texture_rect(base_clean, rect, false)
+	# 눈 오버레이는 eyes_offset_y(캔버스 px)만큼 세로로 미세 이동해 그린다(베이스는 고정).
+	var eye_rect: Rect2 = rect
+	eye_rect.position.y += eyes_offset_y * face_draw_scale
+	# eyes_scale: 앵커 중점(640,248)을 고정점으로 눈 오버레이만 확대/축소(베이스 불변).
+	# 1.0이면 항등(원본 PNG 크기). PNG 재가공 없는 런타임 취향 조정 손잡이.
+	if not is_equal_approx(eyes_scale, 1.0):
+		var pivot: Vector2 = eye_rect.position + EYE_ANCHOR_FRAC * eye_rect.size
+		var new_size: Vector2 = eye_rect.size * eyes_scale
+		eye_rect = Rect2(pivot - EYE_ANCHOR_FRAC * new_size, new_size)
+	var to_ov: Texture2D = _eye_overlay(_state)
+	if _fade_t < 1.0:
+		var from_ov: Texture2D = _eye_overlay(_fade_from)
+		if from_ov != null:
+			draw_texture_rect(from_ov, eye_rect, false, Color(1.0, 1.0, 1.0, 1.0 - _fade_t))
+		if to_ov != null:
+			draw_texture_rect(to_ov, eye_rect, false, Color(1.0, 1.0, 1.0, _fade_t))
+	elif to_ov != null:
+		draw_texture_rect(to_ov, eye_rect, false)
+	# 집중 땀방울(부상 제외). 눈 오버레이 rect 기준이라 눈을 따라 이동한다. 긴장 강도에
+	# 비례해 커지고 고집중에선 둘째 방울 추가.
+	if not _stunned and _tension > 0.04:
+		_draw_sweat_sprite(eye_rect)
+
+
+## 상태 → 눈 오버레이(폴백: 상태 슬롯 → eyes_normal).
+func _eye_overlay(state: int) -> Texture2D:
+	var slot: Texture2D = null
+	match state:
+		FaceState.INJURED:
+			slot = eyes_injured
+		FaceState.FOCUS:
+			slot = eyes_focus
+		_:
+			slot = eyes_normal
+	if slot != null:
+		return slot
+	return eyes_normal
+
+
+## 땀방울 스프라이트: 눈 오버레이 eye_rect 기준 상대 위치(EYE_SWEAT_FRAC)의 관자놀이에
+## 그린다. eye_rect가 eyes_offset_y·eyes_scale을 이미 반영하므로 눈을 옮기거나 키우면
+## 땀도 자동으로 따라온다(구 독립 face_rect 앵커 폐기). 크기·둘째 방울 간격은 눈 스케일
+## (eyes_scale)에 비례시켜 눈과 함께 축척된다. sweat_texture가 없으면 절차적 _draw_drop
+## 폴백. 긴장 강도로 크기 변조.
+func _draw_sweat_sprite(eye_rect: Rect2) -> void:
+	var base: Vector2 = eye_rect.position + EYE_SWEAT_FRAC * eye_rect.size
+	# 방울 축척: 얼굴 배치 축척 × 눈 스케일(눈과 동일 체계라 눈이 작아지면 땀도 작아진다).
+	var spr: float = _ovl_scale * eyes_scale
+	if sweat_texture == null:
+		_draw_drop(base, lerpf(4.0, 9.0, _tension) * spr)
+		if _tension > 0.55:
+			_draw_drop(base + Vector2(-16.0, 20.0) * spr, lerpf(2.0, 6.0, _tension) * spr)
+		return
+	var scl: float = spr * sweat_scale * lerpf(0.85, 1.35, _tension)
+	var tsize: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl
+	# 물방울 위쪽 꼬리를 앵커에 맞추고 아래로 늘어지게(가로 중앙 정렬).
+	var pos: Vector2 = base - Vector2(tsize.x * 0.5, tsize.y * 0.15)
+	draw_texture_rect(sweat_texture, Rect2(pos, tsize), false)
+	if _tension > 0.55:
+		var scl2: float = scl * 0.62
+		var tsize2: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl2
+		var pos2: Vector2 = (
+			base + Vector2(-16.0, 24.0) * spr - Vector2(tsize2.x * 0.5, tsize2.y * 0.15)
+		)
+		draw_texture_rect(sweat_texture, Rect2(pos2, tsize2), false)
+
+
+## 전체-얼굴 텍스처 스왑(레거시): 상태별 얼굴 텍스처를 크로스페이드로 그린다(눈 영역만
+## 다른 동일 구도라 오버레이 불요 — 표정이 텍스처에 베이크됨). 슬롯이 일부만
+## 채워졌으면 face_normal → base texture 순으로 폴백한다.
 func _draw_swap(rect: Rect2) -> void:
 	var to_tex: Texture2D = _state_tex(_state)
 	if _fade_t < 1.0:
@@ -226,7 +354,9 @@ func _draw_focus_eye(center: Vector2, is_right: bool) -> void:
 	var in_pt: Vector2 = center + Vector2(inner * rx, slant)
 	var out_pt: Vector2 = center + Vector2(-inner * rx, -slant * 0.7)
 	draw_line(in_pt, out_pt, EXPR_LINE, 4.5 * _ovl_scale)
-	draw_circle(center + Vector2(inner * rx * 0.15, 5.0 * _ovl_scale), 3.5 * _ovl_scale, PUPIL_COLOR)
+	draw_circle(
+		center + Vector2(inner * rx * 0.15, 5.0 * _ovl_scale), 3.5 * _ovl_scale, PUPIL_COLOR
+	)
 
 
 ## 찡그린 눈썹(안쪽이 내려와 결의/집중). 긴장할수록 강하게.

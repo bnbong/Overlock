@@ -9,7 +9,8 @@ extends Control
 ## 좌표는 월드 단위. 저장 시 polyline 세그먼트 1개로 직렬화하고 TrackLoader가
 ## id·checksum·length를 채운다.
 
-const MENU_SCENE: String = "res://scenes/Main.tscn"
+# 에디터는 맵 선택 화면("트랙 만들기")에서 진입하므로 뒤로가기도 그 화면으로 돌아간다.
+const MENU_SCENE: String = "res://scenes/TrackSelect.tscn"
 const SNAP_RADIUS: float = 28.0  # 새 스트로크 시작이 기존 끝점 근처면 이어붙임
 const ERASE_RADIUS: float = 22.0  # 지우기 브러시 반경
 const TRIM_COUNT: int = 8  # Backspace 끝 트림 점 수
@@ -100,10 +101,15 @@ func _wire() -> void:
 	_diff_option.item_selected.connect(_on_diff_changed)
 	_save_button.pressed.connect(_save)
 	_testplay_button.pressed.connect(_test_play)
-	_import_button.pressed.connect(func() -> void: _import_dialog.popup_centered())
 	_back_button.pressed.connect(_on_back)
-	_import_dialog.file_selected.connect(_import_file)
-	get_window().files_dropped.connect(_on_files_dropped)
+	# 웹 가드: 로컬 파일 접근이 없어 외부 JSON 불러오기·드래그드롭을 안내로 대체한다
+	# (그리기·검증·자동수정·user:// 저장·테스트플레이는 웹에서도 그대로 동작).
+	if OS.has_feature("web"):
+		_import_button.pressed.connect(_on_web_import_blocked)
+	else:
+		_import_button.pressed.connect(func() -> void: _import_dialog.popup_centered())
+		_import_dialog.file_selected.connect(_import_file)
+		get_window().files_dropped.connect(_on_files_dropped)
 
 
 # --- 편집 조작 ---
@@ -326,6 +332,11 @@ func _track_name() -> String:
 # --- 불러오기 ---
 
 
+## 웹(HTML5)에서 외부 파일 불러오기 요청을 안내로 대체한다(Phase 2 예정).
+func _on_web_import_blocked() -> void:
+	_set_status("웹에서는 트랙 파일 불러오기 미지원 (Phase 2)", NEUTRAL_COLOR)
+
+
 func _import_file(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		_set_status("파일 없음: " + path, FAIL_COLOR)
@@ -496,6 +507,8 @@ func _style_ui() -> void:
 		_import_button,
 		_back_button,
 	]
+	# 에디터 툴바는 좁은 텍스트 버튼이 많아 시트의 필 버튼(양끝 단추 캡)이 텍스트를
+	# 밀어내므로 절차 스킨을 유지한다(시트 필 버튼은 폭이 넉넉한 버튼에만 적합).
 	for b in buttons:
 		_skin_button(b)
 	_skin_option(_diff_option)

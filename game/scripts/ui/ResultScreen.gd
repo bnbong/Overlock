@@ -7,6 +7,8 @@ const TRACK_NAMES: Dictionary = {"cotton_01": "Cotton Warm-up"}
 @onready var _grade_label: Label = $Panel/GradeLabel
 @onready var _stats_label: Label = $Panel/StatsLabel
 @onready var _new_record_label: Label = $Panel/NewRecordLabel
+@onready var _submit_button: Button = $Panel/SubmitButton
+@onready var _submit_status: Label = $Panel/SubmitStatusLabel
 @onready var _retry_button: Button = $Panel/RetryButton
 @onready var _menu_button: Button = $Panel/MenuButton
 
@@ -22,11 +24,22 @@ func _ready() -> void:
 		_new_record_label.visible = true
 	else:
 		_new_record_label.visible = false
+	_setup_submit(result)
+	_apply_skin()
 	_retry_button.pressed.connect(_on_retry_pressed)
 	_menu_button.pressed.connect(_on_menu_pressed)
 	_retry_button.grab_focus()
 	# 오디오 훅: 신기록이면 팡파레, 아니면 피니시 징글(가드: 미등록 시 무시).
 	_play_result_audio(is_new_record)
+
+
+## 사용자 제공 시트 스킨(있으면): 베이지 카드 패널 + 대형 필 버튼. 없으면 .tscn 폴백.
+func _apply_skin() -> void:
+	if not UiSkin.has_skin():
+		return
+	UiSkin.skin_panel(get_node("PanelBg"), "beige")
+	for b in [_submit_button, _retry_button, _menu_button]:
+		UiSkin.skin_button(b, "large")
 
 
 ## 재봉 평점(등급)을 큰 문자로 눈에 띄게 표시. 하위 호환: grade 없으면 "-".
@@ -60,12 +73,57 @@ func _build_text(result: Dictionary) -> String:
 	return "\n".join(lines)
 
 
+# --- 리더보드 제출(§8.4 Submit to Leaderboard) ---
+
+
+## 제출 버튼 노출 판정: 공식 트랙 + 서버 URL 설정됨 + 닉네임 있음일 때만 표시한다.
+## 커스텀 트랙(is_custom)은 서버 제출 대상이 아니므로 버튼 자체를 숨긴다.
+func _setup_submit(result: Dictionary) -> void:
+	_submit_status.visible = false
+	var track_id: String = str(result.get("track_id", ""))
+	var is_custom: bool = track_id.begins_with(LeaderboardClient.CUSTOM_PREFIX)
+	var can_submit: bool = (
+		not is_custom and LeaderboardClient.is_online_enabled() and LeaderboardClient.has_nickname()
+	)
+	_submit_button.visible = can_submit
+	if can_submit:
+		_submit_button.pressed.connect(_on_submit_pressed)
+
+
+func _on_submit_pressed() -> void:
+	# 중복 제출 방지: 누른 즉시 비활성화하고 제출 중 상태를 표시한다.
+	_submit_button.disabled = true
+	_submit_status.visible = true
+	_submit_status.text = "제출 중..."
+	LeaderboardClient.submit_completed.connect(_on_submit_completed, CONNECT_ONE_SHOT)
+	LeaderboardClient.submit_run(GameState.last_result)
+
+
+func _on_submit_completed(success: bool, rank: int, status: String, message: String) -> void:
+	_submit_status.visible = true
+	if success:
+		if rank > 0:
+			_submit_status.text = "Rank #%d" % rank
+		else:
+			_submit_status.text = "제출 완료"
+		if not status.is_empty():
+			_submit_status.text += "  (" + status + ")"
+		_submit_button.text = "제출 완료"
+		# 성공 시 버튼은 비활성 유지(중복 제출 방지).
+	else:
+		_submit_status.text = message
+		_submit_button.disabled = false  # 실패(오프라인·거부)는 재시도 허용.
+
+
 func _on_retry_pressed() -> void:
 	GameState.start_run(GameState.track_id, GameState.difficulty)
 
 
+## "Menu"는 맵 선택 화면으로 돌아간다(2단 네비게이션 허브). 방금 플레이한 트랙이 마지막
+## 선택 트랙으로 복원되므로 최고 기록 갱신을 확인하고 바로 다른 트랙을 고르거나 재도전할 수
+## 있다. 완전한 메인 4버튼 화면으로는 맵 선택의 "뒤로"로 이어진다.
 func _on_menu_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/Main.tscn")
+	get_tree().change_scene_to_file("res://scenes/TrackSelect.tscn")
 
 
 # --- 오디오 훅 (가드: /root/AudioManager 미등록 시 무시) ---

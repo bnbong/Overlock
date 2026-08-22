@@ -2,12 +2,12 @@
 .godot/
 .import/
 export.cfg
-export_presets.cfg
 *.translation
 *.tmp
 
 # Godot exported binaries
 game/export/
+build/
 *.pck
 
 # macOS

@@ -1,0 +1,7 @@
+# Overlock 리더보드 서버 런타임 의존성 (Python 3.11+ / 3.13 검증).
+# 개발/테스트용은 requirements-dev.txt 참조. uv 사용 시 pyproject.toml 도 호환.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+SQLAlchemy>=2.0.30
+pydantic>=2.7
+pydantic-settings>=2.3

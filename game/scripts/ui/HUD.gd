@@ -18,6 +18,23 @@ var _prev_band: int = RunStats.Band.PERFECT
 @onready var _pause_overlay: Control = $PauseOverlay
 
 
+func _ready() -> void:
+	_apply_skin()
+
+
+## 사용자 제공 시트 스킨(있으면): TIME=태그 라벨, 일시정지=베이지 패널. 없으면 절차 폴백.
+func _apply_skin() -> void:
+	if not UiSkin.has_skin():
+		return
+	# TIME: 태그 라벨 텍스처로 교체(UiSkin.SKIN_TIME_TAG). 밑에 깔린 절차 패치(SewingSkin)
+	# 드로우는 제거해 태그가 씬 위에 깔끔히 떠 보이게 한다(태그의 둥근 모서리 밖으로 패치가
+	# 비치지 않게). 플래그가 꺼져 있으면 TimePanel의 절차 패치를 그대로 둔다(위젯 단위 원복).
+	var tp: Control = $TimePanel
+	if UiSkin.SKIN_TIME_TAG and UiSkin.skin_texture_bg(tp, "tag_label") != null:
+		tp.set_script(null)
+	UiSkin.skin_panel($PauseOverlay/PausePanel, "beige")
+
+
 func setup(track: TrackData) -> void:
 	_minimap.setup(track)
 	_length = maxf(track.length, 1.0)

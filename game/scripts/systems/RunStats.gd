@@ -65,14 +65,18 @@ func finalize(finish_time: float, safe_width: float, track_id: String, diff: Str
 	var normalized: float = mean_err / safe_width * 100.0  # §7.6
 	var accuracy: float = clampf(100.0 - normalized, 0.0, 100.0)
 	var perfect_rate: float = perfect_time / maxf(active_time, 0.0001) * 100.0
-	var final_time: float = finish_time + penalty_time
+	# ms 절사는 두 성분을 각각 절사한 뒤 더한다. final_time을 독립 절사하면
+	# floor(a+b) ≥ floor(a)+floor(b) 때문에 final_time_ms가 finish_ms+penalty_ms보다
+	# 1ms 커질 수 있어, 서버의 페널티 일관성 검증(final == time + penalty, §18)에 걸린다.
+	var finish_ms: int = int(finish_time * 1000.0)
+	var penalty_ms: int = int(penalty_time * 1000.0)
 	var grade_score: float = _grade_score(accuracy, perfect_rate, cuts)
 	return {
 		"track_id": track_id,
 		"difficulty": diff,
-		"finish_ms": int(finish_time * 1000.0),
-		"penalty_ms": int(penalty_time * 1000.0),
-		"final_time_ms": int(final_time * 1000.0),
+		"finish_ms": finish_ms,
+		"penalty_ms": penalty_ms,
+		"final_time_ms": finish_ms + penalty_ms,
 		"accuracy": accuracy,
 		"perfect_rate": perfect_rate,
 		"off_seam_ms": int(off_seam_time * 1000.0),

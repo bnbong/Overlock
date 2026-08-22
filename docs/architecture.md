@@ -431,12 +431,15 @@ func finalize(finish_time: float, safe_width: float, track_id: String, diff: Str
     var normalized := mean_err / safe_width * 100.0          # §7.6
     var accuracy := clampf(100.0 - normalized, 0.0, 100.0)
     var perfect_rate := perfect_time / max(active_time, 0.0001) * 100.0
-    var final_time := finish_time + penalty_time
+    # ms는 성분별 절사 후 합산: final_time 독립 절사는 floor(a+b)≥floor(a)+floor(b)로
+    # final_time_ms를 1ms 부풀려 서버 페널티 일관성 검증(final==time+penalty)에 걸린다.
+    var finish_ms := int(finish_time * 1000)
+    var penalty_ms := int(penalty_time * 1000)
     return {
         "track_id": track_id, "difficulty": diff,
-        "finish_ms": int(finish_time * 1000),
-        "penalty_ms": int(penalty_time * 1000),
-        "final_time_ms": int(final_time * 1000),
+        "finish_ms": finish_ms,
+        "penalty_ms": penalty_ms,
+        "final_time_ms": finish_ms + penalty_ms,
         "accuracy": accuracy, "perfect_rate": perfect_rate,
         "off_seam_ms": int(off_seam_time * 1000),
         "cuts": cuts, "max_speed": max_speed_index,
@@ -641,7 +644,7 @@ MVP 코드에 미리 열어둔 확장 포인트만 명시한다.
 
 | 확장(기획서) | 진입 지점 | 방법 |
 |---|---|---|
-| 온라인 리더보드(§13, §14) | `RecordStore.submit` 이후 | `LeaderboardClient`(HTTPRequest) 추가, `RunStats.finalize` 결과 dict가 이미 `POST /api/runs` 스키마(§13.3)와 필드 일치. `game_version/track_checksum/replay_hash`만 보강 |
+| 온라인 리더보드(§13, §14) | **구현됨** — `LeaderboardClient` 오토로드(HTTPRequest 기반 비동기 submit/fetch/health, 5s 타임아웃·조용한 실패) | 결과 dict를 §13.3 `POST /api/runs` 스키마로 매핑(`player_name`=닉네임, `time_ms`=`finish_ms`, `game_version`="0.2.0", `track_checksum`=공식 트랙 JSON 바이트 SHA-256; `replay_hash`는 §14.2 Unverified 운영이라 생략). 설정(닉네임·서버 URL)은 `user://settings.json`. UI: 메인 메뉴 `Settings`/`Leaderboard` 진입, 결과 화면 `Submit to Leaderboard`(공식 트랙+URL+닉네임 조건, 커스텀 트랙은 숨김). `Verified` 리플레이 검증은 후속(아래 행) |
 | 리플레이 검증(§14.3) | `RaceDirector._sample_input` | 입력 소스를 실시간/기록 소스로 분기. `InputFrame` 시퀀스만 저장하면 결정론적 고정 스텝이라 서버(Python) 재시뮬레이션 가능 |
 | 실 장력(§7.9) | `PlayerController.simulate` 말미 | `thread_tension` 상태 + 갱신 함수 추가, 임계 초과 시 페널티. `RunStats`에 필드 추가 |
 | 바늘 과열(§7.10) | 속도/원단 갱신부 | `needle_heat` 상태, 과열 시 `speed_index` 상한 제한 훅 |
