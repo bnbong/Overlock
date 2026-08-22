@@ -16,7 +16,6 @@ const FABRIC_DEEP: Color = Color(0.796, 0.726, 0.576)  # 원단 그늘/홈
 const INK: Color = Color(0.278, 0.203, 0.153)  # 짙은 갈색 글/선
 const INK_SOFT: Color = Color(0.435, 0.337, 0.267)  # 보조 글/선
 const THREAD_PURPLE: Color = Color(0.553, 0.384, 0.725)  # 실 보라(주 박음질)
-const THREAD_RED: Color = Color(0.831, 0.278, 0.263)  # 실 빨강 포인트
 const CREAM: Color = Color(0.968, 0.929, 0.847)  # 어두운 배경 위 밝은 글
 const KNOT: Color = Color(0.478, 0.333, 0.243)  # 단추/매듭 갈색
 const SHADOW: Color = Color(0.0, 0.0, 0.0, 0.26)

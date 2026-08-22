@@ -13,7 +13,6 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Track
@@ -106,7 +105,3 @@ def seed_tracks(session: Session, tracks_dir: Path, max_speed_px_s: float) -> in
         count += 1
     session.commit()
     return count
-
-
-def list_track_ids(session: Session) -> list[str]:
-    return list(session.scalars(select(Track.id)).all())

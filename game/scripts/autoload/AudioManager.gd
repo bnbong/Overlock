@@ -188,21 +188,6 @@ func _end_run_audio() -> void:
 		_tick_player.stop()
 
 
-# --- 볼륨 API (선형 0..1) ---
-
-
-func set_master_volume(linear: float) -> void:
-	_set_bus_volume(BUS_MASTER, linear)
-
-
-func set_bgm_volume(linear: float) -> void:
-	_set_bus_volume(BUS_BGM, linear)
-
-
-func set_sfx_volume(linear: float) -> void:
-	_set_bus_volume(BUS_SFX, linear)
-
-
 # --- 내부 구현 ---
 
 
@@ -221,18 +206,6 @@ func _add_child_bus(bus_name: String) -> void:
 	AudioServer.add_bus(idx)
 	AudioServer.set_bus_name(idx, bus_name)
 	AudioServer.set_bus_send(idx, BUS_MASTER)
-
-
-func _set_bus_volume(bus_name: String, linear: float) -> void:
-	var idx: int = AudioServer.get_bus_index(bus_name)
-	if idx == -1:
-		return
-	var clamped: float = clampf(linear, 0.0, 1.0)
-	if clamped <= 0.001:
-		AudioServer.set_bus_mute(idx, true)
-		return
-	AudioServer.set_bus_mute(idx, false)
-	AudioServer.set_bus_volume_db(idx, linear_to_db(clamped))
 
 
 func _load_streams() -> void:

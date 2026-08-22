@@ -34,3 +34,5 @@ env/
 *.swp
 *.swo
 *~
+
+_workspace/

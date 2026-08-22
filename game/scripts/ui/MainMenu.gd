@@ -37,9 +37,7 @@ func _apply_skin() -> void:
 		return
 	for b in [_start_button, _settings_button, _leaderboard_button, _quit_button]:
 		UiSkin.skin_button(b, "large")
-	UiSkin.set_icon(_start_button, "play", 28)
-	UiSkin.set_icon(_settings_button, "gear", 26)
-	UiSkin.set_icon(_leaderboard_button, "trophy", 26)
+
 
 
 func _on_start_pressed() -> void:

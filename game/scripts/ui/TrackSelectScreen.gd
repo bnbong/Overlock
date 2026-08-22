@@ -81,15 +81,10 @@ func _apply_skin() -> void:
 			_skin_button(b)
 		return
 	UiSkin.skin_button(_play_button, "large")
-	UiSkin.set_icon(_play_button, "play", 28)
 	_play_button.text = "Play"
 	UiSkin.skin_button(_back_button, "small")
 	for b in [_create_button, _import_button, _delete_button, _leaderboard_button]:
 		UiSkin.skin_button(b, "small", 15)
-	UiSkin.set_icon(_create_button, "needle", 22)
-	UiSkin.set_icon(_import_button, "download", 22)
-	UiSkin.set_icon(_delete_button, "trash", 22)
-	UiSkin.set_icon(_leaderboard_button, "trophy", 22)
 	# 트랙 변경 화살표: 정사각 단추 바탕을 제거하고 화살표 아이콘만 남긴다(투명 히트 영역
 	# 48x48 유지, hover/pressed는 아이콘 틴트). focus_mode는 씬에서 0(순환 제외)이라 그대로.
 	for b in [_prev_button, _next_button]:

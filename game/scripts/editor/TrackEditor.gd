@@ -28,7 +28,6 @@ const DIFFS: Array = [
 const FABRICS: Array = ["cotton", "denim", "silk", "knit", "wool"]
 
 const OK_COLOR: Color = Color(0.45, 0.92, 0.55, 1.0)
-const WARN_COLOR: Color = Color(0.98, 0.72, 0.35, 1.0)
 const FAIL_COLOR: Color = Color(0.92, 0.42, 0.42, 1.0)
 const NEUTRAL_COLOR: Color = Color(0.968, 0.929, 0.847, 1.0)
 
@@ -400,7 +399,7 @@ func _preset() -> Dictionary:
 
 func _refresh_widths() -> void:
 	var p: Dictionary = _preset()
-	_canvas.set_track(_centerline, p["perfect"], p["safe"], p["fail"])
+	_canvas.set_track(_centerline, p["safe"], p["fail"])
 
 
 func _current_length() -> float:

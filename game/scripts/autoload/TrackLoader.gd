@@ -31,14 +31,6 @@ func list_tracks() -> Array:
 	return _manifest
 
 
-## 트랙 id 목록만 순서대로 반환한다(편의 API).
-func track_ids() -> PackedStringArray:
-	var ids: PackedStringArray = PackedStringArray()
-	for entry in list_tracks():
-		ids.append(str(entry.get("track_id", "")))
-	return ids
-
-
 func _load_manifest() -> Array:
 	if not FileAccess.file_exists(MANIFEST_PATH):
 		push_warning("TrackLoader: 매니페스트 없음, 폴백 사용 " + MANIFEST_PATH)

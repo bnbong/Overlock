@@ -51,7 +51,6 @@ var _erasing: bool = false
 
 # TrackEditor가 밀어 넣는 표시 데이터.
 var _centerline: PackedVector2Array = PackedVector2Array()
-var _perfect: float = 18.0
 var _safe: float = 42.0
 var _fail: float = 90.0
 var _curv_viol: Array = []
@@ -71,9 +70,8 @@ func screen_to_world(s: Vector2) -> Vector2:
 
 
 ## 중심선/폭 갱신(스트로크·편집 후 TrackEditor가 호출).
-func set_track(centerline: PackedVector2Array, perfect: float, safe: float, fail: float) -> void:
+func set_track(centerline: PackedVector2Array, safe: float, fail: float) -> void:
 	_centerline = centerline
-	_perfect = perfect
 	_safe = safe
 	_fail = fail
 	queue_redraw()
@@ -93,25 +91,6 @@ func clear_markers() -> void:
 
 func set_mode(m: int) -> void:
 	mode = m
-
-
-## 중심선 전체가 화면에 들어오도록 뷰(zoom/pan)를 맞춘다(불러오기/재편집 시).
-func fit_to_content() -> void:
-	if _centerline.size() < 2:
-		_reset_view()
-		return
-	var mn: Vector2 = _centerline[0]
-	var mx: Vector2 = _centerline[0]
-	for p in _centerline:
-		mn = mn.min(p)
-		mx = mx.max(p)
-	var span: Vector2 = (mx - mn).max(Vector2(1.0, 1.0))
-	var pad: float = 120.0
-	var z: float = minf((size.x - pad) / span.x, (size.y - pad) / span.y)
-	_zoom = clampf(z, ZOOM_MIN, ZOOM_MAX)
-	_pan = size * 0.5 - (mn + mx) * 0.5 * _zoom
-	_view_inited = true
-	queue_redraw()
 
 
 func _reset_view() -> void:

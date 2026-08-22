@@ -49,10 +49,6 @@ def freq_from_semitone(semitones_from_a4: float) -> float:
     return 440.0 * (2.0 ** (semitones_from_a4 / 12.0))
 
 
-def gen_silence(duration: float, sample_rate: int = SAMPLE_RATE) -> list[float]:
-    return [0.0] * int(round(duration * sample_rate))
-
-
 def gen_tone(
     freq: float,
     duration: float,

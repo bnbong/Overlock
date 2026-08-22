@@ -50,6 +50,13 @@ const HEAD_PIVOT_FRAC: float = 0.60
 const FOCUS_THRESHOLD: float = 0.5
 ## 상태 전환 크로스페이드 지속(초).
 const FACE_FADE_DUR: float = 0.2
+## 땀방울 페이드 아웃 속도(1/s). 감속·위험 해소로 긴장이 내려가면 땀이 이 속도로
+## 부드럽게 옅어진다(급소멸 방지). 상승은 즉시(위험/속도 발한 즉응·회귀 방지)라 비대칭.
+const SWEAT_FALL_RATE: float = 1.8
+## 땀 알파 페이드 무릎값. _sweat이 이 값 이상이면 완전 불투명, 이하로 내려가며 옅어진다.
+## 0.25로 두면 2단(focus=0.25) 이상 정상 주행의 땀 표시는 불변이고, 최소 속도로 내려가는
+## 전이 구간에서만 알파가 자연스럽게 빠진다.
+const SWEAT_FADE_KNEE: float = 0.25
 
 ## 눈 앵커 중점(캔버스 텍셀 640,248)의 오버레이 텍스처 대비 비율. eyes_scale 피벗.
 ## 눈동자 좌 (454,248)·우 (826,248)의 중점 = (640,248), 텍스처 1280×720 기준.
@@ -110,6 +117,10 @@ const EYE_SWEAT_FRAC: Vector2 = Vector2(0.715, 0.35)
 @export var expr_sweat_frac: Vector2 = Vector2(0.69, 0.375)  # (레거시 절차 폴백 전용)
 
 var _tension: float = 0.0  # 0..1 (부상>고위험>속도 집중 통합 강도)
+## 땀방울 표시 강도(0..1). _tension을 목표로 상승은 즉시·하강만 부드럽게 추종해 감속/위험
+## 해소 시 땀이 급소멸하지 않고 짧게 페이드 아웃하게 한다. 눈·표정 상태(_state/_fade_*)는
+## 그대로 _tension이 구동하고, 이 값은 땀 스프라이트 표시에만 쓴다. _process에서 매 프레임 갱신.
+var _sweat: float = 0.0
 var _stunned: bool = false
 var _steer: float = 0.0
 var _steer_target: float = 0.0
@@ -165,6 +176,16 @@ func _process(delta: float) -> void:
 	# 상태 전환 크로스페이드 진행(스왑/오버레이 모드에서만 시각 효과).
 	if _fade_t < 1.0:
 		_fade_t = minf(_fade_t + delta / FACE_FADE_DUR, 1.0)
+		need_redraw = true
+	# 땀 강도 추종: 상승은 즉시(위험/속도 발한 즉응·회귀 방지), 하강만 부드럽게(페이드 아웃).
+	# 부상 중엔 목표 0(땀 억제)이며, 그리기 게이트가 _stunned를 별도로 막아 즉시 사라진다.
+	var sweat_target: float = 0.0 if _stunned else _tension
+	var prev_sweat: float = _sweat
+	if sweat_target >= _sweat:
+		_sweat = sweat_target
+	else:
+		_sweat = move_toward(_sweat, sweat_target, SWEAT_FALL_RATE * delta)
+	if absf(_sweat - prev_sweat) > 0.0005:
 		need_redraw = true
 	if need_redraw:
 		queue_redraw()
@@ -238,9 +259,9 @@ func _draw_overlay(rect: Rect2) -> void:
 			draw_texture_rect(to_ov, eye_rect, false, Color(1.0, 1.0, 1.0, _fade_t))
 	elif to_ov != null:
 		draw_texture_rect(to_ov, eye_rect, false)
-	# 집중 땀방울(부상 제외). 눈 오버레이 rect 기준이라 눈을 따라 이동한다. 긴장 강도에
-	# 비례해 커지고 고집중에선 둘째 방울 추가.
-	if not _stunned and _tension > 0.04:
+	# 집중 땀방울(부상 제외). 눈 오버레이 rect 기준이라 눈을 따라 이동한다. 땀 강도(_sweat)에
+	# 비례해 커지고 고집중에선 둘째 방울 추가. _sweat은 하강만 부드러워 감속 시 페이드 아웃한다.
+	if not _stunned and _sweat > 0.01:
 		_draw_sweat_sprite(eye_rect)
 
 
@@ -263,28 +284,31 @@ func _eye_overlay(state: int) -> Texture2D:
 ## 그린다. eye_rect가 eyes_offset_y·eyes_scale을 이미 반영하므로 눈을 옮기거나 키우면
 ## 땀도 자동으로 따라온다(구 독립 face_rect 앵커 폐기). 크기·둘째 방울 간격은 눈 스케일
 ## (eyes_scale)에 비례시켜 눈과 함께 축척된다. sweat_texture가 없으면 절차적 _draw_drop
-## 폴백. 긴장 강도로 크기 변조.
+## 폴백. 땀 강도(_sweat)로 크기·알파 변조(하강만 부드러워 감속 시 페이드 아웃).
 func _draw_sweat_sprite(eye_rect: Rect2) -> void:
 	var base: Vector2 = eye_rect.position + EYE_SWEAT_FRAC * eye_rect.size
 	# 방울 축척: 얼굴 배치 축척 × 눈 스케일(눈과 동일 체계라 눈이 작아지면 땀도 작아진다).
 	var spr: float = _ovl_scale * eyes_scale
+	# 소멸 직전 알파 페이드(급소멸 방지). SWEAT_FADE_KNEE 이상은 완전 불투명이라 정상
+	# 주행의 땀 표시는 불변이고, 그 아래로 내려가는 전이 구간에서만 자연스럽게 옅어진다.
+	var fade: float = smoothstep(0.0, SWEAT_FADE_KNEE, _sweat)
 	if sweat_texture == null:
-		_draw_drop(base, lerpf(4.0, 9.0, _tension) * spr)
-		if _tension > 0.55:
-			_draw_drop(base + Vector2(-16.0, 20.0) * spr, lerpf(2.0, 6.0, _tension) * spr)
+		_draw_drop(base, lerpf(4.0, 9.0, _sweat) * spr, fade)
+		if _sweat > 0.55:
+			_draw_drop(base + Vector2(-16.0, 20.0) * spr, lerpf(2.0, 6.0, _sweat) * spr, fade)
 		return
-	var scl: float = spr * sweat_scale * lerpf(0.85, 1.35, _tension)
+	var scl: float = spr * sweat_scale * lerpf(0.85, 1.35, _sweat)
 	var tsize: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl
 	# 물방울 위쪽 꼬리를 앵커에 맞추고 아래로 늘어지게(가로 중앙 정렬).
 	var pos: Vector2 = base - Vector2(tsize.x * 0.5, tsize.y * 0.15)
-	draw_texture_rect(sweat_texture, Rect2(pos, tsize), false)
-	if _tension > 0.55:
+	draw_texture_rect(sweat_texture, Rect2(pos, tsize), false, Color(1.0, 1.0, 1.0, fade))
+	if _sweat > 0.55:
 		var scl2: float = scl * 0.62
 		var tsize2: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl2
 		var pos2: Vector2 = (
 			base + Vector2(-16.0, 24.0) * spr - Vector2(tsize2.x * 0.5, tsize2.y * 0.15)
 		)
-		draw_texture_rect(sweat_texture, Rect2(pos2, tsize2), false)
+		draw_texture_rect(sweat_texture, Rect2(pos2, tsize2), false, Color(1.0, 1.0, 1.0, fade))
 
 
 ## 전체-얼굴 텍스처 스왑(레거시): 상태별 얼굴 텍스처를 크로스페이드로 그린다(눈 영역만
@@ -392,9 +416,11 @@ func _draw_sweat(rect: Rect2) -> void:
 		_draw_drop(base + Vector2(-16.0, 20.0) * _ovl_scale, lerpf(2.0, 6.0, _tension) * _ovl_scale)
 
 
-func _draw_drop(center: Vector2, r: float) -> void:
-	# 물방울: 아래 원 + 위 삼각 꼬리.
-	draw_circle(center, r, SWEAT_FILL)
+func _draw_drop(center: Vector2, r: float, alpha: float = 1.0) -> void:
+	# 물방울: 아래 원 + 위 삼각 꼬리. alpha로 페이드(레거시 절차 폴백은 기본 1.0라 불변).
+	var fill: Color = Color(SWEAT_FILL.r, SWEAT_FILL.g, SWEAT_FILL.b, SWEAT_FILL.a * alpha)
+	var hi: Color = Color(SWEAT_HI.r, SWEAT_HI.g, SWEAT_HI.b, SWEAT_HI.a * alpha)
+	draw_circle(center, r, fill)
 	var tail: PackedVector2Array = PackedVector2Array(
 		[
 			center + Vector2(-r * 0.75, -r * 0.2),
@@ -402,8 +428,8 @@ func _draw_drop(center: Vector2, r: float) -> void:
 			center + Vector2(0.0, -r * 2.1),
 		]
 	)
-	draw_colored_polygon(tail, SWEAT_FILL)
-	draw_circle(center + Vector2(-r * 0.35, -r * 0.35), r * 0.35, SWEAT_HI)
+	draw_colored_polygon(tail, fill)
+	draw_circle(center + Vector2(-r * 0.35, -r * 0.35), r * 0.35, hi)
 
 
 # --- 폴백(텍스처 미지정): 1차 도형 얼굴(원안 그대로 보존, face_rect 기준) ---

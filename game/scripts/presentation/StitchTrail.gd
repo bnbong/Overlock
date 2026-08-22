@@ -38,12 +38,6 @@ func get_full_points() -> PackedVector2Array:
 	return _full_points
 
 
-func clear_trail() -> void:
-	_points = PackedVector2Array()
-	_full_points = PackedVector2Array()
-	queue_redraw()
-
-
 func _draw() -> void:
 	var count: int = _points.size()
 	if count < 2:
