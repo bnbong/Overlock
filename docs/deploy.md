@@ -79,8 +79,8 @@ exit code 0 = 성공. `build/web/` 산출물:
 | `index.js` | 308 KB | 엔진 로더/글루 코드. |
 | `index.wasm` | **36 MB** | 엔진 바이너리. 첫 로드 대부분. |
 | `index.pck` | 3.9 MB | 게임 리소스 팩(씬·스크립트·오디오·트랙). |
-| `index.audio.worklet.js` / `index.audio.position.worklet.js` | 각 3~7 KB | 오디오 워클릿. |
-| `index.icon.png` / `index.apple-touch-icon.png` / `index.png` | 5~21 KB | 아이콘·스플래시. |
+| `index.audio.worklet.js` / `index.audio.position.worklet.js` | 각 3 ~ 7 KB | 오디오 워클릿. |
+| `index.icon.png` / `index.apple-touch-icon.png` / `index.png` | 5 ~ 21 KB | 아이콘·스플래시. |
 
 - 첫 방문 전송량 ~**40 MB**. gzip/brotli 압축 시 `.wasm`·`.pck` 전송량 대폭 감소(§4-2). 재방문은 브라우저 캐시로 가벼움.
 - `build/`는 루트 `.gitignore` 등록 — 커밋 안 됨.
@@ -205,7 +205,7 @@ OVERLOCK_CORS_ORIGINS=https://overlock.example.com
 
 ## 7. GitHub Actions CI/CD
 
-§1~6 수동 절차를 GitHub Actions로 자동화. 인프라 식별값(호스트·경로·포트·컨테이너명)은 전부 **저장소 Secrets** 주입 → 워크플로 파일에 미포함. Secrets만 채우면 동작. 워크플로 3개.
+§1 ~ 6 수동 절차를 GitHub Actions로 자동화. 인프라 식별값(호스트·경로·포트·컨테이너명)은 전부 **저장소 Secrets** 주입 → 워크플로 파일에 미포함. Secrets만 채우면 동작. 워크플로 3개.
 
 ### 7-1. 워크플로 개요
 
@@ -219,7 +219,7 @@ OVERLOCK_CORS_ORIGINS=https://overlock.example.com
   - `server`: Python 3.13, `pip install -r requirements.txt -r requirements-dev.txt` 후 `pytest`(작업 디렉토리 `server`).
   - `gdscript`: `gdtoolkit==4.*`로 `game/` 전체 `gdparse`(구문) + `gdlint`(스타일).
   - `tracks`: 표준 라이브러리로 전 트랙 JSON `json.load` + `game/tracks/official`↔`server/app/tracks` **바이트 동일성**(체크섬 계약, `server/app/seed.py`) + `index.json` 정합(등록 id↔파일 존재, 고아 파일 없음).
-- 배포 워크플로 2종: §1~6 수동 절차(웹 export·정적 업로드·nginx reload·컨테이너 교체)의 자동화. 이미지 출처만 로컬 빌드 → GHCR.
+- 배포 워크플로 2종: §1 ~ 6 수동 절차(웹 export·정적 업로드·nginx reload·컨테이너 교체)의 자동화. 이미지 출처만 로컬 빌드 → GHCR.
 
 ### 7-2. 필요한 Secrets
 
