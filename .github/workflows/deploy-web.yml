@@ -89,9 +89,13 @@ jobs:
           # 첫 빌드라 리소스 임포트를 먼저 한 번 수행(.godot 은 커밋 대상 아님).
           godot --headless --path game --import
           godot --headless --path game --export-release "Web" ../build/web/index.html
+          # OG 프리뷰·apple-touch-icon 등 정적 자산을 export 산출물과 함께 웹 루트로 복사.
+          # (game/web_static/*.png → build/web/*.png, head_include 메타의 절대경로와 일치)
+          cp game/web_static/*.png build/web/
           echo "=== build/web ==="
           ls -la build/web
           test -f build/web/index.wasm
+          test -f build/web/preview.png
 
       - name: Upload web build artifact (디버깅용, 짧은 보존)
         uses: actions/upload-artifact@v4
@@ -158,7 +162,9 @@ jobs:
               "https://overlock.bnbong.com/index.audio.position.worklet.js",
               "https://overlock.bnbong.com/index.icon.png",
               "https://overlock.bnbong.com/index.apple-touch-icon.png",
-              "https://overlock.bnbong.com/index.png"
+              "https://overlock.bnbong.com/index.png",
+              "https://overlock.bnbong.com/preview.png",
+              "https://overlock.bnbong.com/apple-touch-icon.png"
             ]}')"
           echo "$resp"
           echo "$resp" | grep -q '"success":true'

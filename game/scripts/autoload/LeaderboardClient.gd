@@ -282,6 +282,13 @@ func _set_health(ok: bool) -> void:
 func _request(method: int, url: String, body: String) -> Dictionary:
 	var http: HTTPRequest = HTTPRequest.new()
 	http.timeout = REQUEST_TIMEOUT
+	# 웹 export 회피책: 브라우저는 gzip/deflate 응답을 이미 해제해 평문 본문을 넘기면서도
+	# Content-Encoding 헤더는 그대로 노출한다. Godot HTTPRequest(accept_gzip 기본 true)는
+	# 그 헤더를 보고 본문을 다시 해제하려다 실패해(RESULT_BODY_DECOMPRESS_FAILED) 200 OK를
+	# 연결 실패로 처리한다. 웹에선 브라우저가 압축 해제를 전담하므로 재해제를 끈다
+	# (요청 압축 협상은 브라우저 몫이라 대역폭 손해 없음). 데스크톱 네이티브 경로는 불변.
+	if OS.has_feature("web"):
+		http.accept_gzip = false
 	add_child(http)
 	var headers: PackedStringArray = PackedStringArray(
 		["Content-Type: application/json", "Accept: application/json"]
