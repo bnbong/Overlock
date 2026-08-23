@@ -1,0 +1,86 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/NicknameDialog.gd" id="1_dlg"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="2_skin"]
+
+[node name="NicknameDialog" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_dlg")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.55)
+
+[node name="PanelBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -150.0
+offset_right = 240.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_skin")
+
+[node name="Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -118.0
+offset_right = 200.0
+offset_bottom = 118.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="TitleLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 26
+text = "닉네임 설정"
+horizontal_alignment = 1
+
+[node name="InfoLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 15
+text = "리더보드에 표시될 닉네임"
+horizontal_alignment = 1
+
+[node name="NickEdit" type="LineEdit" parent="Panel"]
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+placeholder_text = "1~16 chars"
+
+[node name="HintLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478, 0.333, 0.243, 1)
+theme_override_font_sizes/font_size = 12
+text = "1~16자 · 언제든 다시 바꿀 수 있어요"
+horizontal_alignment = 1
+
+[node name="ConfirmButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "확인"

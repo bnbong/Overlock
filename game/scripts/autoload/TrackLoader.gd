@@ -12,6 +12,8 @@ const MANIFEST_PATH: String = "res://tracks/official/index.json"
 const CUSTOM_DIR: String = "user://tracks/custom/"
 const CUSTOM_PREFIX: String = "custom_"
 const EDITOR_VERSION: String = "0.1.0"
+# 외부 트랙 불러오기 크기 상한(1MB). 대용량·악의적 입력 방어(§8). 데스크톱 파일·웹 업로드 공용.
+const IMPORT_MAX_BYTES: int = 1048576
 
 # 매니페스트 로드 실패 시에도 게임이 동작하도록 두는 최소 폴백(기본 트랙).
 const FALLBACK_TRACKS: Array = [
@@ -156,6 +158,123 @@ func find_by_checksum(checksum: String) -> String:
 		if str(hdr.get("checksum", "")) == checksum:
 			return str(hdr.get("track_id", ""))
 	return ""
+
+
+## 외부 트랙 JSON 텍스트를 커스텀 트랙으로 들여온다(§8). 데스크톱 파일 다이얼로그/드래그드롭과
+## 웹 업로드가 공유하는 단일 진입점. 흐름: 크기 상한 → JSON 파싱 → 폴리라인 베이크 →
+## TrackValidator 검증 → 폴리라인 정규화 + 로컬 새 custom id → user:// 저장(중복이면 스킵).
+## 반환 dict: {ok(bool), status(String), track_id(String), name(String), message(String)}.
+##   status: "ok" | "duplicate" | "too_large" | "parse_error" | "empty_path"
+##           | "validation_error" | "save_failed"  (실패 사유를 구분해 UI가 사유별 안내 가능).
+func import_custom_from_text(text: String, suggested_name: String = "") -> Dictionary:
+	var out: Dictionary = {
+		"ok": false, "status": "", "track_id": "", "name": "", "message": "",
+	}
+	# 1) 파싱·검증·정규화(실패 사유는 status로 구분). 저장은 아래에서 별도 처리한다.
+	var prepared: Dictionary = _prepare_import(text, suggested_name)
+	out["name"] = str(prepared.get("name", ""))
+	if not bool(prepared["ok"]):
+		out["status"] = str(prepared["status"])
+		out["message"] = str(prepared["message"])
+		return out
+	var track_dict: Dictionary = prepared["track_dict"]
+	# 2) 중복(checksum) 감지 — 동일 경로면 재저장 스킵하고 기존 트랙을 가리킨다.
+	var existing: String = find_by_checksum(compute_checksum(track_dict["path"]))
+	if not existing.is_empty():
+		out["ok"] = true
+		out["status"] = "duplicate"
+		out["track_id"] = existing
+		out["message"] = "이미 있는 트랙: " + str(out["name"])
+		return out
+	# 3) 저장(새 id 발급).
+	var id: String = save_custom_track(track_dict)
+	if id.is_empty():
+		out["status"] = "save_failed"
+		out["message"] = "저장 실패"
+		return out
+	out["ok"] = true
+	out["status"] = "ok"
+	out["track_id"] = id
+	out["message"] = "'%s' 트랙을 가져왔습니다" % str(out["name"])
+	return out
+
+
+## import_custom_from_text의 파싱·검증·정규화 단계(반환 수 분리 겸 가독성). 성공 시
+## {ok=true, name, track_dict}, 실패 시 {ok=false, status, message, name=""}를 반환한다.
+func _prepare_import(text: String, suggested_name: String) -> Dictionary:
+	# 크기 상한(UTF-8 바이트). 파싱 전에 방어한다.
+	if text.to_utf8_buffer().size() > IMPORT_MAX_BYTES:
+		var kb: int = IMPORT_MAX_BYTES / 1024
+		return {"ok": false, "status": "too_large", "name": "",
+			"message": "파일이 너무 큼 (%dKB 초과)" % kb}
+	var parsed: Variant = JSON.parse_string(text)
+	if not (parsed is Dictionary):
+		return {"ok": false, "status": "parse_error", "name": "", "message": "JSON 파싱 실패"}
+	var dict: Dictionary = parsed
+	# 폴리라인 베이크(공식 bezier 파일도 여기서 폴리라인으로 표본화된다).
+	var td: TrackData = TrackData.new()
+	td.bake(dict.get("path", []))
+	if td.points.size() < 2:
+		return {"ok": false, "status": "empty_path", "name": "", "message": "경로가 비어있음"}
+	# 검증(추적 불가 기하 거부). fail 폭은 파일 값 우선, 없으면 Normal 프리셋.
+	var width: Dictionary = dict.get("width", {})
+	var res: Dictionary = TrackValidator.new().validate(td.points, float(width.get("fail", 90.0)))
+	if not bool(res["ok"]):
+		var msgs: Array = res["messages"]
+		var first: String = str(msgs[0]) if not msgs.is_empty() else "기하 부적합"
+		return {"ok": false, "status": "validation_error", "name": "",
+			"message": "검증 실패: " + first}
+	# 폴리라인 정규화(커스텀은 polyline 세그먼트 1개로 저장) + 로컬 새 id는 저장 시 부여.
+	var pts: Array = []
+	for p in td.points:
+		pts.append([snappedf(p.x, 0.1), snappedf(p.y, 0.1)])
+	var name: String = str(dict.get("name", "")).strip_edges()
+	if name.is_empty():
+		name = suggested_name.strip_edges()
+	if name.is_empty():
+		name = "Imported"
+	var track_dict: Dictionary = {
+		"track_id": "",
+		"name": name,
+		"difficulty": str(dict.get("difficulty", "normal")),
+		"fabric": str(dict.get("fabric", "cotton")),
+		"width": width if not width.is_empty() else {"perfect": 18, "safe": 42, "fail": 90},
+		"path": [{"type": "polyline", "points": pts, "closed": false}],
+		"modifiers": [],
+	}
+	return {"ok": true, "name": name, "track_dict": track_dict}
+
+
+## 커스텀 트랙 파일의 원본 JSON 텍스트를 그대로 읽는다(내보내기용). 없으면 빈 문자열.
+func read_custom_track_text(track_id: String) -> String:
+	if not track_id.begins_with(CUSTOM_PREFIX):
+		return ""
+	var path: String = CUSTOM_DIR + track_id + ".json"
+	if not FileAccess.file_exists(path):
+		return ""
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var text: String = file.get_as_text()
+	file.close()
+	return text
+
+
+## 트랙명을 파일명에 안전한 형태로 정규화한다(내보내기 파일명 <name>_<id>.json 구성).
+## 파일시스템 금지문자·공백만 _로 치환하고 유니코드 글자(한글 등)는 보존한다. 최대 40자.
+static func sanitize_filename(name: String) -> String:
+	var trimmed: String = name.strip_edges()
+	var unsafe: String = "/\\:*?\"<>|"
+	var buf: String = ""
+	for ch in trimmed:
+		if ch == " " or unsafe.contains(ch) or ch.unicode_at(0) < 32:
+			buf += "_"
+		else:
+			buf += ch
+	buf = buf.strip_edges()
+	if buf.is_empty():
+		return "track"
+	return buf.substr(0, 40)
 
 
 func _ensure_custom_dir() -> void:

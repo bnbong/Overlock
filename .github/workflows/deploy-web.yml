@@ -1,0 +1,171 @@
+name: Deploy Web (vm1)
+
+# docs/deploy.md §2 / §7-2 / §7-3 의 수동 배포를 자동화한다.
+#   1) Godot 4.6.1 headless 로 "Web" 프리셋 export (build/web/)
+#   2) rsync --delete 로 vm1 nginx 정적 루트에 업로드 → nginx -t && reload
+#   3) Cloudflare 캐시 purge (overlock.bnbong.com 자산만)
+# Godot 설치는 공식 릴리스 바이너리 + web export 템플릿을 내려받고 actions/cache 로
+# 캐시한다(엔진 버전과 템플릿 버전이 정확히 4.6.1.stable 로 일치해야 export 가 되므로,
+# 버전 지연·부재 위험이 있는 서드파티 도커 이미지 대신 공식 릴리스를 고정한다).
+# 자세한 내용은 docs/deploy.md §8.
+
+on:
+  workflow_dispatch:
+  # --- 자동 트리거 예시 (기본 비활성) --------------------------------------
+  # game/ 이 바뀔 때마다 자동 배포하려면 아래 push 블록의 주석을 해제한다.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "game/**"
+  #     - ".github/workflows/deploy-web.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.6.1"
+  GODOT_RELEASE: "4.6.1-stable"
+
+jobs:
+  build-deploy:
+    name: Export web build & deploy to vm1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 헤드리스 export 에서 공유 라이브러리 누락으로 실패하면 아래 주석을 해제한다.
+      # - name: Install headless runtime libs
+      #   run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
+
+      - name: Cache Godot editor binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-bin
+          key: godot-bin-${{ env.GODOT_RELEASE }}-linux-x86_64
+
+      - name: Download Godot ${{ env.GODOT_RELEASE }} (headless linux)
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          mkdir -p ~/godot-bin
+          url="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          echo "Downloading $url"
+          curl -fL -o /tmp/godot.zip "$url"
+          unzip -o /tmp/godot.zip -d ~/godot-bin
+          mv "$HOME/godot-bin/Godot_v${GODOT_RELEASE}_linux.x86_64" "$HOME/godot-bin/godot"
+          chmod +x "$HOME/godot-bin/godot"
+
+      - name: Cache Godot export templates (~1GB tpz, web 만 추출)
+        id: cache-templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-templates-${{ env.GODOT_VERSION }}.stable-web
+
+      - name: Install web export templates
+        if: steps.cache-templates.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          url="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          echo "Downloading $url"
+          curl -fL -o /tmp/templates.tpz "$url"
+          # .tpz 는 zip. web_*.zip + version.txt 만 dest 직하로 추출(-j 로 경로 junk).
+          unzip -o -j /tmp/templates.tpz "templates/web_*.zip" "templates/version.txt" -d "$dest"
+          echo "installed template version: $(cat "$dest/version.txt")"
+
+      - name: Export "Web" preset (§2 와 동일한 명령)
+        run: |
+          set -eu
+          export PATH="$HOME/godot-bin:$PATH"
+          mkdir -p build/web
+          # 첫 빌드라 리소스 임포트를 먼저 한 번 수행(.godot 은 커밋 대상 아님).
+          godot --headless --path game --import
+          godot --headless --path game --export-release "Web" ../build/web/index.html
+          echo "=== build/web ==="
+          ls -la build/web
+          test -f build/web/index.wasm
+
+      - name: Upload web build artifact (디버깅용, 짧은 보존)
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlock-web-${{ github.sha }}
+          path: build/web/
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Prepare SSH key (vm1)
+        env:
+          VM1_SSH_KEY: ${{ secrets.VM1_SSH_KEY }}
+          VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VM1_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM1_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload build to vm1 (rsync --delete, §7-2 와 동일)
+        env:
+          VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
+          VM1_SSH_USER: ${{ secrets.VM1_SSH_USER }}
+          VM1_NGINX_HTML_PATH: ${{ secrets.VM1_NGINX_HTML_PATH }}
+        run: |
+          set -eu
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            build/web/ \
+            "${VM1_SSH_USER}@${VM1_SSH_HOST}:${VM1_NGINX_HTML_PATH}/overlock/"
+
+      - name: Reload nginx on vm1 (nginx -t && reload)
+        env:
+          VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
+          VM1_SSH_USER: ${{ secrets.VM1_SSH_USER }}
+          VM1_NGINX_CONTAINER: ${{ secrets.VM1_NGINX_CONTAINER }}
+        run: |
+          set -eu
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "${VM1_SSH_USER}@${VM1_SSH_HOST}" \
+            "docker exec ${VM1_NGINX_CONTAINER} nginx -t && docker exec ${VM1_NGINX_CONTAINER} nginx -s reload"
+
+      - name: Purge Cloudflare cache (overlock.bnbong.com 자산만)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          set -eu
+          # 파일명이 고정인 Godot 산출물만 콕 집어 무효화한다(같은 zone 의 다른 서브도메인
+          # 캐시는 건드리지 않음). 엔터프라이즈 플랜이면 아래 "files" 대신
+          # {"prefixes":["overlock.bnbong.com/"]} 로 prefix purge 할 수 있다.
+          resp="$(curl -fsS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE}/purge_cache" \
+            -H "Authorization: Bearer ${CF_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"files":[
+              "https://overlock.bnbong.com/",
+              "https://overlock.bnbong.com/index.html",
+              "https://overlock.bnbong.com/index.js",
+              "https://overlock.bnbong.com/index.wasm",
+              "https://overlock.bnbong.com/index.pck",
+              "https://overlock.bnbong.com/index.audio.worklet.js",
+              "https://overlock.bnbong.com/index.audio.position.worklet.js",
+              "https://overlock.bnbong.com/index.icon.png",
+              "https://overlock.bnbong.com/index.apple-touch-icon.png",
+              "https://overlock.bnbong.com/index.png"
+            ]}')"
+          echo "$resp"
+          echo "$resp" | grep -q '"success":true'
+
+      - name: Verify public web root (§7-4, soft)
+        run: |
+          set -eu
+          code="$(curl -fsS -o /dev/null -w '%{http_code}' https://overlock.bnbong.com/ || echo 000)"
+          echo "GET https://overlock.bnbong.com/ -> HTTP $code"
+          [ "$code" = "200" ] || echo "WARN: 예상 200 아님(CF 전파 지연/서버 미배포일 수 있음)"

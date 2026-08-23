@@ -1,0 +1,168 @@
+name: CI
+
+# push(main)·PR 마다 서버 테스트 / GDScript 정적검사 / 공식 트랙 정합성을 병렬로 검증한다.
+# 배포는 하지 않는다(배포는 deploy-server.yml / deploy-web.yml). 자세한 내용은 docs/deploy.md §8.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            server/requirements.txt
+            server/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        working-directory: server
+        run: pytest
+
+  gdscript:
+    name: gdscript (gdparse + gdlint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          # gdtoolkit 은 잠금파일이 없어 워크플로 파일 해시로 pip 캐시를 키잉한다.
+          cache-dependency-path: .github/workflows/ci.yml
+
+      - name: Install gdtoolkit
+        run: pip install "gdtoolkit==4.*"
+
+      - name: gdparse (전 .gd 구문 파싱)
+        run: |
+          find game -name '*.gd' -not -path '*/.godot/*' -print0 \
+            | xargs -0 -r gdparse
+
+      - name: gdlint (game/ 린트)
+        run: gdlint game
+
+  tracks:
+    name: tracks (JSON 정합성)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate official tracks
+        # 표준 라이브러리만 사용. server/app/tracks 는 game/tracks/official 의 바이트
+        # 복사본이어야 하며(체크섬 계약, server/app/seed.py 참조), index.json 이 정합해야 한다.
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          GAME_DIR = Path("game/tracks/official")
+          SERVER_DIR = Path("server/app/tracks")
+          errors = []
+
+          for d in (GAME_DIR, SERVER_DIR):
+              if not d.is_dir():
+                  errors.append(f"트랙 디렉토리 없음: {d}")
+          if errors:
+              for e in errors:
+                  print("  -", e)
+              sys.exit(1)
+
+          def json_names(d):
+              return sorted(p.name for p in d.glob("*.json"))
+
+          game_files = json_names(GAME_DIR)
+          server_files = json_names(SERVER_DIR)
+
+          # (1) 파일 집합 동일성
+          if game_files != server_files:
+              only_g = sorted(set(game_files) - set(server_files))
+              only_s = sorted(set(server_files) - set(game_files))
+              errors.append(f"트랙 파일 집합 불일치: game-only={only_g} server-only={only_s}")
+
+          common = sorted(set(game_files) & set(server_files))
+
+          # (2) 전 트랙 json.load + game<->server 바이트 동일성
+          for name in common:
+              gp, sp = GAME_DIR / name, SERVER_DIR / name
+              for p in (gp, sp):
+                  try:
+                      json.loads(p.read_text(encoding="utf-8"))
+                  except (json.JSONDecodeError, OSError) as exc:
+                      errors.append(f"JSON 파싱 실패: {p}: {exc}")
+              if gp.read_bytes() != sp.read_bytes():
+                  errors.append(f"바이트 불일치 (game vs server): {name}")
+
+          # (3) index.json 정합
+          indexed = []
+          idx_path = SERVER_DIR / "index.json"
+          if not idx_path.is_file():
+              errors.append("index.json 없음: server/app/tracks/index.json")
+          else:
+              idx = json.loads(idx_path.read_text(encoding="utf-8"))
+              for entry in idx.get("tracks", []):
+                  tid = entry.get("track_id")
+                  indexed.append(tid)
+                  for field in ("track_id", "name", "difficulty"):
+                      if not entry.get(field):
+                          errors.append(f"index 항목 필드 누락 '{field}': {entry}")
+                  tf = SERVER_DIR / f"{tid}.json"
+                  if not tf.is_file():
+                      errors.append(f"index 가 가리키는 트랙 파일 없음: {tid}.json")
+                      continue
+                  track = json.loads(tf.read_text(encoding="utf-8"))
+                  if track.get("track_id") != tid:
+                      errors.append(f"track_id 불일치: {tid}.json 내부={track.get('track_id')!r}")
+                  if track.get("name") != entry.get("name"):
+                      errors.append(f"name 불일치 ({tid}): file={track.get('name')!r} index={entry.get('name')!r}")
+                  if track.get("difficulty") != entry.get("difficulty"):
+                      errors.append(f"difficulty 불일치 ({tid}): file={track.get('difficulty')!r} index={entry.get('difficulty')!r}")
+              if len(indexed) != len(set(indexed)):
+                  errors.append(f"index.json 에 중복 track_id: {indexed}")
+              file_ids = sorted(n[:-5] for n in server_files if n != "index.json")
+              orphans = sorted(set(file_ids) - set(indexed))
+              if orphans:
+                  errors.append(f"index.json 에 나열되지 않은 트랙 파일: {orphans}")
+
+          if errors:
+              print("트랙 검증 실패:")
+              for e in errors:
+                  print("  -", e)
+              sys.exit(1)
+
+          tracks = len([n for n in common if n != "index.json"])
+          print(f"트랙 검증 통과: 트랙 {tracks}개 + index, index 등록 {len(indexed)}개, "
+                f"game<->server 바이트 동일.")
+          PY

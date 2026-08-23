@@ -19,6 +19,7 @@ const SELF_SCENE: String = "res://scenes/TrackSelect.tscn"
 
 # 리더보드 복귀 씬을 진입 직전 설정한다(맵 선택에서 열면 뒤로가기는 이 화면으로).
 const LeaderboardScreenScript = preload("res://scripts/ui/LeaderboardScreen.gd")
+const ToastScene = preload("res://scenes/Toast.tscn")
 
 # --- 미리보기 패널 스타일(재봉 스킨 톤). 실루엣(밝은 라벤더)의 가독성을 지키려면
 # 배경은 계속 어두워야 하므로 베이지 패치 대신 어두운 잉크 패널 + 박음질 테두리를 쓴다.
@@ -29,6 +30,12 @@ const _PREVIEW_STITCH_INSET: float = 6.0
 var _tracks: Array = []
 var _index: int = 0
 var _confirm: ConfirmationDialog
+var _toast: Toast
+# 웹 전용 파일 브리지(업로드/다운로드). 데스크톱에서는 null(FileDialog·드래그드롭을 씀).
+var _web_bridge: WebFileBridge
+# 데스크톱 내보내기 다이얼로그가 열려 있는 동안 캐러셀이 움직여도 대상이 흔들리지 않게 캡처.
+var _export_id: String = ""
+var _export_disp: String = ""
 
 @onready var _preview: Control = $Panel/Preview
 @onready var _track_label: Label = $Panel/Selector/TrackLabel
@@ -39,10 +46,12 @@ var _confirm: ConfirmationDialog
 @onready var _play_button: Button = $Panel/PlayButton
 @onready var _create_button: Button = $Panel/ActionRow/CreateButton
 @onready var _import_button: Button = $Panel/ActionRow/ImportButton
+@onready var _export_button: Button = $Panel/ActionRow/ExportButton
 @onready var _delete_button: Button = $Panel/ActionRow/DeleteButton
 @onready var _leaderboard_button: Button = $Panel/LeaderboardButton
 @onready var _back_button: Button = $Panel/BackButton
 @onready var _import_dialog: FileDialog = $ImportDialog
+@onready var _export_dialog: FileDialog = $ExportDialog
 
 
 func _ready() -> void:
@@ -57,13 +66,18 @@ func _ready() -> void:
 	_delete_button.pressed.connect(_on_delete_pressed)
 	_leaderboard_button.pressed.connect(_on_leaderboard_pressed)
 	_back_button.pressed.connect(_on_back_pressed)
-	# 웹 가드: 로컬 파일 접근이 없어 외부 JSON 불러오기·드래그드롭을 안내로 대체한다
-	# (트랙 선택·플레이·에디터·user:// 기록 저장은 웹에서도 그대로 동작).
+	_toast = ToastScene.instantiate()
+	add_child(_toast)
+	# 불러오기/내보내기: 웹은 JavaScriptBridge 업로드·Blob 다운로드, 데스크톱은 FileDialog +
+	# 드래그드롭. 불러오기는 두 경로 모두 TrackLoader.import_custom_from_text 공용 파이프라인으로
+	# 수렴하고, 내보내기는 커스텀 트랙 JSON 원본을 그대로 다운로드/저장한다(§8, Phase 2).
+	_import_button.pressed.connect(_on_import_pressed)
+	_export_button.pressed.connect(_on_export_pressed)
 	if OS.has_feature("web"):
-		_import_button.pressed.connect(_on_web_import_blocked)
+		_web_bridge = WebFileBridge.new()
 	else:
-		_import_button.pressed.connect(func() -> void: _import_dialog.popup_centered())
-		_import_dialog.file_selected.connect(_on_import_selected)
+		_import_dialog.file_selected.connect(_on_import_file_selected)
+		_export_dialog.file_selected.connect(_on_export_file_selected)
 		get_window().files_dropped.connect(_on_files_dropped)
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(_do_delete)
@@ -77,13 +91,13 @@ func _ready() -> void:
 ## 미리보기는 절차적 유지(트랙 실루엣 가독성 — 다크 패널 장식이 작은 미리보기를 가림).
 func _apply_skin() -> void:
 	if not UiSkin.has_skin():
-		for b in [_create_button, _import_button, _delete_button, _leaderboard_button]:
+		for b in [_create_button, _import_button, _export_button, _delete_button, _leaderboard_button]:
 			_skin_button(b)
 		return
 	UiSkin.skin_button(_play_button, "large")
 	_play_button.text = "Play"
 	UiSkin.skin_button(_back_button, "small")
-	for b in [_create_button, _import_button, _delete_button, _leaderboard_button]:
+	for b in [_create_button, _import_button, _export_button, _delete_button, _leaderboard_button]:
 		UiSkin.skin_button(b, "small", 15)
 	# 트랙 변경 화살표: 정사각 단추 바탕을 제거하고 화살표 아이콘만 남긴다(투명 히트 영역
 	# 48x48 유지, hover/pressed는 아이콘 틴트). focus_mode는 씬에서 0(순환 제외)이라 그대로.
@@ -207,6 +221,8 @@ func _refresh() -> void:
 		% [badge, diff.to_upper(), length_px, _index + 1, _tracks.size()]
 	)
 	_delete_button.visible = is_custom
+	# 내보내기는 커스텀 트랙만(공식은 저장소에 있으니 공유 불필요 — §8).
+	_export_button.visible = is_custom
 	# 리더보드는 공식 트랙 + 온라인 활성일 때만(커스텀 트랙은 서버 제출/조회 대상 아님).
 	_leaderboard_button.visible = not is_custom and LeaderboardClient.is_online_enabled()
 	_update_best(id, diff)
@@ -259,11 +275,6 @@ func _remember_current() -> void:
 	LeaderboardClient.remember_last_track(_current_id())
 
 
-## 웹(HTML5)에서 외부 파일 불러오기 요청을 안내로 대체한다(Phase 2 예정).
-func _on_web_import_blocked() -> void:
-	_info_label.text = "웹에서는 파일 불러오기 미지원 (Phase 2)"
-
-
 ## 삭제 확인 → 파일 삭제 + 로컬 기록 정리 + 목록 재구성(§7.4).
 func _on_delete_pressed() -> void:
 	if _tracks.is_empty():
@@ -289,77 +300,126 @@ func _do_delete() -> void:
 	_refresh()
 
 
-## 외부 JSON 불러오기(데스크톱 다이얼로그). 파싱 → 폴리라인 베이크 → 검증 →
-## 로컬 새 id로 저장(§8). 중복(checksum)이면 스킵. 검증 실패면 거부 + 사유 표시.
-func _on_import_selected(path: String) -> void:
-	var msg: String = _import_track(path)
-	if not msg.is_empty():
-		_info_label.text = msg
+# --- 불러오기 (import) ---
 
 
+## "불러오기" 버튼. 웹은 브라우저 파일 선택, 데스크톱은 FileDialog를 연다.
+func _on_import_pressed() -> void:
+	if _web_bridge != null:
+		_web_bridge.pick_file(_on_web_file_loaded)
+	else:
+		_import_dialog.popup_centered()
+
+
+## 웹 업로드 콜백. status로 사유를 구분하고, 정상이면 공용 파이프라인으로 넘긴다.
+func _on_web_file_loaded(status: String, text: String, filename: String) -> void:
+	match status:
+		"cancel":
+			return
+		"too_large":
+			_toast.push("파일이 너무 큼 (1MB 초과)")
+		"error":
+			_toast.push("파일을 읽지 못했습니다")
+		_:
+			_run_import(text, _basename_no_ext(filename))
+
+
+## 데스크톱 FileDialog 선택 → 파일 텍스트 → 공용 파이프라인.
+func _on_import_file_selected(path: String) -> void:
+	var loaded: Dictionary = _read_file_text(path)
+	if not str(loaded.get("error", "")).is_empty():
+		_toast.push(str(loaded["error"]))
+		return
+	_run_import(str(loaded["text"]), _basename_no_ext(path))
+
+
+## 데스크톱 드래그드롭 → 첫 .json 파일을 공용 파이프라인으로.
 func _on_files_dropped(files: PackedStringArray) -> void:
 	for f in files:
 		if f.ends_with(".json"):
-			var msg: String = _import_track(f)
-			if not msg.is_empty():
-				_info_label.text = msg
+			var loaded: Dictionary = _read_file_text(f)
+			if not str(loaded.get("error", "")).is_empty():
+				_toast.push(str(loaded["error"]))
+				return
+			_run_import(str(loaded["text"]), _basename_no_ext(f))
 			return
 
 
-## 불러오기 실행. 실패 시 사유 문자열, 성공 시 빈 문자열 반환.
-func _import_track(path: String) -> String:
-	var loaded: Dictionary = _read_track_file(path)
-	if not str(loaded.get("error", "")).is_empty():
-		return str(loaded["error"])
-	var td: TrackData = loaded["td"]
-	var dict: Dictionary = loaded["dict"]
-	var width: Dictionary = dict.get("width", {})
-	var res: Dictionary = TrackValidator.new().validate(td.points, float(width.get("fail", 90.0)))
-	if not bool(res["ok"]):
-		return "검증 실패: " + "  ·  ".join(res["messages"])
-	# 폴리라인으로 정규화(공식=bezier 파일도 커스텀은 polyline로 저장) + 로컬 새 id.
-	var pts: Array = []
-	for p in td.points:
-		pts.append([snappedf(p.x, 0.1), snappedf(p.y, 0.1)])
-	var out: Dictionary = {
-		"track_id": "",
-		"name": str(dict.get("name", "Imported")),
-		"difficulty": str(dict.get("difficulty", "normal")),
-		"fabric": str(dict.get("fabric", "cotton")),
-		"width": width if not width.is_empty() else {"perfect": 18, "safe": 42, "fail": 90},
-		"path": [{"type": "polyline", "points": pts, "closed": false}],
-		"modifiers": [],
-	}
-	var existing: String = TrackLoader.find_by_checksum(TrackLoader.compute_checksum(out["path"]))
-	if not existing.is_empty():
+## 공용 임포트 실행. TrackLoader.import_custom_from_text로 파싱·검증·저장하고, 결과를
+## 토스트로 알린 뒤 성공/중복이면 목록을 갱신해 해당 트랙을 선택 상태로 만든다.
+func _run_import(text: String, suggested_name: String) -> void:
+	var res: Dictionary = TrackLoader.import_custom_from_text(text, suggested_name)
+	_toast.push(str(res["message"]))
+	if bool(res["ok"]):
 		_rebuild_tracks()
-		_select_track(existing)
-		return "이미 있음: " + str(dict.get("name", ""))
-	var id: String = TrackLoader.save_custom_track(out)
-	if id.is_empty():
-		return "저장 실패"
-	_rebuild_tracks()
-	_select_track(id)
-	return ""
+		_select_track(str(res["track_id"]))
 
 
-## 파일 읽기 + JSON 파싱 + 폴리라인 베이크. {error, td, dict} 반환.
-func _read_track_file(path: String) -> Dictionary:
+## 파일 텍스트 읽기. {error, text} 반환(성공 시 error="").
+func _read_file_text(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {"error": "파일 없음"}
 	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return {"error": "파일 열기 실패"}
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	var text: String = file.get_as_text()
 	file.close()
-	if not (parsed is Dictionary):
-		return {"error": "JSON 파싱 실패"}
-	var dict: Dictionary = parsed
-	var td: TrackData = TrackData.new()
-	td.bake(dict.get("path", []))
-	if td.points.size() < 2:
-		return {"error": "불러오기 실패: 경로 없음"}
-	return {"error": "", "td": td, "dict": dict}
+	return {"error": "", "text": text}
+
+
+# --- 내보내기 (export) ---
+
+
+## "내보내기" 버튼(커스텀 트랙 전용). 웹은 Blob 다운로드, 데스크톱은 저장 다이얼로그를 연다.
+func _on_export_pressed() -> void:
+	var entry: Dictionary = _tracks[_index]
+	if not bool(entry.get("is_custom", false)):
+		return
+	var id: String = _current_id()
+	var text: String = TrackLoader.read_custom_track_text(id)
+	if text.is_empty():
+		_toast.push("내보낼 트랙을 읽지 못했습니다")
+		return
+	var disp: String = _display_name(entry)
+	var fname: String = "%s_%s.json" % [TrackLoader.sanitize_filename(disp), id]
+	if _web_bridge != null:
+		_web_bridge.download_text(fname, text)
+		_toast.push("'%s' 트랙을 내보냈습니다" % disp)
+		return
+	# 데스크톱: 대상 트랙을 캡처(다이얼로그가 열린 사이 캐러셀 이동에 흔들리지 않게).
+	_export_id = id
+	_export_disp = disp
+	_export_dialog.current_file = fname
+	_export_dialog.popup_centered()
+
+
+## 데스크톱 저장 다이얼로그 확정 → 커스텀 트랙 JSON 원본을 선택 경로에 그대로 복사.
+func _on_export_file_selected(path: String) -> void:
+	var text: String = TrackLoader.read_custom_track_text(_export_id)
+	if text.is_empty():
+		_toast.push("내보낼 트랙을 읽지 못했습니다")
+		return
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		_toast.push("내보내기 실패 (파일 쓰기 오류)")
+		return
+	file.store_string(text)
+	file.close()
+	_toast.push("'%s' 트랙을 내보냈습니다" % _export_disp)
+
+
+## 목록 항목의 표시 이름(트랙 파일의 name을 우선, 없으면 목록 캐시의 name).
+func _display_name(entry: Dictionary) -> String:
+	var id: String = str(entry.get("track_id", ""))
+	var track: TrackData = TrackLoader.load_track(id)
+	if track != null and track.track_name != "":
+		return track.track_name
+	return str(entry.get("name", id))
+
+
+## 경로/파일명에서 확장자를 뗀 기본 이름(웹 업로드·데스크톱 공용). 예: ".../My Heart.json" → "My Heart".
+static func _basename_no_ext(path: String) -> String:
+	return path.get_file().get_basename()
 
 
 func _select_track(track_id: String) -> void:

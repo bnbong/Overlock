@@ -43,6 +43,8 @@ var _dirty: bool = false
 var _track_id: String = ""
 var _saved_id: String = ""
 var _confirm: ConfirmationDialog
+# 웹 전용 파일 브리지(업로드). 데스크톱에서는 null(FileDialog·드래그드롭을 씀).
+var _web_bridge: WebFileBridge
 
 @onready var _canvas: DrawCanvas = $Canvas
 @onready var _mode_draw: Button = $Toolbar/ModeDraw
@@ -101,12 +103,12 @@ func _wire() -> void:
 	_save_button.pressed.connect(_save)
 	_testplay_button.pressed.connect(_test_play)
 	_back_button.pressed.connect(_on_back)
-	# 웹 가드: 로컬 파일 접근이 없어 외부 JSON 불러오기·드래그드롭을 안내로 대체한다
-	# (그리기·검증·자동수정·user:// 저장·테스트플레이는 웹에서도 그대로 동작).
+	# 불러오기: 웹은 JavaScriptBridge 업로드, 데스크톱은 FileDialog + 드래그드롭. 두 경로 모두
+	# _import_from_text 공용 파싱으로 수렴해 캔버스에 중심선을 올린다(그리기·검증·저장은 웹에서도 동작).
+	_import_button.pressed.connect(_on_import_pressed)
 	if OS.has_feature("web"):
-		_import_button.pressed.connect(_on_web_import_blocked)
+		_web_bridge = WebFileBridge.new()
 	else:
-		_import_button.pressed.connect(func() -> void: _import_dialog.popup_centered())
 		_import_dialog.file_selected.connect(_import_file)
 		get_window().files_dropped.connect(_on_files_dropped)
 
@@ -331,11 +333,28 @@ func _track_name() -> String:
 # --- 불러오기 ---
 
 
-## 웹(HTML5)에서 외부 파일 불러오기 요청을 안내로 대체한다(Phase 2 예정).
-func _on_web_import_blocked() -> void:
-	_set_status("웹에서는 트랙 파일 불러오기 미지원 (Phase 2)", NEUTRAL_COLOR)
+## "불러오기" 버튼. 웹은 브라우저 파일 선택, 데스크톱은 FileDialog를 연다.
+func _on_import_pressed() -> void:
+	if _web_bridge != null:
+		_web_bridge.pick_file(_on_web_file_loaded)
+	else:
+		_import_dialog.popup_centered()
 
 
+## 웹 업로드 콜백. status로 사유를 구분하고, 정상이면 텍스트를 캔버스에 올린다.
+func _on_web_file_loaded(status: String, text: String, _filename: String) -> void:
+	match status:
+		"cancel":
+			return
+		"too_large":
+			_set_status("파일이 너무 큼 (1MB 초과)", FAIL_COLOR)
+		"error":
+			_set_status("파일을 읽지 못했습니다", FAIL_COLOR)
+		_:
+			_import_from_text(text)
+
+
+## 데스크톱 FileDialog/드래그드롭 → 파일 텍스트를 읽어 공용 파싱으로 넘긴다.
 func _import_file(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		_set_status("파일 없음: " + path, FAIL_COLOR)
@@ -344,8 +363,18 @@ func _import_file(path: String) -> void:
 	if file == null:
 		_set_status("파일 열기 실패", FAIL_COLOR)
 		return
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	var text: String = file.get_as_text()
 	file.close()
+	_import_from_text(text)
+
+
+## 공용 트랙 텍스트 파싱 → 폴리라인 베이크 → 에디터 캔버스에 중심선으로 올린다.
+## TrackSelect의 즉시 저장과 달리 재편집 가능한 상태로 불러온다(로컬 새 id는 저장 시 부여, §8).
+func _import_from_text(text: String) -> void:
+	if text.to_utf8_buffer().size() > TrackLoader.IMPORT_MAX_BYTES:
+		_set_status("파일이 너무 큼 (1MB 초과)", FAIL_COLOR)
+		return
+	var parsed: Variant = JSON.parse_string(text)
 	if not (parsed is Dictionary):
 		_set_status("JSON 파싱 실패", FAIL_COLOR)
 		return

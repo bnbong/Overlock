@@ -97,7 +97,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="Scroll" type="ScrollContainer" parent="Panel"]
-custom_minimum_size = Vector2(0, 360)
+custom_minimum_size = Vector2(0, 320)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -108,6 +108,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 4
+
+[node name="MyRecordPanel" type="PanelContainer" parent="Panel"]
+layout_mode = 2
+
+[node name="MyRecordLabel" type="Label" parent="Panel/MyRecordPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 15
+text = "내 기록:  아직 기록 없음"
+horizontal_alignment = 1
 
 [node name="BackButton" type="Button" parent="Panel"]
 layout_mode = 2

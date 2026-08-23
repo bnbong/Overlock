@@ -2,6 +2,9 @@ extends Control
 ## 결과 화면. GameState.last_result 렌더 + 신기록 라벨 + Retry/Menu (기획서 §8.4).
 
 const TRACK_NAMES: Dictionary = {"cotton_01": "Cotton Warm-up"}
+const ToastScene = preload("res://scenes/Toast.tscn")
+
+var _toast: Toast
 
 @onready var _title_label: Label = $Panel/TitleLabel
 @onready var _grade_label: Label = $Panel/GradeLabel
@@ -24,6 +27,8 @@ func _ready() -> void:
 		_new_record_label.visible = true
 	else:
 		_new_record_label.visible = false
+	_toast = ToastScene.instantiate()
+	add_child(_toast)
 	_setup_submit(result)
 	_apply_skin()
 	_retry_button.pressed.connect(_on_retry_pressed)
@@ -76,14 +81,20 @@ func _build_text(result: Dictionary) -> String:
 # --- 리더보드 제출(§8.4 Submit to Leaderboard) ---
 
 
-## 제출 버튼 노출 판정: 공식 트랙 + 서버 URL 설정됨 + 닉네임 있음일 때만 표시한다.
-## 커스텀 트랙(is_custom)은 서버 제출 대상이 아니므로 버튼 자체를 숨긴다.
+## 제출 버튼 노출 판정: 공식 트랙 + 온라인 활성 + 닉네임 있음 + 서버 연결됨일 때만 표시한다.
+## 커스텀 트랙(is_custom)은 서버 제출 대상이 아니므로 버튼 자체를 숨긴다. 서버 연결이 확인됐고
+## 오프라인이면 숨긴다(health_known 전이면 낙관적 허용 — 제출 실패는 조용히 처리·토스트 안내).
+## 닉네임은 최초 실행 모달로 항상 존재하므로 사실상 공식+온라인 조건이 관건이다.
 func _setup_submit(result: Dictionary) -> void:
 	_submit_status.visible = false
 	var track_id: String = str(result.get("track_id", ""))
 	var is_custom: bool = track_id.begins_with(LeaderboardClient.CUSTOM_PREFIX)
+	var offline: bool = LeaderboardClient.health_known and not LeaderboardClient.server_reachable
 	var can_submit: bool = (
-		not is_custom and LeaderboardClient.is_online_enabled() and LeaderboardClient.has_nickname()
+		not is_custom
+		and LeaderboardClient.is_online_enabled()
+		and LeaderboardClient.has_nickname()
+		and not offline
 	)
 	_submit_button.visible = can_submit
 	if can_submit:
@@ -110,9 +121,11 @@ func _on_submit_completed(success: bool, rank: int, status: String, message: Str
 			_submit_status.text += "  (" + status + ")"
 		_submit_button.text = "제출 완료"
 		# 성공 시 버튼은 비활성 유지(중복 제출 방지).
+		_toast.push("리더보드 제출 완료" + ("  ·  Rank #%d" % rank if rank > 0 else ""))
 	else:
 		_submit_status.text = message
 		_submit_button.disabled = false  # 실패(오프라인·거부)는 재시도 허용.
+		_toast.push("제출 실패: " + message)
 
 
 func _on_retry_pressed() -> void:

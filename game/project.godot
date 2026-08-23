@@ -34,6 +34,10 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 
+[gui]
+
+theme/custom_font="res://assets/fonts/Pretendard-Regular.woff2"
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"

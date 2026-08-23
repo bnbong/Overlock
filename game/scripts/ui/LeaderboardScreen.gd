@@ -40,6 +40,8 @@ var _c_soft: Color = _INK_SOFT
 @onready var _status_label: Label = $Panel/StatusLabel
 @onready var _header_box: HBoxContainer = $Panel/HeaderRow
 @onready var _list: VBoxContainer = $Panel/Scroll/List
+@onready var _my_record_panel: PanelContainer = $Panel/MyRecordPanel
+@onready var _my_record_label: Label = $Panel/MyRecordPanel/MyRecordLabel
 @onready var _back_button: Button = $Panel/BackButton
 
 
@@ -50,6 +52,8 @@ func _ready() -> void:
 	_apply_track(_official_index_of(LeaderboardClient.view_track_id))
 	_apply_skin()
 	_fill_header()
+	_my_record_panel.add_theme_stylebox_override("panel", _mine_box())
+	_update_my_record()
 	var single: bool = _official.size() <= 1
 	_prev_button.disabled = single
 	_next_button.disabled = single
@@ -115,6 +119,7 @@ func _cycle_track(dir: int) -> void:
 	if _official.size() <= 1:
 		return
 	_apply_track(wrapi(_index + dir, 0, _official.size()))
+	_update_my_record()
 	_refetch()
 
 
@@ -172,8 +177,9 @@ func _fill_header() -> void:
 	_add_cell(_header_box, "Cuts", _COL_CUTS, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
 
 
-## 한 엔트리를 행으로 만든다. rank는 응답 값 우선, 없으면 인덱스+1로 보정한다.
-func _make_data_row(entry: Dictionary, index: int) -> HBoxContainer:
+## 한 엔트리를 행으로 만든다. rank는 응답 값 우선, 없으면 인덱스+1로 보정한다. 내 닉네임과
+## 일치하는 행은 금색 하이라이트 박스(배경 틴트+테두리)로 감싸 top-3 색 강조와 구분한다.
+func _make_data_row(entry: Dictionary, index: int) -> Control:
 	var rank: int = int(entry.get("rank", index + 1))
 	var name_text: String = str(entry.get("player_name", "-"))
 	var time_text: String = _format_ms(int(entry.get("final_time_ms", 0)))
@@ -188,7 +194,58 @@ func _make_data_row(entry: Dictionary, index: int) -> HBoxContainer:
 	_add_cell(row, time_text, _COL_TIME, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(row, acc_text, _COL_ACC, _c_soft, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(row, cuts_text, _COL_CUTS, _c_soft, HORIZONTAL_ALIGNMENT_RIGHT)
-	return row
+	if not _is_mine(name_text):
+		return row
+	var mine: PanelContainer = PanelContainer.new()
+	mine.add_theme_stylebox_override("panel", _mine_box())
+	mine.add_child(row)
+	return mine
+
+
+## 리더보드 행/하단 기록에 쓰는 "내 것" 판정(닉네임 정확 일치, 빈 닉네임 제외).
+func _is_mine(player_name: String) -> bool:
+	var me: String = LeaderboardClient.nickname.strip_edges()
+	return not me.is_empty() and player_name.strip_edges() == me
+
+
+## 하단 고정 "내 기록" 행: 현재 트랙·난이도의 로컬 최고 기록(RecordStore) + 마지막 제출 시
+## 서버가 돌려준 순위(캐시, "제출 시점"). 기록 없으면 안내만 표시한다.
+func _update_my_record() -> void:
+	_my_record_label.add_theme_color_override("font_color", _c_main)
+	var rec: Dictionary = RecordStore.best_for(
+		LeaderboardClient.view_track_id, LeaderboardClient.view_difficulty
+	)
+	if rec.is_empty():
+		_my_record_label.text = "내 기록:  아직 기록 없음"
+		return
+	var line: String = (
+		"내 기록:  %s   ·   %.1f%%   ·   Cuts %d"
+		% [
+			_format_ms(int(rec.get("final_time_ms", 0))),
+			float(rec.get("accuracy", 0.0)),
+			int(rec.get("cuts", 0)),
+		]
+	)
+	var rank: int = LeaderboardClient.submitted_rank(
+		LeaderboardClient.view_track_id, LeaderboardClient.view_difficulty
+	)
+	if rank > 0:
+		line += "   ·   Rank #%d (제출 시점)" % rank
+	_my_record_label.text = line
+
+
+## 금색 하이라이트 박스(내 행·내 기록 공용). top-3 색 강조와 달리 배경 틴트+테두리다.
+static func _mine_box() -> StyleBoxFlat:
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.96, 0.80, 0.32, 0.24)
+	sb.border_color = Color(0.94, 0.75, 0.28)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(7)
+	sb.content_margin_left = 5.0
+	sb.content_margin_right = 5.0
+	sb.content_margin_top = 3.0
+	sb.content_margin_bottom = 3.0
+	return sb
 
 
 func _add_cell(

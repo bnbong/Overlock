@@ -297,6 +297,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "불러오기"
 
+[node name="ExportButton" type="Button" parent="Panel/ActionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "내보내기"
+
 [node name="DeleteButton" type="Button" parent="Panel/ActionRow"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -325,5 +330,14 @@ initial_position = 2
 size = Vector2i(560, 420)
 ok_button_text = "열기"
 file_mode = 0
+access = 2
+filters = PackedStringArray("*.json ; Track JSON")
+
+[node name="ExportDialog" type="FileDialog" parent="."]
+title = "트랙 JSON 내보내기"
+initial_position = 2
+size = Vector2i(560, 420)
+ok_button_text = "저장"
+file_mode = 4
 access = 2
 filters = PackedStringArray("*.json ; Track JSON")
