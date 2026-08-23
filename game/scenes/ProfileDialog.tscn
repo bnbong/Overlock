@@ -1,0 +1,97 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/ProfileDialog.gd" id="1_prof"]
+[ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="2_skin"]
+
+[node name="ProfileDialog" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_prof")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.55)
+
+[node name="PanelBg" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -196.0
+offset_right = 240.0
+offset_bottom = 196.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_skin")
+
+[node name="Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -164.0
+offset_right = 200.0
+offset_bottom = 164.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="AvatarBox" type="CenterContainer" parent="Panel"]
+custom_minimum_size = Vector2(0, 140)
+layout_mode = 2
+
+[node name="Avatar" type="TextureRect" parent="Panel/AvatarBox"]
+custom_minimum_size = Vector2(136, 136)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="NameLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 28
+text = "bnbong"
+horizontal_alignment = 1
+
+[node name="IntroLabel" type="Label" parent="Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
+theme_override_font_sizes/font_size = 15
+text = "Overlock 개발자"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Panel"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="GitHubButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "GitHub 방문"
+
+[node name="CoffeeButton" type="Button" parent="Panel"]
+visible = false
+layout_mode = 2
+text = "Buy Me a Coffee"
+
+[node name="CloseButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "닫기"

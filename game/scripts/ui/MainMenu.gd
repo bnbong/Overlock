@@ -10,6 +10,10 @@ extends Control
 ## 정체성 바(좌상단): 현재 닉네임 태그 + 온라인/오프라인 상태. 진입 시 닉네임이 없으면
 ## 최초 실행 닉네임 모달을 띄우고(항상 닉네임 보장), 백그라운드 health_check로 서버 연결을
 ## 확인해 상태 점을 갱신한다. 서버 미연결이면 세션당 1회 안내 토스트를 띄운다.
+##
+## 프로필 칩(우하단): 소형 재봉 칩(원형 아바타 + "bnbong"). 좌상단 정체성 바·중앙 버튼
+## 열과 겹치지 않게 우하단 모서리에 고정한다. 마우스 클릭 전용(FOCUS_NONE)이라 기존
+## 키보드 포커스 순환에 끼지 않으며, 클릭하면 개발자 프로필 팝업(ProfileDialog)을 연다.
 
 const TRACK_SELECT_SCENE: String = "res://scenes/TrackSelect.tscn"
 const SETTINGS_SCENE: String = "res://scenes/Settings.tscn"
@@ -19,6 +23,8 @@ const LEADERBOARD_SCENE: String = "res://scenes/Leaderboard.tscn"
 const LeaderboardScreenScript = preload("res://scripts/ui/LeaderboardScreen.gd")
 const ToastScene = preload("res://scenes/Toast.tscn")
 const NicknameDialogScene = preload("res://scenes/NicknameDialog.tscn")
+const ProfileDialogScene = preload("res://scenes/ProfileDialog.tscn")
+const DEV_PROFILE_TEX: String = "res://assets/gfx/dev_profile.png"
 
 const _OFFLINE_MSG: String = "서버에 연결할 수 없어 기록이 온라인 리더보드에 제출되지 않습니다." + " 로컬 최고 기록은 계속 저장됩니다."
 const _INK: Color = Color(0.278, 0.203, 0.153)
@@ -30,6 +36,7 @@ const _C_CHECKING: Color = Color(0.82, 0.79, 0.72)
 var _toast: Toast
 var _nick_tag: Button
 var _status_label: Label
+var _profile_chip: Button
 
 @onready var _start_button: Button = $Menu/StartButton
 @onready var _settings_button: Button = $Menu/SettingsButton
@@ -49,6 +56,7 @@ func _ready() -> void:
 	_toast = ToastScene.instantiate()
 	add_child(_toast)
 	_build_identity_bar()
+	_build_profile_chip()
 	LeaderboardClient.health_checked.connect(_on_health_checked)
 
 	_start_button.grab_focus()
@@ -113,6 +121,50 @@ func _open_nickname_dialog() -> void:
 
 func _on_nickname_confirmed(_nickname: String) -> void:
 	_refresh_nick_tag()
+
+
+# --- 프로필 칩(우하단): 원형 아바타 + "bnbong" → 클릭 시 프로필 팝업 ---
+
+
+## 우하단 모서리에 최소 크기로 고정하는 소형 재봉 칩. 마우스 전용(FOCUS_NONE)이라 기존
+## 4버튼 키보드 포커스 순환에 끼지 않는다. 아바타 텍스처가 없으면 텍스트만으로 폴백한다.
+func _build_profile_chip() -> void:
+	_profile_chip = Button.new()
+	_profile_chip.name = "ProfileChip"
+	_profile_chip.focus_mode = Control.FOCUS_NONE
+	_profile_chip.text = "bnbong"
+	_profile_chip.add_theme_font_size_override("font_size", 16)
+	_skin_tag(_profile_chip)  # 좌상단 태그와 같은 재봉 톤(베이지 원단 + 실보라 테두리)
+	var tex: Texture2D = _load_avatar()
+	if tex != null:
+		_profile_chip.icon = tex
+		_profile_chip.add_theme_constant_override("icon_max_width", 26)
+		_profile_chip.add_theme_constant_override("h_separation", 8)
+	_profile_chip.pressed.connect(_open_profile_dialog)
+	add_child(_profile_chip)
+	# 우하단 고정(최소 크기, 모서리에서 16px 여백). 창 크기가 변해도 우하단에 붙는다.
+	_profile_chip.set_anchors_and_offsets_preset(
+		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 16
+	)
+
+
+func _load_avatar() -> Texture2D:
+	if ResourceLoader.exists(DEV_PROFILE_TEX):
+		return load(DEV_PROFILE_TEX) as Texture2D
+	return null
+
+
+func _open_profile_dialog() -> void:
+	var dlg: ProfileDialog = ProfileDialogScene.instantiate()
+	add_child(dlg)
+	# 팝업이 닫히면(마우스/Esc) 키보드 포커스를 Start로 되돌려 메뉴 순환을 복구한다.
+	dlg.tree_exited.connect(_on_profile_closed)
+
+
+func _on_profile_closed() -> void:
+	# 팝업이 살아있는 메뉴 위에서 닫힐 때만 포커스를 되돌린다(씬 전환·종료 중이면 생략).
+	if is_instance_valid(_start_button) and _start_button.is_inside_tree():
+		_start_button.grab_focus()
 
 
 func _on_health_checked(ok: bool, _message: String) -> void:

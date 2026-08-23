@@ -1,18 +1,18 @@
-name: Deploy Web (vm1)
+name: Deploy Web
 
-# docs/deploy.md §2 / §7-2 / §7-3 의 수동 배포를 자동화한다.
+# 웹 빌드·배포 자동화(docs/deploy.md §2·§4·§7 참고). 호스트·경로·컨테이너는 시크릿.
 #   1) Godot 4.6.1 headless 로 "Web" 프리셋 export (build/web/)
-#   2) rsync --delete 로 vm1 nginx 정적 루트에 업로드 → nginx -t && reload
-#   3) Cloudflare 캐시 purge (overlock.bnbong.com 자산만)
+#   2) rsync --delete 로 웹 호스트 nginx 정적 루트에 업로드 → nginx -t && reload
+#   3) Cloudflare 캐시 purge (게임 도메인 자산만)
 # Godot 설치는 공식 릴리스 바이너리 + web export 템플릿을 내려받고 actions/cache 로
 # 캐시한다(엔진 버전과 템플릿 버전이 정확히 4.6.1.stable 로 일치해야 export 가 되므로,
 # 버전 지연·부재 위험이 있는 서드파티 도커 이미지 대신 공식 릴리스를 고정한다).
-# 자세한 내용은 docs/deploy.md §8.
+# 자세한 내용은 docs/deploy.md §7.
 
 on:
   workflow_dispatch:
-  # --- 자동 트리거 예시 (기본 비활성) --------------------------------------
-  # game/ 이 바뀔 때마다 자동 배포하려면 아래 push 블록의 주석을 해제한다.
+  # --- 자동 트리거 (paths 필터, 기본 활성) ---------------------------------
+  # 수동 전용으로 두려면 아래 push 블록을 주석 처리한다.
   push:
     branches: [main]
     paths:
@@ -32,7 +32,7 @@ env:
 
 jobs:
   build-deploy:
-    name: Export web build & deploy to vm1
+    name: Export web build & deploy to web host
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -101,7 +101,7 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-      - name: Prepare SSH key (vm1)
+      - name: Prepare SSH key (web host)
         env:
           VM1_SSH_KEY: ${{ secrets.VM1_SSH_KEY }}
           VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
@@ -112,7 +112,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VM1_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Upload build to vm1 (rsync --delete, §7-2 와 동일)
+      - name: Upload build to web host (rsync --delete)
         env:
           VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
           VM1_SSH_USER: ${{ secrets.VM1_SSH_USER }}
@@ -124,7 +124,7 @@ jobs:
             build/web/ \
             "${VM1_SSH_USER}@${VM1_SSH_HOST}:${VM1_NGINX_HTML_PATH}/overlock/"
 
-      - name: Reload nginx on vm1 (nginx -t && reload)
+      - name: Reload nginx on web host (nginx -t && reload)
         env:
           VM1_SSH_HOST: ${{ secrets.VM1_SSH_HOST }}
           VM1_SSH_USER: ${{ secrets.VM1_SSH_USER }}
@@ -141,7 +141,7 @@ jobs:
           CF_ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         run: |
           set -eu
-          # 파일명이 고정인 Godot 산출물만 콕 집어 무효화한다(같은 zone 의 다른 서브도메인
+          # 파일명이 고정인 Godot 산출물만 콕 집어 무효화한다(같은 zone 의 다른 자산
           # 캐시는 건드리지 않음). 엔터프라이즈 플랜이면 아래 "files" 대신
           # {"prefixes":["overlock.bnbong.com/"]} 로 prefix purge 할 수 있다.
           resp="$(curl -fsS -X POST \
@@ -163,7 +163,7 @@ jobs:
           echo "$resp"
           echo "$resp" | grep -q '"success":true'
 
-      - name: Verify public web root (§7-4, soft)
+      - name: Verify public web root (soft)
         run: |
           set -eu
           code="$(curl -fsS -o /dev/null -w '%{http_code}' https://overlock.bnbong.com/ || echo 000)"

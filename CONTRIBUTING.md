@@ -9,7 +9,7 @@
 
 ## 트랙 기여
 
-트랙은 이미지가 아니라 JSON 데이터로 정의한다. 새 트랙은 [게임 기획서 §9.2](docs/design/game_design.md#92-트랙-json-예시)의 포맷을 따라 작성해 PR로 제출한다.
+트랙은 이미지가 아니라 JSON 데이터로 정의한다. 새 트랙은 [게임 기획서](https://github.com/bnbong/Overlock/wiki)(GitHub Wiki) §9.2 "트랙 JSON 예시"의 포맷을 따라 작성해 PR로 제출한다.
 
 ## 코드 스타일
 

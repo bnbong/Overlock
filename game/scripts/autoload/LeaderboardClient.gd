@@ -38,6 +38,14 @@ const NICKNAME_MAX: int = 16
 const OFFICIAL_DIR: String = "res://tracks/official/"
 const CUSTOM_PREFIX: String = "custom_"  # TrackLoader와 동일 네임스페이스. 제출/조회 제외 판별용.
 
+# 볼륨 기본값(선형 0..1, 하위 호환: settings.json에 키 없으면 이 값). 마스터/효과음은 최대.
+const DEFAULT_VOLUME_MASTER: float = 1.0
+const DEFAULT_VOLUME_SFX: float = 1.0
+# BGM 기본은 AudioManager 버스 기본(-6dB = AudioManager.DEFAULT_BGM_DB)에 상응하는 선형값으로
+# 맞춰, 볼륨 API 도입 전후 BGM 체감을 동일하게 유지한다. const에서 db_to_linear() 호출이 불가하여
+# 환산값(10^(-6/20) ≈ 0.5012)을 고정한다 — AudioManager.DEFAULT_BGM_DB를 바꾸면 함께 갱신할 것.
+const DEFAULT_VOLUME_BGM: float = 0.5011872336272722
+
 # 설정(user://settings.json 미러). 비어 있는 base_url = 온라인 비활성.
 var base_url: String = DEFAULT_BASE_URL
 var nickname: String = ""
@@ -58,6 +66,12 @@ var view_track_name: String = ""
 
 # 맵 선택 화면 재진입 시 복원할 마지막 선택 트랙 id(user://settings.json에 함께 저장).
 var last_track_id: String = ""
+
+# 볼륨 설정(선형 0..1) — settings.json 미러. AudioManager가 시작 시 읽어 버스에 적용하고,
+# 설정 화면이 변경 시 save_volumes로 영속한다(버스 적용은 AudioManager 담당).
+var volume_master: float = DEFAULT_VOLUME_MASTER
+var volume_bgm: float = DEFAULT_VOLUME_BGM
+var volume_sfx: float = DEFAULT_VOLUME_SFX
 
 # settings.json에 사용자가 수동으로 적은 셀프호스팅/개발용 base_url이 있으면 true. 이 경우에만
 # base_url을 다시 settings.json에 기록해 보존한다(기본값은 코드에서 결정 — 향후 기본 변경 자동 반영).
@@ -94,6 +108,15 @@ func save_nickname(new_nickname: String) -> bool:
 	return _write_settings()
 
 
+## 볼륨 설정(선형 0..1)을 갱신하고 settings.json에 영속한다(0..1로 클램프). 저장 성공 시 true.
+## 설정 화면의 슬라이더 조작 종료/저장에서 호출한다. 버스 적용은 AudioManager가 담당한다.
+func save_volumes(master: float, bgm: float, sfx: float) -> bool:
+	volume_master = clampf(master, 0.0, 1.0)
+	volume_bgm = clampf(bgm, 0.0, 1.0)
+	volume_sfx = clampf(sfx, 0.0, 1.0)
+	return _write_settings()
+
+
 ## 맵 선택 화면에서 마지막으로 고른 트랙 id를 settings.json에 기록한다(재진입 복원용).
 func remember_last_track(track_id: String) -> void:
 	last_track_id = track_id
@@ -116,7 +139,13 @@ func submitted_rank(track_id: String, difficulty: String) -> int:
 ## settings.json 직렬화 dict. base_url은 사용자가 수동 지정했을 때만 포함(기본값은 코드가
 ## 결정). submitted_ranks는 비어 있지 않을 때만 포함(하위 호환).
 func _settings_dict() -> Dictionary:
-	var d: Dictionary = {"nickname": nickname, "last_track_id": last_track_id}
+	var d: Dictionary = {
+		"nickname": nickname,
+		"last_track_id": last_track_id,
+		"volume_master": volume_master,
+		"volume_bgm": volume_bgm,
+		"volume_sfx": volume_sfx,
+	}
 	if _base_url_manual:
 		d["base_url"] = base_url
 	if not submitted_ranks.is_empty():
@@ -380,6 +409,9 @@ func _load_settings() -> void:
 	nickname = ""
 	last_track_id = ""
 	submitted_ranks = {}
+	volume_master = DEFAULT_VOLUME_MASTER
+	volume_bgm = DEFAULT_VOLUME_BGM
+	volume_sfx = DEFAULT_VOLUME_SFX
 	if not FileAccess.file_exists(SETTINGS_PATH):
 		return
 	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.READ)
@@ -407,6 +439,17 @@ func _load_settings() -> void:
 		var raw: Dictionary = dict["submitted_ranks"]
 		for k in raw:
 			submitted_ranks[str(k)] = int(raw[k])
+	volume_master = _read_volume(dict, "volume_master", DEFAULT_VOLUME_MASTER)
+	volume_bgm = _read_volume(dict, "volume_bgm", DEFAULT_VOLUME_BGM)
+	volume_sfx = _read_volume(dict, "volume_sfx", DEFAULT_VOLUME_SFX)
+
+
+## settings.json에서 선형 볼륨 키를 읽어 0..1로 클램프한다(키 없음/비수치 → 기본값 유지).
+func _read_volume(dict: Dictionary, key: String, fallback: float) -> float:
+	var v: Variant = dict.get(key, fallback)
+	if v is float or v is int:
+		return clampf(float(v), 0.0, 1.0)
+	return fallback
 
 
 ## 플랫폼별 기본 base URL. 디버그 데스크톱은 로컬 서버, 그 외(릴리스·웹)는 프로덕션.

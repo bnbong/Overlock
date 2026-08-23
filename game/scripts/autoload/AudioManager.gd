@@ -56,6 +56,14 @@ var _tick_zero_t: float = 0.0
 var _last_logged_norm: float = -1.0
 var _debug: bool = false
 
+# 볼륨 상태(선형 0..1). get_*가 돌려주는 권위값이며 버스 dB는 항상 여기서 파생한다(0=뮤트).
+# 버스 dB→선형 역변환은 뮤트 경계에서 정보를 잃으므로 선형 캐시를 권위값으로 둔다. 시작 시
+# _apply_saved_volumes가 저장값(LeaderboardClient.settings.json)으로 덮어쓴다. BGM 프리적용
+# 기본은 버스 기본 -6dB(DEFAULT_BGM_DB)에서 파생 — 볼륨 API 도입 전후 체감을 동일하게 유지.
+var _vol_master: float = 1.0
+var _vol_bgm: float = db_to_linear(DEFAULT_BGM_DB)
+var _vol_sfx: float = 1.0
+
 
 func _ready() -> void:
 	_debug = (
@@ -65,6 +73,9 @@ func _ready() -> void:
 	_ensure_buses()
 	_load_streams()
 	_build_players()
+	# 저장 볼륨은 LeaderboardClient가 이 시점 이후(오토로드 순서상 뒤)에 로드하므로, 모든
+	# 오토로드 _ready가 끝난 프레임 처음으로 적용을 미룬다.
+	_apply_saved_volumes.call_deferred()
 	_log("ready (buses+players initialised)")
 
 
@@ -188,6 +199,43 @@ func _end_run_audio() -> void:
 		_tick_player.stop()
 
 
+# --- 볼륨 API (선형 0..1 → 버스 dB, 0=뮤트) ---
+#
+# 설정 화면(SettingsScreen)이 슬라이더로 구동한다. set_*는 버스에 즉시 반영만 하고(디스크
+# 미접촉), 영속은 LeaderboardClient.save_volumes가 담당한다(settings.json 소유자). get_*는
+# 마지막으로 설정한 선형값을 그대로 돌려준다.
+
+
+func set_master_volume(linear: float) -> void:
+	_vol_master = _apply_bus_volume(BUS_MASTER, linear)
+
+
+func set_bgm_volume(linear: float) -> void:
+	_vol_bgm = _apply_bus_volume(BUS_BGM, linear)
+
+
+func set_sfx_volume(linear: float) -> void:
+	_vol_sfx = _apply_bus_volume(BUS_SFX, linear)
+
+
+func get_master_volume() -> float:
+	return _vol_master
+
+
+func get_bgm_volume() -> float:
+	return _vol_bgm
+
+
+func get_sfx_volume() -> float:
+	return _vol_sfx
+
+
+## 설정 화면 볼륨 프리뷰용 단발 효과음(마스터/효과음 슬라이더 조작 종료 시 체감 확인).
+func preview_sfx() -> void:
+	_play_sfx("go")
+	_log("preview_sfx")
+
+
 # --- 내부 구현 ---
 
 
@@ -206,6 +254,33 @@ func _add_child_bus(bus_name: String) -> void:
 	AudioServer.add_bus(idx)
 	AudioServer.set_bus_name(idx, bus_name)
 	AudioServer.set_bus_send(idx, BUS_MASTER)
+
+
+## 저장된 볼륨(LeaderboardClient.settings.json)을 세 버스에 적용한다. 오토로드 순서상
+## AudioManager._ready 시점엔 LeaderboardClient가 아직 로드 전이라 call_deferred로 미뤄 호출한다
+## (그때는 모든 오토로드 _ready 완료 → 저장값 반영). LeaderboardClient가 없으면 조용히 무시.
+func _apply_saved_volumes() -> void:
+	if not is_instance_valid(LeaderboardClient):
+		return
+	set_master_volume(LeaderboardClient.volume_master)
+	set_bgm_volume(LeaderboardClient.volume_bgm)
+	set_sfx_volume(LeaderboardClient.volume_sfx)
+	_log("apply_saved_volumes m=%.3f b=%.3f s=%.3f" % [_vol_master, _vol_bgm, _vol_sfx])
+
+
+## 선형 볼륨(0..1)을 버스에 반영하고 클램프한 선형값을 돌려준다(캐시에 그대로 저장). 0 근사는
+## dB로 -inf라 set_bus_mute로 처리한다. 버스가 없으면(초기화 전/헤드리스) 클램프값만 반환.
+func _apply_bus_volume(bus_name: String, linear: float) -> float:
+	var clamped: float = clampf(linear, 0.0, 1.0)
+	var idx: int = AudioServer.get_bus_index(bus_name)
+	if idx == -1:
+		return clamped
+	if clamped <= 0.001:
+		AudioServer.set_bus_mute(idx, true)
+	else:
+		AudioServer.set_bus_mute(idx, false)
+		AudioServer.set_bus_volume_db(idx, linear_to_db(clamped))
+	return clamped
 
 
 func _load_streams() -> void:

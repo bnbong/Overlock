@@ -1,10 +1,10 @@
-name: Deploy Server (vm2)
+name: Deploy Server
 
-# docs/deploy.md §7-1 의 수동 배포를 자동화한다.
+# 서버 이미지 빌드·배포 자동화(docs/deploy.md §7 참고). 호스트·컨테이너명·포트는 시크릿.
 #   1) GHCR 에 커밋 SHA 태그 이미지(ghcr.io/<owner>/overlock-server:<sha> + :latest)를 빌드/푸시
-#   2) vm2 에 SSH 로 접속해 docker pull → 컨테이너 교체(§7-1 과 동일한 run) → /api/health 확인
+#   2) API 호스트에 SSH 로 접속해 docker pull → 컨테이너 교체 → /api/health 확인
 # 롤백: 아래 workflow_dispatch 의 image_tag 에 이전 커밋 SHA 를 넣어 재실행하면
-#       재빌드 없이 그 이미지를 배포한다(자세한 내용은 docs/deploy.md §8).
+#       재빌드 없이 그 이미지를 배포한다(자세한 내용은 docs/deploy.md §7).
 
 on:
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up QEMU (멀티아치 빌드용 — vm2 Ampere A1 ARM64 대응)
+      - name: Set up QEMU (멀티아치 빌드용 — arm64 타깃 대응)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -73,7 +73,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy to vm2 (SSH)
+    name: Deploy to API host (SSH)
     needs: build-push
     # build-push 가 성공했거나(정상 배포) 건너뛰어졌을 때(롤백) 모두 실행.
     if: ${{ always() && !cancelled() && (needs.build-push.result == 'success' || needs.build-push.result == 'skipped') }}
@@ -87,35 +87,37 @@ jobs:
           tag="${INPUT_TAG:-$GITHUB_SHA}"
           echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}:${tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy over SSH (§7-1 과 동일한 run, 이미지만 GHCR 태그)
+      - name: Deploy over SSH (docker pull → 컨테이너 교체, 이미지만 GHCR 태그)
         uses: appleboy/ssh-action@v1
         env:
           IMAGE: ${{ steps.img.outputs.image }}
+          CONTAINER: ${{ secrets.VM2_CONTAINER }}
+          HOST_PORT: ${{ secrets.VM2_HOST_PORT }}
         with:
           host: ${{ secrets.VM2_SSH_HOST }}
           username: ${{ secrets.VM2_SSH_USER }}
           key: ${{ secrets.VM2_SSH_KEY }}
-          envs: IMAGE
+          envs: IMAGE,CONTAINER,HOST_PORT
           script_stop: true
           script: |
             set -eu
             echo "Deploying image: ${IMAGE}"
             docker pull "${IMAGE}"
-            docker rm -f vm2-overlock 2>/dev/null || true
-            docker run -d --name vm2-overlock --restart unless-stopped \
-              -p 8010:8000 -v overlock-data:/data \
+            docker rm -f "${CONTAINER}" 2>/dev/null || true
+            docker run -d --name "${CONTAINER}" --restart unless-stopped \
+              -p "${HOST_PORT}:8000" -v overlock-data:/data \
               -e OVERLOCK_TRUST_FORWARDED_FOR=true \
               -e OVERLOCK_CORS_ORIGINS=https://overlock.bnbong.com \
               "${IMAGE}"
             echo "Waiting for /api/health ..."
             ok=0
             for _ in $(seq 1 15); do
-              if curl -fsS http://127.0.0.1:8010/api/health | grep -q '"status":"ok"'; then
+              if curl -fsS "http://127.0.0.1:${HOST_PORT}/api/health" | grep -q '"status":"ok"'; then
                 ok=1; break
               fi
               sleep 2
             done
             if [ "$ok" != "1" ]; then
-              echo "Health check FAILED"; docker logs --tail 80 vm2-overlock || true; exit 1
+              echo "Health check FAILED"; docker logs --tail 80 "${CONTAINER}" || true; exit 1
             fi
-            echo "Health OK: $(curl -fsS http://127.0.0.1:8010/api/health)"
+            echo "Health OK: $(curl -fsS "http://127.0.0.1:${HOST_PORT}/api/health")"

@@ -2,7 +2,7 @@
 
 재봉 레이싱 게임 **Overlock** 의 기록 저장·조회 API 서버입니다.
 
-개발자 [bnbong](https://github.com/bnbong)의 [개인 도메인 클라우드 서버](https://github.com/BNGdrasil)에 올라가며 트랙별 Top 100 리더보드를 운영합니다.
+개발자 [bnbong](https://github.com/bnbong)의 개인 서버에서 운영되며 트랙별 Top 100 리더보드를 제공합니다.
 
 - 스택: Python 3.11+ · FastAPI · SQLAlchemy 2.0 · SQLite (→ PostgreSQL 여지)
 - 기록 등급: 현재는 `unverified` 만 운영합니다. 리플레이 재시뮬레이션 기반 `verified`·`official` 등급은 이후 확장으로 고려중입니다.
@@ -54,6 +54,8 @@ curl http://127.0.0.1:8000/api/tracks
 | `OVERLOCK_MAX_SPEED_PX_S` | `300` | 물리 하한 계산용 최고 속도(px/s). |
 
 > `OVERLOCK_TRUST_FORWARDED_FOR=true` 는 신뢰할 수 있는 프록시(nginx 등) 뒤에서만 켜야합니다(클라이언트가 헤더를 위조해 레이트리밋을 우회하는 것 방지).
+
+> **셀프호스팅 시 클라이언트 연결**: 게임 UI 에는 서버 URL 입력이 없습니다(데스크톱 기본=프로덕션, 웹=same-origin). 이 서버를 가리키게 하려면 게임의 `user://settings.json` 에 `base_url` 키를 수동으로 기입. 예) `{"nickname":"me","base_url":"https://api.example.com"}`.
 
 ---
 

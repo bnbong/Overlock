@@ -21,7 +21,7 @@
 오버레이 스왑 모드가 우선해 런타임에서는 쓰이지 않는다(회귀 대비 폴백).
 
 '용과 같이' 등 외부 게임·작품의 에셋·UI·캐릭터를 모사하거나 트레이싱하지 않았다
-(docs/design/game_design.md §15.2 IP 주의). 스타일은 따뜻한 수공예/재봉실 무드다.
+(게임 기획서 Wiki §15.2 IP 주의). 스타일은 따뜻한 수공예/재봉실 무드다.
 
 1차 아트(코드로 저작한 오리지널 SVG)는 롤백 대비로 `src/*.svg`에 보존한다.
 `src/`에는 `.gdignore`가 있어 Godot 임포트에서 제외된다(소스 전용).
@@ -76,6 +76,7 @@
 | `fabric_knit.png` | knit 원단 타일(웜톤 니트) | `FabricSurface.set_fabric("knit")` |
 | `menu_bg.png` | 메인 메뉴 재봉실 무드 배경(주간) | `Main/BackgroundArt` |
 | `title_plaque.png` | 타이틀 자수 패치 플라크(글자 없음, `OVERLOCK` 텍스트를 위에 겹침) | `Main/Menu/TitlePlaque` |
+| `dev_profile.png` | 개발자 프로필 아바타(개발자 제공 아바타를 256² 원형 크롭 + 재봉 실보라 링으로 가공) | `Main` 프로필 칩 · `ProfileDialog` |
 
 ## 얼굴 표정 오버레이 (레거시 폴백 — 스왑 슬롯이 비었을 때만)
 

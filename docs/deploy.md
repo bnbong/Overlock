@@ -1,19 +1,18 @@
 # Overlock 웹(HTML5) 배포 가이드
 
-Overlock 클라이언트를 브라우저에서 돌아가는 정적 웹 빌드로 만들어 개인 도메인에 올리는
-절차다. 빌드 산출물(`build/web/`)은 어떤 정적 호스팅에도 그대로 올라간다. 리더보드
-기능까지 쓰려면 `server/`(FastAPI)를 따로 띄우고 클라이언트에서 그 주소를 지정한다.
+Overlock 클라이언트를 정적 웹 빌드로 내보내 개인 도메인에 호스팅.
 
-- 대상 엔진: **Godot 4.6.1.stable** (`4.6.1.stable.official.14d19694e` 로 검증)
-- 렌더러: **GL Compatibility** (WebGL 2.0). 웹 대비로 프로젝트에 이미 설정돼 있다.
-- 스레드: **OFF**(단일 스레드). 이유는 아래 "스레드 OFF 결정"에 정리했다.
+- 산출물 `build/web/` — 모든 정적 호스팅에 그대로 업로드.
+- 리더보드 사용 시 `server/`(FastAPI) 별도 기동 + 클라이언트에서 주소 지정(§5).
+- 대상 엔진: **Godot 4.6.1.stable** (`4.6.1.stable.official.14d19694e` 검증).
+- 렌더러: **GL Compatibility**(WebGL 2.0). 프로젝트에 웹용으로 미리 설정됨.
+- 스레드: **OFF**(단일 스레드). 근거 §2 "스레드 OFF 결정".
 
 ---
 
 ## 1. 사전 준비: 웹 export 템플릿
 
-웹으로 내보내려면 설치된 Godot 버전과 **정확히 같은 버전**의 웹 export 템플릿이 있어야
-한다. 버전이 다르면 export 가 거부된다.
+설치된 Godot 버전과 **정확히 같은 버전**의 웹 export 템플릿 필수. 버전 불일치 시 export 거부.
 
 설치 위치(운영체제별):
 
@@ -23,20 +22,19 @@ Overlock 클라이언트를 브라우저에서 돌아가는 정적 웹 빌드로
 | Linux | `~/.local/share/godot/export_templates/4.6.1.stable/` |
 | Windows | `%APPDATA%\Godot\export_templates\4.6.1.stable\` |
 
-이 폴더에 최소한 `web_nothreads_release.zip`(스레드 OFF 릴리스 템플릿)이 있으면 된다.
-현재 저장소 작업 환경에는 8종 웹 템플릿 전부 + `version.txt`가 설치돼 있다.
+- 최소 `web_nothreads_release.zip`(스레드 OFF 릴리스 템플릿) 존재 시 충분.
+- 현 작업 환경: 8종 웹 템플릿 전부 + `version.txt` 설치됨.
 
 ### 방법 A — 에디터에서 설치 (권장)
 
-가장 확실한 방법이다. 네트워크만 되면 버전이 자동으로 맞는다.
+네트워크만 되면 버전 자동 정합.
 
-1. Godot 에디터 실행 → 상단 메뉴 **Editor → Manage Export Templates…**
-2. **Download and Install** 클릭. 현재 에디터 버전(4.6.1.stable)에 맞는 템플릿을 내려받아
-   위 경로에 자동 설치한다.
+1. Godot 에디터 → **Editor → Manage Export Templates…**
+2. **Download and Install** — 현재 에디터 버전(4.6.1.stable) 맞는 템플릿 자동 내려받아 위 경로에 설치.
 
 ### 방법 B — 릴리스에서 직접 내려받아 설치 (CLI)
 
-에디터를 열 수 없거나 CI 에서 자동화할 때 쓴다. `.tpz`는 실은 zip 이라 `unzip`으로 푼다.
+에디터 불가·CI 자동화용. `.tpz`는 실은 zip → `unzip`으로 해제.
 
 ```bash
 VER=4.6.1
@@ -52,16 +50,14 @@ unzip -o -j /tmp/templates.tpz "templates/web_*.zip" "templates/version.txt" -d 
 cat "$DEST/version.txt"   # -> 4.6.1.stable 이어야 한다
 ```
 
-> `.tpz` 전체 용량이 1GB 를 넘어 내려받기가 느릴 수 있다. 회선이 느리면 방법 A 로
-> 에디터에서 설치하는 편이 낫다.
+> `.tpz` 전체 >1GB — 느린 회선은 방법 A 권장.
 
 ---
 
 ## 2. 웹 빌드하기
 
-빌드 설정은 `game/export_presets.cfg` 의 **"Web"** 프리셋에 들어 있다. 저장소 루트에서
-아래를 실행한다(경로 인자는 프로젝트 디렉토리 `game/` 기준 상대경로라 `../build/web/…`
-로 저장소 루트의 `build/web/` 에 떨어진다).
+- 빌드 설정: `game/export_presets.cfg`의 **"Web"** 프리셋.
+- 저장소 루트에서 실행. 경로 인자는 `game/` 기준 상대경로 → `../build/web/…`가 루트 `build/web/`에 출력.
 
 ```bash
 GODOT=/path/to/Godot            # 예: /Users/you/Downloads/Godot.app/Contents/MacOS/Godot
@@ -75,57 +71,43 @@ mkdir -p build/web
 "$GODOT" --headless --path game --export-release "Web" ../build/web/index.html
 ```
 
-exit code 0 이면 성공이다. `build/web/` 에 다음이 생긴다.
+exit code 0 = 성공. `build/web/` 산출물:
 
 | 파일 | 크기(대략) | 설명 |
 |---|---|---|
-| `index.html` | 5 KB | 로더 셸. 이 파일이 진입점이다. |
+| `index.html` | 5 KB | 로더 셸. 진입점. |
 | `index.js` | 308 KB | 엔진 로더/글루 코드. |
-| `index.wasm` | **36 MB** | 엔진 바이너리. 첫 로드의 대부분을 차지한다. |
+| `index.wasm` | **36 MB** | 엔진 바이너리. 첫 로드 대부분. |
 | `index.pck` | 3.9 MB | 게임 리소스 팩(씬·스크립트·오디오·트랙). |
 | `index.audio.worklet.js` / `index.audio.position.worklet.js` | 각 3~7 KB | 오디오 워클릿. |
 | `index.icon.png` / `index.apple-touch-icon.png` / `index.png` | 5~21 KB | 아이콘·스플래시. |
 
-첫 방문 시 대략 **40 MB** 를 받는다. 호스트에서 gzip/brotli 압축을 켜면 `.wasm`·`.pck`
-전송량이 크게 준다(아래 4-2 참고). 재방문은 브라우저 캐시로 훨씬 가볍다.
-
-빌드 산출물 `build/` 는 저장소 루트 `.gitignore` 에 등록돼 커밋되지 않는다.
+- 첫 방문 전송량 ~**40 MB**. gzip/brotli 압축 시 `.wasm`·`.pck` 전송량 대폭 감소(§4-2). 재방문은 브라우저 캐시로 가벼움.
+- `build/`는 루트 `.gitignore` 등록 — 커밋 안 됨.
 
 ### 스레드 OFF 결정 (성능 트레이드오프)
 
-프리셋에서 `variant/thread_support=false` 로 **멀티스레드를 껐다**. 근거는 이렇다.
+프리셋 `variant/thread_support=false` — 멀티스레드 OFF. 근거:
 
-- 스레드를 켜면 브라우저가 `SharedArrayBuffer` 를 요구한다. 이를 쓰려면 페이지가
-  **교차 출처 격리(cross-origin isolation)** 상태여야 한다. 즉 서버가 모든 응답에
-  `Cross-Origin-Opener-Policy: same-origin` 과 `Cross-Origin-Embedder-Policy: require-corp`
-  헤더를 붙여야 한다. GitHub Pages·S3 정적 웹호스팅 같은 흔한 정적 호스팅은 이 헤더를
-  세밀히 지정하기 어렵거나 아예 불가능하다.
-- 스레드를 끄면 그 요구가 사라져 **아무 정적 호스팅에나 그대로 올려도 부팅**한다.
-  호환성이 최우선이라 이 쪽을 택했다.
-- 트레이드오프: 물리·리소스 로딩 등이 메인 스레드에서만 돈다. Overlock 은 2D
-  GL Compatibility 렌더러의 가벼운 게임이라 체감 영향은 작지만 대형/무거운 씬을
-  올릴 계획이라면 스레드 ON + 격리 헤더를 지원하는 호스팅으로 바꾸는 걸 검토한다.
+- 스레드 ON → 브라우저가 `SharedArrayBuffer` 요구 → 페이지 **교차 출처 격리(cross-origin isolation)** 필요 → 서버가 모든 응답에 `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` 헤더 부착 필수. GitHub Pages·S3 등 흔한 정적 호스팅은 이 헤더 지정이 어렵거나 불가.
+- 스레드 OFF → 그 요구 소멸 → **아무 정적 호스팅에서나 부팅**. 호환성 최우선으로 채택.
+- 트레이드오프: 물리·리소스 로딩이 메인 스레드에서만 실행. Overlock은 2D GL Compatibility 경량 게임이라 체감 영향 작음. 대형/무거운 씬 계획 시 스레드 ON + 격리 헤더 지원 호스팅으로 전환 검토.
 
-부팅 로그의 `Build configuration: … single-threaded, no GDExtension support` 로 스레드
-OFF 가 실제 반영됐는지 확인할 수 있다.
+확인: 부팅 로그 `Build configuration: … single-threaded, no GDExtension support`.
 
 ### 웹에서 달라지는 동작 (웹 가드)
 
-데스크톱과 달리 브라우저에는 앱 종료 개념과 로컬 파일 시스템 접근이 없어 아래 지점만
-웹 전용으로 대체했다. **그 외 그리기·검증·저장·플레이는 웹에서도 그대로 동작**한다.
+브라우저에 앱 종료·로컬 파일시스템 접근 없음 → 아래만 웹 전용 대체. 그 외 그리기·검증·저장·플레이는 웹에서도 동일 동작.
 
-- **메인 메뉴 Quit 버튼**: 웹에서는 숨긴다(브라우저 탭이 곧 앱 수명).
-- **트랙 파일 불러오기(FileDialog)·드래그드롭**: 메인 메뉴와 트랙 에디터 모두 웹에서는
-  비활성하고 "웹에서는 (파일/트랙) 불러오기 미지원 (Phase 2)" 안내로 대체한다.
-- **커스텀 트랙 저장·로컬 기록**: `user://` 에 쓰며, 웹에서는 브라우저 **IndexedDB** 로
-  영속한다. 즉 웹에서도 트랙을 그려 저장하고, 다시 열면 그대로 남아 있다.
+- **메인 메뉴 Quit 버튼**: 웹에서 숨김(탭이 곧 앱 수명).
+- **트랙 파일 불러오기·내보내기**: 데스크톱 `FileDialog`/드래그드롭 ↔ 웹 **JavaScriptBridge**(Phase 2). 웹 불러오기 = 브라우저 `<input type=file>`로 JSON 업로드, 내보내기 = 커스텀 트랙 JSON Blob 다운로드. 데스크톱·웹 동일 임포트 파이프라인(`TrackLoader.import_custom_from_text`)으로 수렴.
+- **커스텀 트랙 저장·로컬 기록**: `user://`에 기록, 웹은 브라우저 **IndexedDB**로 영속. 웹에서도 저장·재개 유지.
 
 ---
 
 ## 3. 로컬에서 확인하기
 
-`file://` 로 직접 열면 안 된다(브라우저가 `.wasm` 을 못 가져온다). 반드시 HTTP 로 서빙한다.
-저장소에 로컬 서버 스크립트가 있다(표준 라이브러리만 사용, `.wasm` MIME 를 올바로 지정).
+`file://` 직접 열기 금지(브라우저가 `.wasm` 로드 실패). HTTP 서빙 필수. 저장소 로컬 서버 스크립트 사용(표준 라이브러리만, `.wasm` MIME 정확 지정).
 
 ```bash
 python3 tools/web_serve.py                 # http://127.0.0.1:8060/ 로 build/web 서빙
@@ -133,45 +115,31 @@ python3 tools/web_serve.py --port 9000     # 포트 변경
 python3 tools/web_serve.py --coi           # COOP/COEP/CORP 헤더 부착(스레드 ON 실험용, 평소엔 불필요)
 ```
 
-브라우저로 주소를 열고 아래 **확인 체크리스트**를 따라간다.
-
 ### 브라우저 확인 체크리스트
 
-1. **부팅** — 주소를 열면 잠깐 로딩 후 메인 메뉴가 뜬다. 콘솔(F12)에 빨간 에러가 없어야
-   한다. **Quit 버튼이 없어야** 정상(웹 가드).
-2. **오디오(사용자 제스처)** — 브라우저는 사용자가 클릭하기 전엔 소리를 못 낸다. **Start
-   버튼을 누른 뒤** BGM·재봉틀 틱·효과음이 나오는지 확인한다.
-3. **키 입력** — 메뉴에서 ←/→(또는 A/D)로 트랙이 바뀌고, 플레이 중 조작 키가 반응하는지
-   확인한다.
-4. **기록 영속(IndexedDB)** — 한 판을 완주해 기록을 남긴 뒤, **페이지를 새로고침**해도
-   메인 메뉴의 Best 기록이 유지되는지 확인한다. 트랙 에디터에서 커스텀 트랙을 저장한 뒤
-   새로고침 후에도 목록에 남아 있으면 `user://` 영속이 정상이다.
-5. **웹 가드 안내** — 메인 메뉴/에디터의 Import 버튼을 누르면 "미지원 (Phase 2)" 안내가
-   뜨는지 확인한다(파일 다이얼로그가 열리면 안 됨).
+1. **부팅** — 주소 열면 로딩 후 메인 메뉴. 콘솔(F12) 빨간 에러 0. **Quit 버튼 없음**이 정상(웹 가드).
+2. **오디오(사용자 제스처)** — 브라우저는 클릭 전 무음. **Start 버튼 후** BGM·재봉틀 틱·효과음 확인.
+3. **키 입력** — 메뉴 ←/→(A/D)로 트랙 전환, 플레이 중 조작 키 반응 확인.
+4. **기록 영속(IndexedDB)** — 완주 기록 후 **새로고침**해도 메인 Best 유지. 에디터 커스텀 트랙 저장 후 새로고침에도 목록 유지 = `user://` 영속 정상.
+5. **트랙 가져오기/내보내기(웹)** — TrackSelect **불러오기** → 파일 선택창 → 유효 JSON 고르면 "…트랙을 가져왔습니다" 토스트 + 목록 즉시 반영(검증 실패 JSON은 사유 토스트로 거부). 커스텀 선택 시 **내보내기** 버튼 노출 → `<이름>_<id>.json` 다운로드(공식 트랙은 버튼 없음).
+6. **한글 렌더(웹 폰트)** — 닉네임 태그·오프라인 토스트, 맵 선택 "트랙 만들기"·"불러오기"·"뒤로", 한글 닉네임·커스텀 트랙명이 □(tofu) 없이 표시. 웹은 OS 폰트 폴백 없음 → 번들 서브셋 폰트(`assets/fonts/Pretendard-Regular.woff2`, `project.godot`의 `gui/theme/custom_font`)로 커버(근거: 해당 폴더 `README.md`).
 
-> 참고(자동 점검): 헤드리스 크로미움으로 부팅을 점검한 결과 콘솔 에러 0, 페이지 에러 0,
-> 캔버스 1280×720, 엔진 배너 `v4.6.1.stable … single-threaded` 를 확인했다. WebGL 2.0
-> Compatibility 렌더러가 정상 동작한다.
+> 자동 점검(헤드리스 크로미움): 콘솔 에러 0, 페이지 에러 0, 캔버스 1280×720, 엔진 배너 `v4.6.1.stable … single-threaded`, WebGL 2.0 Compatibility 정상.
 
 ---
 
 ## 4. 정적 호스팅에 올리기
 
-`build/web/` **안의 파일들**을 호스팅 루트(또는 원하는 하위 경로)에 그대로 업로드한다.
-스레드 OFF 라서 특별한 격리 헤더 없이도 부팅한다.
+`build/web/` 내부 파일을 호스팅 루트(또는 하위 경로)에 업로드. 스레드 OFF → 격리 헤더 없이 부팅.
 
 ### 4-1. 업로드
 
-- **정적 호스팅(Nginx/Apache/S3+CloudFront/Netlify/개인 서버 등)**: `build/web/` 의 내용을
-  올리고, 진입 URL 이 `…/index.html` 을 가리키게 한다.
-- 하위 경로(예: `https://example.com/overlock/`)에 올려도 된다. 산출물은 상대경로로
-  자기 옆의 `index.js`·`index.wasm`·`index.pck` 를 찾으므로 경로 이동에 강하다.
+- **정적 호스팅(Nginx/Apache/S3+CloudFront/Netlify/개인 서버 등)**: `build/web/` 내용 업로드, 진입 URL이 `…/index.html` 가리키게.
+- 하위 경로(예: `https://example.com/overlock/`)도 가능. 산출물은 상대경로로 옆의 `index.js`·`index.wasm`·`index.pck` 참조 → 경로 이동에 강함.
 
 ### 4-2. MIME 타입 주의 — `.wasm` 이 핵심
 
-**`.wasm` 은 반드시 `application/wasm` 으로 서빙**해야 한다. 브라우저가 스트리밍으로
-컴파일하려면 이 타입이어야 한다. `application/octet-stream` 같은 타입이면 부팅이 느려지거나
-실패한다. 대부분의 최신 웹서버는 기본으로 맞지만 오래된 설정이면 명시해야 한다.
+**`.wasm`은 반드시 `application/wasm`으로 서빙.** 스트리밍 컴파일 조건. `application/octet-stream` 등이면 부팅 지연·실패. 최신 웹서버는 기본 정합, 예전 설정은 명시 필요.
 
 Nginx 예시(압축 포함):
 
@@ -186,51 +154,40 @@ location / {
 }
 ```
 
-- `.pck` 는 `application/octet-stream` 이면 된다.
-- `.js` 는 `text/javascript`(또는 `application/javascript`).
-- 압축을 켜면 36 MB `.wasm` 의 전송량이 크게 준다. 미리 `*.wasm.br`/`*.wasm.gz` 를 만들어
-  두는 precompressed 방식이면 서버 CPU 도 아낀다.
+- `.pck` → `application/octet-stream`.
+- `.js` → `text/javascript`(또는 `application/javascript`).
+- 압축 시 36 MB `.wasm` 전송량 대폭 감소. `*.wasm.br`/`*.wasm.gz` precompressed 방식이면 서버 CPU 절감.
 
 ---
 
 ## 5. 리더보드 서버(server/) 연계
 
-웹 클라이언트 자체는 서버 없이도 완전히 동작한다(로컬 기록만 남음). 온라인 리더보드를
-쓰려면 `server/` 를 띄우고 클라이언트에서 그 주소를 지정한다.
+웹 클라이언트는 서버 없이 완전 동작(로컬 기록만). 온라인 리더보드 사용 시 `server/` 기동 + 클라이언트에서 주소 지정.
 
 ### 5-1. 클라이언트에서 API 주소 지정
 
-게임 안 **Settings(온라인 설정)** 화면에서 **닉네임**과 **서버 URL** 을 입력·저장한다.
-저장값은 `user://settings.json`(웹에서는 IndexedDB)에 남는다. 서버 URL 을 비우면 온라인
-기능은 조용히 비활성된다(오프라인).
+**서버 URL은 유저 UI에 미노출.** 기본값: 데스크톱 릴리스 = 프로덕션(`https://overlock.bnbong.com`), 디버그 데스크톱 = `http://localhost:8000`, 웹 = 현재 사이트(same-origin) 자동. **Settings**·메인 닉네임 태그는 **닉네임**만 관리, 저장은 `user://settings.json`(웹=IndexedDB).
 
-- "서버 연결 확인" 버튼은 `GET /api/health` 로 연결성을 점검한다.
-- 기록 제출/리더보드 조회는 실패해도 게임을 막지 않는다(조용히 실패).
+- **셀프호스팅/개발**: `user://settings.json`에 `base_url` 키 **수동** 기입(예: `{"nickname":"me","base_url":"https://api.example.com"}`). 데스크톱 기본값보다 우선. 과거 프리필 기본값(localhost/프로덕션)·빈 값은 무시하고 코드 기본값 사용.
+- 온라인 점검: 메인 진입 시 `GET /api/health` 자동 호출 → 상태 점 표시, 미연결 시 세션당 1회 안내 토스트.
+- 기록 제출/리더보드 조회 실패해도 게임 미차단(조용히 실패, 오프라인이면 제출 버튼 숨김).
 
 ### 5-2. 서버 CORS
 
-`server/` 는 기본적으로 **모든 오리진 허용**(`OVERLOCK_CORS_ORIGINS=*`)이라 웹
-클라이언트가 다른 도메인에서 API 를 불러도 CORS 로 막히지 않는다. 배포 시 오리진을
-좁히려면 게임을 서비스하는 도메인으로 지정한다.
+`server/` 기본 = **모든 오리진 허용**(`OVERLOCK_CORS_ORIGINS=*`) → 타 도메인 API 호출도 CORS 미차단. 배포 시 오리진 축소하려면 게임 서비스 도메인 지정.
 
 ```bash
 OVERLOCK_CORS_ORIGINS=https://overlock.example.com
 ```
 
-자세한 서버 설정·배포(systemd·리버스 프록시·Docker)는 **`server/README.md`** 참고.
+서버 설정·배포(systemd·리버스 프록시·Docker) 상세: **`server/README.md`**.
 
 ### 5-3. Mixed content 주의 — HTTPS 페이지에서 HTTP API 호출 금지
 
-게임 페이지를 **HTTPS** 로 서비스하면서 서버 URL 을 **HTTP**(`http://…:8000`)로 지정하면,
-브라우저가 이 요청을 **mixed content 로 차단**한다. 결과적으로 리더보드가 조용히 실패한다
-(오프라인처럼 보임).
+- 게임 페이지 **HTTPS** + 서버 URL **HTTP**(`http://…:8000`) → 브라우저가 **mixed content 차단** → 리더보드 조용히 실패(오프라인처럼 보임).
+- 해결: **서버도 HTTPS로 노출.** 앱은 `127.0.0.1:8000` 바인드 + 앞단 TLS 리버스 프록시(Nginx 등)로 `https://api.example.com` 노출 → 클라이언트 Settings에 그 **HTTPS 주소** 기입. 프록시 구성(TLS 종료·`X-Forwarded-For` 전달): `server/README.md` "리버스 프록시(nginx)" 절.
 
-해결: **서버도 HTTPS 로 노출**한다. 서버 앱은 `127.0.0.1:8000` 에만 바인드하고 앞단에
-TLS 리버스 프록시(Nginx 등)를 두어 `https://api.example.com` 같은 주소로 노출한 뒤,
-클라이언트 Settings 에는 그 **HTTPS 주소**를 넣는다. 프록시 구성(TLS 종료·`X-Forwarded-For`
-전달)은 `server/README.md` 의 "리버스 프록시(nginx)" 절을 그대로 따르면 된다.
-
-> 요약: **게임 HTTPS ↔ API HTTPS** 로 맞춰라. 한쪽만 HTTP 면 mixed content 로 막힌다.
+> **게임 HTTPS ↔ API HTTPS** 정합. 한쪽만 HTTP면 mixed content 차단.
 
 ---
 
@@ -243,3 +200,111 @@ TLS 리버스 프록시(Nginx 등)를 두어 `https://api.example.com` 같은 �
 | export 가 "template not found" 로 실패 | 설치된 엔진과 **같은 버전**의 웹 템플릿이 있는지 확인(1장). |
 | 리더보드가 계속 오프라인 | 서버 URL 오타/미기동, 또는 HTTPS↔HTTP mixed content 차단(5-3). |
 | 소리가 안 남 | 브라우저 정책상 Start(사용자 클릭) 이후에 재생됨. 정상. |
+
+---
+
+## 7. GitHub Actions CI/CD
+
+§1~6 수동 절차를 GitHub Actions로 자동화. 인프라 식별값(호스트·경로·포트·컨테이너명)은 전부 **저장소 Secrets** 주입 → 워크플로 파일에 미포함. Secrets만 채우면 동작. 워크플로 3개.
+
+### 7-1. 워크플로 개요
+
+| 파일 | 트리거 | 하는 일 |
+|---|---|---|
+| `.github/workflows/ci.yml` | push(main)·PR | 서버 pytest / GDScript gdparse·gdlint / 공식 트랙 정합성 검증(병렬 3 잡) |
+| `.github/workflows/deploy-server.yml` | 수동(+선택: `server/**` push) | GHCR 이미지 빌드·푸시(멀티아치 amd64+arm64) → API 호스트 컨테이너 교체 → 헬스 확인 |
+| `.github/workflows/deploy-web.yml` | 수동(+선택: `game/**` push) | Godot 웹 export → 웹 호스트 rsync·nginx reload → Cloudflare 캐시 purge |
+
+- **ci.yml**: 배포 안 함, 코드 무결성만 검사.
+  - `server`: Python 3.13, `pip install -r requirements.txt -r requirements-dev.txt` 후 `pytest`(작업 디렉토리 `server`).
+  - `gdscript`: `gdtoolkit==4.*`로 `game/` 전체 `gdparse`(구문) + `gdlint`(스타일).
+  - `tracks`: 표준 라이브러리로 전 트랙 JSON `json.load` + `game/tracks/official`↔`server/app/tracks` **바이트 동일성**(체크섬 계약, `server/app/seed.py`) + `index.json` 정합(등록 id↔파일 존재, 고아 파일 없음).
+- 배포 워크플로 2종: §1~6 수동 절차(웹 export·정적 업로드·nginx reload·컨테이너 교체)의 자동화. 이미지 출처만 로컬 빌드 → GHCR.
+
+### 7-2. 필요한 Secrets
+
+등록 위치: **Settings → Secrets and variables → Actions**. public 저장소이므로 인프라 식별값(호스트·경로·포트·컨테이너명)은 로그·소스 노출 방지 위해 **Secret**으로 관리. placeholder는 자신의 서버 값으로 채움.
+
+| 이름 | 종류 | 사용 워크플로 | 설명 |
+|---|---|---|---|
+| `VM1_SSH_HOST` | secret | deploy-web | 웹(정적) 호스트 접속 주소(퍼블릭 IP/도메인) |
+| `VM1_SSH_USER` | secret | deploy-web | 웹 호스트 SSH 사용자(nginx 를 reload 할 권한) |
+| `VM1_SSH_KEY` | secret | deploy-web | 웹 호스트 배포용 **개인키 전체**(BEGIN/END 포함) |
+| `VM1_NGINX_HTML_PATH` | secret | deploy-web | 정적 루트의 호스트 경로(컨테이너면 `/usr/share/nginx/html` 의 마운트 경로) |
+| `VM1_NGINX_CONTAINER` | secret | deploy-web | nginx 컨테이너 이름(nginx 를 컨테이너로 돌릴 때) |
+| `VM2_SSH_HOST` | secret | deploy-server | API 호스트 접속 주소 |
+| `VM2_SSH_USER` | secret | deploy-server | API 호스트 SSH 사용자(`docker` 실행 권한) |
+| `VM2_SSH_KEY` | secret | deploy-server | API 호스트 배포용 개인키 전체 |
+| `VM2_CONTAINER` | secret | deploy-server | API 컨테이너 이름(예: `overlock-server`) |
+| `VM2_HOST_PORT` | secret | deploy-server | API 컨테이너가 매핑될 **호스트 포트**(컨테이너 내부는 8000 고정) |
+| `CLOUDFLARE_API_TOKEN` | secret | deploy-web | 캐시 Purge 전용 토큰(권한 Zone → Cache Purge). Cloudflare 미사용이면 purge 스텝 제거 |
+| `CLOUDFLARE_ZONE_ID` | secret | deploy-web | 게임 도메인 존 ID |
+| `GITHUB_TOKEN` | **자동** | deploy-server | GHCR 로그인·푸시에 쓰는 내장 토큰. 등록 불필요(워크플로가 `packages: write` 로 요청) |
+
+> `VM1_SSH_KEY`·`VM2_SSH_KEY`: 배포 키 1개 공유 또는 호스트별 분리 모두 가능. 웹·API가 한 호스트면 VM1_*/VM2_*에 동일 값. `VM1`/`VM2`는 "웹 호스트 / API 호스트" 라벨일 뿐.
+
+### 7-3. 최초 1회 준비
+
+**(1) 배포 전용 SSH 키 생성·등록** — CI 무인 접속 → 패스프레이즈 없는 전용 키. 개인 로그인 키 재사용 금지.
+
+```bash
+# 배포 전용 ed25519 키 생성(패스프레이즈 없음).
+ssh-keygen -t ed25519 -C "overlock-deploy" -f ~/.ssh/overlock_deploy -N ""
+
+# 공개키를 각 호스트 배포 사용자의 authorized_keys 에 등록.
+ssh-copy-id -i ~/.ssh/overlock_deploy.pub <web-user>@<web-host>
+ssh-copy-id -i ~/.ssh/overlock_deploy.pub <api-user>@<api-host>
+
+# 개인키(전체 내용)를 GitHub Secret 으로 등록(gh CLI 는 저장소에서 실행).
+gh secret set VM1_SSH_KEY < ~/.ssh/overlock_deploy
+gh secret set VM2_SSH_KEY < ~/.ssh/overlock_deploy
+```
+
+**(2) 나머지 Secret 등록** — 값은 자신의 인프라에 맞춤.
+
+```bash
+gh secret set VM1_SSH_HOST        -b "<웹 호스트/IP>"
+gh secret set VM1_SSH_USER        -b "<웹 호스트 사용자>"
+gh secret set VM1_NGINX_HTML_PATH -b "<정적 루트의 호스트 경로>"
+gh secret set VM1_NGINX_CONTAINER -b "<nginx 컨테이너 이름>"
+gh secret set VM2_SSH_HOST        -b "<API 호스트>"
+gh secret set VM2_SSH_USER        -b "<API 호스트 사용자>"
+gh secret set VM2_CONTAINER       -b "overlock-server"
+gh secret set VM2_HOST_PORT       -b "<API 호스트 포트>"
+gh secret set CLOUDFLARE_ZONE_ID  -b "<게임 도메인 zone id>"
+# Cloudflare 토큰: My Profile → API Tokens → Create Token → 권한 Zone·Cache Purge,
+# 대상 Zone Resources = 게임 도메인 존 으로 만든 뒤 값만 붙여넣는다.
+gh secret set CLOUDFLARE_API_TOKEN
+```
+
+**(3) GHCR 패키지 public 전환** — API 호스트 **무인증** `docker pull` 조건. `deploy-server` 1회 실행 → `ghcr.io/<owner>/overlock-server` 패키지 생성 → **프로필 → Packages → overlock-server → Package settings → Change visibility → Public**. GHCR 패키지 가시성은 저장소 public 여부와 **별개** — 미전환 시 호스트에서 `docker login ghcr.io` 필요.
+
+**(4) docker 권한** — `VM2_SSH_USER`가 `sudo` 없이 `docker` 실행 가능해야 함(`sudo usermod -aG docker <user>` 후 재로그인). nginx 컨테이너 운용 시 웹 호스트 사용자도 해당 컨테이너 `docker exec` 권한 필요.
+
+### 7-4. 수동 트리거
+
+Actions 탭 → 워크플로 선택 → **Run workflow**, 또는 `gh`:
+
+```bash
+gh workflow run deploy-server.yml     # 현재 main 커밋으로 서버 배포
+gh workflow run deploy-web.yml        # 현재 main 커밋으로 웹 배포
+```
+
+`ci.yml`은 push/PR 자동 실행 — 수동 트리거 불필요.
+
+### 7-5. 자동 트리거 (선택)
+
+배포 워크플로 2종: 경로 기반 자동 배포(`paths` 필터) 기본 ON. 수동 전용화 시 각 파일 `push:` 블록 주석 처리 또는 삭제.
+
+- `deploy-server.yml`: `server/**` 변경 push → 서버 자동 배포.
+- `deploy-web.yml`: `game/**` 변경 push → 웹 자동 배포.
+
+### 7-6. 롤백
+
+- **서버**: 이전 커밋 SHA 이미지가 GHCR에 잔존(태그 미삭제 시) → 그 SHA로 재배포. 재빌드 생략.
+
+  ```bash
+  gh workflow run deploy-server.yml -f image_tag=<이전-커밋-SHA>
+  ```
+
+- **웹**: Actions → **Deploy Web** → 이전 성공 run **Re-run all jobs**(그 커밋 소스로 재-export·배포). 또는 그 run의 아티팩트 `overlock-web-<sha>` 내려받아 §4 수동 업로드(아티팩트 보존 5일).
