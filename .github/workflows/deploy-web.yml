@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
   # --- 자동 트리거 예시 (기본 비활성) --------------------------------------
   # game/ 이 바뀔 때마다 자동 배포하려면 아래 push 블록의 주석을 해제한다.
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "game/**"
-  #     - ".github/workflows/deploy-web.yml"
+  push:
+    branches: [main]
+    paths:
+      - "game/**"
+      - ".github/workflows/deploy-web.yml"
 
 permissions:
   contents: read

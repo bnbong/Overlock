@@ -230,19 +230,32 @@ func _build_players() -> void:
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.bus = BUS_BGM
 	_bgm_player.stream = _bgm_stream
+	_apply_web_playback(_bgm_player)
 	add_child(_bgm_player)
 
 	_tick_player = AudioStreamPlayer.new()
 	_tick_player.bus = BUS_SFX
 	if _sfx_streams.has("tick"):
 		_tick_player.stream = _sfx_streams["tick"]
+	_apply_web_playback(_tick_player)
 	add_child(_tick_player)
 
 	for i in range(SFX_VOICES):
 		var voice: AudioStreamPlayer = AudioStreamPlayer.new()
 		voice.bus = BUS_SFX
+		_apply_web_playback(voice)
 		add_child(voice)
 		_sfx_pool.append(voice)
+
+
+## 웹(HTML5)에서는 기본 재생 타입이 Sample(Web Audio 샘플 노드 직결)이다. 이 경로는
+## 런타임에 코드로 만든 커스텀 버스(BGM/SFX→Master) 라우팅을 통해 신호를 출력단까지
+## 전달하지 못해 완전 무음이 된다(스레드 OFF 단일 스레드 빌드에서 재현). 재생 타입을
+## Stream 으로 강제하면 Godot 자체 AudioServer 믹싱(드라이버 워클릿)을 거쳐 버스 라우팅이
+## 정상 반영된다. 데스크톱은 원래 AudioServer 믹싱이라 영향 없음(웹에서만 분기).
+func _apply_web_playback(player: AudioStreamPlayer) -> void:
+	if OS.has_feature("web"):
+		player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 
 
 func _stop_all_voices() -> void:
