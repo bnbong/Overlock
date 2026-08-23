@@ -4,7 +4,7 @@ extends Control
 ## (res://scenes/ProfileDialog.tscn). NicknameDialog와 동일한 모달 관례를 따른다
 ## (Dim + 재봉 패치 패널 + Esc/닫기로 해제, queue_free).
 ##
-## - 아바타(원형, 재봉 톤 링) 크게 + 이름 + 한 줄 소개 + "GitHub 방문" 버튼 + 닫기.
+## - 아바타(원형, 재봉 톤 링) 크게 + 이름 + 한 줄 소개 + 제보/후원/닫기 버튼.
 ## - 링크 열기: 데스크톱은 OS.shell_open, 웹은 JavaScriptBridge로 window.open(_, "_blank").
 ##   웹 팝업 차단을 피하려면 반드시 클릭(pressed) 핸들러 안에서 동기로 호출해야 한다.
 ## - 순수 UI — 게임 값·판정과 무관.
@@ -13,20 +13,23 @@ signal closed
 
 const DEV_NAME: String = "bnbong"
 const DEV_INTRO: String = "Overlock 개발자"
-const GITHUB_URL: String = "https://github.com/bnbong"
-# 확장 자리: Buy Me a Coffee 후원 버튼. 링크가 준비되면 아래 URL을 채우고
-# $Panel/CoffeeButton.visible = true 로 노출한다(핸들러·스킨은 이미 배선돼 있다).
-const COFFEE_URL: String = ""
+const ISSUES_URL: String = "https://github.com/bnbong/Overlock/issues"
+# 확장 자리: 크티(Ctee) 후원 버튼. 크티 플레이스 URL(예: https://ctee.kr/place/<아이디>)을
+# 아래에 채우면 _ready에서 버튼이 자동 노출된다(핸들러·스킨은 이미 배선돼 있다).
+const SUPPORT_URL: String = "https://ctee.kr/place/bnbong"
 const DEV_PROFILE_TEX: String = "res://assets/gfx/dev_profile.png"
 
 const _INK: Color = Color(0.278, 0.203, 0.153)
 const _INK_HOVER: Color = Color(0.2, 0.14, 0.1)
+# PanelBg가 Panel(VBox)을 감싸는 세로 여백(위/아래 각각). 가로 여백(40px)은 씬의
+# 고정 오프셋 차이(PanelBg ±240 vs Panel ±200)로 유지한다.
+const _PANEL_PAD_V: float = 32.0
 
 @onready var _avatar: TextureRect = $Panel/AvatarBox/Avatar
 @onready var _name_label: Label = $Panel/NameLabel
 @onready var _intro_label: Label = $Panel/IntroLabel
-@onready var _github: Button = $Panel/GitHubButton
-@onready var _coffee: Button = $Panel/CoffeeButton
+@onready var _report: Button = $Panel/ReportButton
+@onready var _support: Button = $Panel/SupportButton
 @onready var _close: Button = $Panel/CloseButton
 
 
@@ -36,12 +39,30 @@ func _ready() -> void:
 		_avatar.texture = tex
 	_name_label.text = DEV_NAME
 	_intro_label.text = DEV_INTRO
-	_github.pressed.connect(_on_github_pressed)
-	_coffee.pressed.connect(_on_coffee_pressed)
+	_report.pressed.connect(_on_report_pressed)
+	_support.pressed.connect(_on_support_pressed)
 	_close.pressed.connect(_do_close)
+	# URL이 비어 있으면 숨김 유지, 채워지면 자동 노출(수동 토글 불필요).
+	_support.visible = not SUPPORT_URL.strip_edges().is_empty()
 	_apply_skin()
-	# 팝업 안 키보드 포커스는 GitHub 버튼에서 시작(Tab/방향키로 닫기와 순환, Esc로 해제).
-	_github.grab_focus()
+	# 팝업 안 키보드 포커스는 제보 버튼에서 시작(Tab/방향키로 닫기와 순환, Esc로 해제).
+	_report.grab_focus()
+	# 버튼 수(제보/후원/닫기 또는 제보/닫기)에 따라 콘텐츠 높이가 달라지므로
+	# 실제 최소 크기를 재서 패널을 감싼다(넘침 방지, 중앙 정렬·여백 유지).
+	_fit_to_content()
+
+
+## Panel(VBox)의 콘텐츠 최소 높이를 재서 Panel과 PanelBg의 세로 크기를 맞춘다.
+## 가로 오프셋(중앙 정렬·좌우 여백)은 씬 값 그대로 두고 세로만 조정한다.
+func _fit_to_content() -> void:
+	# 자식 버튼/라벨의 최소 크기가 확정되도록 한 프레임 대기.
+	await get_tree().process_frame
+	var content_h: float = $Panel.get_combined_minimum_size().y
+	$Panel.offset_top = -content_h * 0.5
+	$Panel.offset_bottom = content_h * 0.5
+	var bg_h: float = content_h + _PANEL_PAD_V * 2.0
+	$PanelBg.offset_top = -bg_h * 0.5
+	$PanelBg.offset_bottom = bg_h * 0.5
 
 
 ## Esc/닫기 모두 해제로 처리(NicknameDialog와 동일 관례).
@@ -56,12 +77,12 @@ func _do_close() -> void:
 	queue_free()
 
 
-func _on_github_pressed() -> void:
-	_open_url(GITHUB_URL)
+func _on_report_pressed() -> void:
+	_open_url(ISSUES_URL)
 
 
-func _on_coffee_pressed() -> void:
-	_open_url(COFFEE_URL)
+func _on_support_pressed() -> void:
+	_open_url(SUPPORT_URL)
 
 
 ## 외부 링크 열기. 웹은 팝업 차단 회피를 위해 클릭 핸들러 안에서 동기로 window.open을
@@ -92,12 +113,12 @@ func _load_avatar() -> Texture2D:
 func _apply_skin() -> void:
 	if UiSkin.has_skin():
 		UiSkin.skin_panel($PanelBg, "beige")
-		UiSkin.skin_button(_github, "small", 18)
-		UiSkin.skin_button(_coffee, "small", 18)
+		UiSkin.skin_button(_report, "small", 18)
+		UiSkin.skin_button(_support, "small", 18)
 		UiSkin.skin_button(_close, "small", 18)
 		return
-	_skin_button(_github)
-	_skin_button(_coffee)
+	_skin_button(_report)
+	_skin_button(_support)
 	_skin_button(_close)
 
 
