@@ -69,6 +69,15 @@ const EYE_ANCHOR_FRAC: Vector2 = Vector2(0.5, 248.0 / 720.0)
 ## 우 동공에서 바깥으로 약 +0.07·아래로 약 +0.006 떨어진 관자놀이에 방울 꼬리를 앉힌다.
 const EYE_SWEAT_FRAC: Vector2 = Vector2(0.715, 0.35)
 
+## 둘째(미러) 땀방울의 eye_rect x_frac(y는 EYE_SWEAT_FRAC.y 그대로 사용, 세로 오프셋은
+## _draw_sweat_sprite에서 별도 가산). 원래 순수 기하 미러(1.0-EYE_SWEAT_FRAC.x=0.285)였으나,
+## 그 위치가 앞머리 타래 위에 걸쳐 보인다는 피드백으로 코/피부 방향(오른쪽)으로 옮겼다.
+## 사용자 확정값(2026-08-23): 0.38 — 후보 0.33/0.38/0.43 비교 캡처 결과, 0.33은 아직
+## 앞머리 타래에 살짝 걸치고, 0.38부터 피부 위에 완전히 얹히면서 왼쪽 눈동자 수직선(눈물
+## 경로)도 지나 있어 채택. 0.43은 더 안전하지만 코쪽으로 치우쳐 뺨이 아닌 콧대 옆처럼
+## 보여 과했다. 취향 확정이므로 워커가 임의로 되돌리지 말 것.
+const MIRROR_SWEAT_X_FRAC: float = 0.38
+
 ## --- 눈 오버레이 스왑 모드(현행 기본) — 스크립트 preload 배선 ---
 ## Gameplay.tscn을 수정하지 않고 새 모드를 기본 활성화하기 위해 preload 기본값으로
 ## 배선한다(씬은 아래 face_normal/face_focus/face_injured만 지정 → 레거시 슬롯).
@@ -283,10 +292,16 @@ func _eye_overlay(state: int) -> Texture2D:
 ## 땀방울 스프라이트: 눈 오버레이 eye_rect 기준 상대 위치(EYE_SWEAT_FRAC)의 관자놀이에
 ## 그린다. eye_rect가 eyes_offset_y·eyes_scale을 이미 반영하므로 눈을 옮기거나 키우면
 ## 땀도 자동으로 따라온다(구 독립 face_rect 앵커 폐기). 크기·둘째 방울 간격은 눈 스케일
-## (eyes_scale)에 비례시켜 눈과 함께 축척된다. sweat_texture가 없으면 절차적 _draw_drop
-## 폴백. 땀 강도(_sweat)로 크기·알파 변조(하강만 부드러워 감속 시 페이드 아웃).
+## (eyes_scale)에 비례시켜 눈과 함께 축척된다. 고집중(_sweat>0.55)의 둘째 방울은 첫
+## 방울과 같은 쪽에 몰리지 않도록 반대쪽 뺨(MIRROR_SWEAT_X_FRAC, 순수 기하 미러가 아니라
+## 앞머리 위를 피해 코 방향으로 보정한 x_frac)에 그린다. sweat_texture가 없으면 절차적
+## _draw_drop 폴백. 땀 강도(_sweat)로 크기·알파 변조(하강만 부드러워 감속 시 페이드 아웃).
 func _draw_sweat_sprite(eye_rect: Rect2) -> void:
 	var base: Vector2 = eye_rect.position + EYE_SWEAT_FRAC * eye_rect.size
+	# 둘째 방울(반대쪽 뺨) 앵커: x는 MIRROR_SWEAT_X_FRAC(코 방향 보정), y는 첫 방울과 동일.
+	var base2: Vector2 = (
+		eye_rect.position + Vector2(MIRROR_SWEAT_X_FRAC, EYE_SWEAT_FRAC.y) * eye_rect.size
+	)
 	# 방울 축척: 얼굴 배치 축척 × 눈 스케일(눈과 동일 체계라 눈이 작아지면 땀도 작아진다).
 	var spr: float = _ovl_scale * eyes_scale
 	# 소멸 직전 알파 페이드(급소멸 방지). SWEAT_FADE_KNEE 이상은 완전 불투명이라 정상
@@ -295,7 +310,8 @@ func _draw_sweat_sprite(eye_rect: Rect2) -> void:
 	if sweat_texture == null:
 		_draw_drop(base, lerpf(4.0, 9.0, _sweat) * spr, fade)
 		if _sweat > 0.55:
-			_draw_drop(base + Vector2(-16.0, 20.0) * spr, lerpf(2.0, 6.0, _sweat) * spr, fade)
+			# 스프라이트 경로(아래 100.0)와 동일 비율로 맞춘 폴백 오프셋(정밀 튜닝 불필요).
+			_draw_drop(base2 + Vector2(0.0, 83.0) * spr, lerpf(2.0, 6.0, _sweat) * spr, fade)
 		return
 	var scl: float = spr * sweat_scale * lerpf(0.85, 1.35, _sweat)
 	var tsize: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl
@@ -305,10 +321,22 @@ func _draw_sweat_sprite(eye_rect: Rect2) -> void:
 	if _sweat > 0.55:
 		var scl2: float = scl * 0.62
 		var tsize2: Vector2 = Vector2(sweat_texture.get_width(), sweat_texture.get_height()) * scl2
+		# 둘째 방울을 눈높이보다 뚜렷이 아래(뺨 중간)로 내려 눈물 경로(눈 바로 아래
+		# 수직)를 피한다. 사용자 확정값(2026-08-23): 100.0 — 이전 24.0은 눈 옆이라
+		# 눈물처럼 보인다는 피드백으로 상향했다. 취향 확정이므로 워커가 임의로
+		# 되돌리지 말 것.
 		var pos2: Vector2 = (
-			base + Vector2(-16.0, 24.0) * spr - Vector2(tsize2.x * 0.5, tsize2.y * 0.15)
+			base2 + Vector2(0.0, 100.0) * spr - Vector2(tsize2.x * 0.5, tsize2.y * 0.15)
 		)
-		draw_texture_rect(sweat_texture, Rect2(pos2, tsize2), false, Color(1.0, 1.0, 1.0, fade))
+		# 반대쪽 뺨 방울은 텍스처를 좌우 반전해 하이라이트 방향도 거울상이 되게 한다.
+		# draw_texture_rect는 대상 rect의 폭이 음수면 텍스처를 수평 반전해 그린다(Godot
+		# 표준 flip 기법 — draw_set_transform으로 전역 변환을 흔들 필요가 없다).
+		draw_texture_rect(
+			sweat_texture,
+			Rect2(pos2 + Vector2(tsize2.x, 0.0), Vector2(-tsize2.x, tsize2.y)),
+			false,
+			Color(1.0, 1.0, 1.0, fade)
+		)
 
 
 ## 전체-얼굴 텍스처 스왑(레거시): 상태별 얼굴 텍스처를 크로스페이드로 그린다(눈 영역만
@@ -405,7 +433,9 @@ func _draw_x_eye(center: Vector2) -> void:
 	draw_line(center + Vector2(-r, r), center + Vector2(r, -r), XEYE_COLOR, 6.0 * _ovl_scale)
 
 
-## 집중 땀방울(관자놀이). 긴장 강도에 비례해 커지고, 고집중에선 둘째 방울 추가.
+## 집중 땀방울(관자놀이). 긴장 강도에 비례해 커지고, 고집중에선 반대쪽 뺨에 둘째
+## 방울을 추가한다(expr_sweat_frac.x를 미러링해 첫 방울과 같은 쪽에 몰리지 않게 함).
+## _draw_drop은 좌우 대칭 도형이라 텍스처 반전 없이 위치만 옮기면 된다.
 func _draw_sweat(rect: Rect2) -> void:
 	var base: Vector2 = Vector2(
 		rect.position.x + rect.size.x * expr_sweat_frac.x,
@@ -413,7 +443,11 @@ func _draw_sweat(rect: Rect2) -> void:
 	)
 	_draw_drop(base, lerpf(4.0, 9.0, _tension) * _ovl_scale)
 	if _tension > 0.55:
-		_draw_drop(base + Vector2(-16.0, 20.0) * _ovl_scale, lerpf(2.0, 6.0, _tension) * _ovl_scale)
+		var base2: Vector2 = Vector2(
+			rect.position.x + rect.size.x * (1.0 - expr_sweat_frac.x),
+			rect.position.y + rect.size.y * expr_sweat_frac.y
+		)
+		_draw_drop(base2 + Vector2(0.0, 20.0) * _ovl_scale, lerpf(2.0, 6.0, _tension) * _ovl_scale)
 
 
 func _draw_drop(center: Vector2, r: float, alpha: float = 1.0) -> void:

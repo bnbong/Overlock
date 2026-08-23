@@ -31,6 +31,13 @@ var _jitter: Vector2 = Vector2.ZERO
 var _steer: float = 0.0
 var _steer_target: float = 0.0
 var _press: float = 0.0
+# 씬이 지정한 기본 손 텍스처(hand.png). set_hand_texture(null)로 복원할 때 사용.
+var _base_texture: Texture2D = null
+
+
+func _ready() -> void:
+	# 씬에서 배선된 기본 텍스처를 기억해 둔다(부상 교체 후 복원 기준).
+	_base_texture = texture
 
 
 func _process(delta: float) -> void:
@@ -54,6 +61,15 @@ func set_speed(speed: float) -> void:
 ## PresentationController가 매 프레임 player.actual_steer를 주입(-1..1, 음수=좌).
 func set_steer(steer: float) -> void:
 	_steer_target = clampf(steer, -1.0, 1.0)
+
+
+## 부상 단계에 따라 손 텍스처를 통째로 교체한다(§9 함정 13, 표현 전용).
+## tex가 null이면 씬 기본 텍스처(hand.png)로 복원한다. 밴드가 그림에 구워진
+## 손 텍스처들은 hand.png와 동일 캔버스·동일 손 위치로 정렬돼 있어, 교체해도
+## _draw의 중심 정렬(-ts/2) 기준 손 위치가 그대로 유지된다.
+func set_hand_texture(tex: Texture2D) -> void:
+	texture = tex if tex != null else _base_texture
+	queue_redraw()
 
 
 func _draw() -> void:

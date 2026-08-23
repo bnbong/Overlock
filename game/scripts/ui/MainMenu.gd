@@ -57,6 +57,7 @@ func _ready() -> void:
 	add_child(_toast)
 	_build_identity_bar()
 	_build_profile_chip()
+	_build_version_label()
 	LeaderboardClient.health_checked.connect(_on_health_checked)
 
 	_start_button.grab_focus()
@@ -165,6 +166,25 @@ func _on_profile_closed() -> void:
 	# 팝업이 살아있는 메뉴 위에서 닫힐 때만 포커스를 되돌린다(씬 전환·종료 중이면 생략).
 	if is_instance_valid(_start_button) and _start_button.is_inside_tree():
 		_start_button.grab_focus()
+
+
+# --- 버전 라벨(좌하단): 릴리즈 버전 표시 ---
+
+
+## 좌하단 모서리에 작은 버전 라벨을 고정한다. GAME_VERSION(LeaderboardClient, 단일 진실)에서
+## 텍스트를 가져오므로 씬에 버전을 하드코딩하지 않는다. 우하단 프로필 칩과 반대 모서리라
+## 겹치지 않는다. 배경이 그림이라 저채도 반투명 잉크 톤 + 옅은 아웃라인으로 튀지 않게 읽히게 한다.
+func _build_version_label() -> void:
+	var label: Label = Label.new()
+	label.name = "VersionLabel"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.text = "v" + LeaderboardClient.GAME_VERSION
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.278, 0.203, 0.153, 0.6))
+	label.add_theme_color_override("font_outline_color", Color(0.97, 0.93, 0.85, 0.45))
+	label.add_theme_constant_override("outline_size", 2)
+	add_child(label)
+	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 8)
 
 
 func _on_health_checked(ok: bool, _message: String) -> void:

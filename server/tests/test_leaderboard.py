@@ -118,3 +118,12 @@ def test_leaderboard_empty_for_registered_track(client):
     body = resp.json()
     assert body["count"] == 0
     assert body["entries"] == []
+
+
+def test_leaderboard_difficulty_length_capped(client):
+    # B-5: GET difficulty 는 POST 와 동일하게 max_length=32. 초과 시 422.
+    resp = client.get(
+        "/api/leaderboard",
+        params={"track_id": "cotton_01", "difficulty": "x" * 33},
+    )
+    assert resp.status_code == 422

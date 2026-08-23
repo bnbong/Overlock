@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__
 from .config import Settings, get_settings
@@ -16,6 +18,43 @@ from .database import build_engine, build_sessionmaker, init_db
 from .ratelimit import RateLimiter
 from .routes import router
 from .seed import seed_tracks
+
+
+class ContentLengthLimitMiddleware:
+    """Content-Length 가 상한을 넘으면 본문을 읽기 전에 413 으로 차단하는 ASGI 미들웨어.
+
+    앱단 방어는 Content-Length 헤더를 신뢰하는 수준까지다. chunked 전송이나 거짓
+    Content-Length 는 여기서 막지 못하므로, 리버스 프록시의 본문 크기 제한
+    (nginx ``client_max_body_size`` 등)을 함께 두는 것을 전제로 한다.
+    """
+
+    def __init__(self, app: ASGIApp, max_body_bytes: int) -> None:
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and self.max_body_bytes > 0:
+            for name, value in scope["headers"]:
+                if name != b"content-length":
+                    continue
+                try:
+                    declared = int(value)
+                except ValueError:
+                    break  # 파싱 불가한 Content-Length 는 하위 앱이 처리하게 둔다.
+                if declared > self.max_body_bytes:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": (
+                                "요청 본문이 너무 큽니다 "
+                                f"(최대 {self.max_body_bytes} bytes)"
+                            )
+                        },
+                    )
+                    await response(scope, receive, send)
+                    return
+                break
+        await self.app(scope, receive, send)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -44,13 +83,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = sessionmaker
     app.state.rate_limiter = RateLimiter(settings.rate_limit_per_minute)
 
-    # CORS: 전체 허용 기본(오픈소스 웹 클라이언트), config 로 제한 가능.
+    # 요청 본문 크기 상한(DoS 방어): Content-Length 초과 시 413 조기 차단.
+    # CORS 미들웨어보다 "먼저" add 한다 → CORS 가 바깥쪽이 되어 413 응답에도 CORS
+    # 헤더가 붙는다(Starlette 는 나중에 add_middleware 한 것이 바깥쪽). 한계:
+    # chunked/거짓 Content-Length 는 앱단에서 못 막으므로 nginx client_max_body_size 병행 전제.
+    app.add_middleware(
+        ContentLengthLimitMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+    )
+
+    # CORS: 정확-일치 오리진(config) + 정규식 오리진(itch.io *.itch.zone 임베드 등)을 허용한다.
+    # 리더보드 API 는 인증 쿠키가 없어 credentials 는 비활성. 메서드·헤더는 config 로 제한 가능.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list(),
+        allow_origin_regex=settings.cors_origin_regex_or_none(),
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=settings.cors_method_list(),
+        allow_headers=settings.cors_header_list(),
     )
 
     app.include_router(router)

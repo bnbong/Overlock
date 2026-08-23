@@ -33,12 +33,24 @@ const SHAKE_DECAY: float = 34.0
 # 넉넉히 큰 값이라 60Hz 동작은 불변).
 const MOVE_HOLD: float = 0.1
 
+## cut 누적 단계별 손 텍스처 교체 매핑(표현 전용, §9 함정 13). 배열 원소를 순서대로
+## 소비한다: 1번째 cut→오른손, 2번째→왼손, 3번째→오른손(업그레이드), … 홀수=오른손,
+## 짝수=왼손. 배열 길이(기본 3)를 넘는 cut은 무시한다(런당 최대 3단). 인스펙터에서
+## 원소를 handcut4(약지) 등으로 바꿔치기할 수 있다(Gameplay.tscn 미수정 시 이 기본값 사용).
+@export var cut_hand_textures: Array[Texture2D] = [
+	preload("res://assets/gfx/handcut1.png"),
+	preload("res://assets/gfx/handcut2.png"),
+	preload("res://assets/gfx/handcut3.png"),
+]
+
 var _mat: ShaderMaterial = null
 var _injury_shake: float = 0.0
 var _prev_stun_active: bool = false
 var _prev_pos: Vector2 = Vector2.ZERO
 var _pos_inited: bool = false
 var _move_hold_t: float = 0.0
+# cut 누적 단계(소비한 cut_hand_textures 개수). 씬 재로드 시 _ready로 0에서 시작.
+var _cut_stage: int = 0
 
 @onready var _viewport: SubViewport = get_node_or_null("../SimHost/FabricSource")
 @onready var _warp: ColorRect = get_node_or_null("../FabricLayer/FabricWarp")
@@ -170,6 +182,8 @@ func _process(delta: float) -> void:
 	if stun_active and not _prev_stun_active:
 		_injury_shake = INJURY_SHAKE
 		_play_injury_audio()
+		# 스턴 상승엣지 = cut 1회(정확히 1회). 누적 단계에 맞추어 손 텍스처를 즉시 교체.
+		_advance_cut_stage()
 	_update_shake(delta, risk)
 
 	# 8) 오디오: 속도 비례 재봉틀 틱(주행 중만).
@@ -191,6 +205,32 @@ func _update_shake(delta: float, risk: float) -> void:
 		_fabric_layer.offset = offset
 	if _foreground_layer != null:
 		_foreground_layer.offset = offset
+
+
+## cut 누적 단계를 한 칸 진행하고 해당 손 텍스처를 교체한다(스턴 상승엣지에서 1회 호출).
+## 홀수 단계(1,3,…)=오른손, 짝수 단계(2,4,…)=왼손. 배열 길이를 넘는 cut은 무시한다.
+func _advance_cut_stage() -> void:
+	if _cut_stage >= cut_hand_textures.size():
+		return  # 런당 최대 단계 도달 → 이후 cut은 손을 더 바꾸지 않는다.
+	var tex: Texture2D = cut_hand_textures[_cut_stage]
+	_cut_stage += 1
+	if _cut_stage % 2 == 1:
+		if _right_hand != null:
+			_right_hand.set_hand_texture(tex)
+	else:
+		if _left_hand != null:
+			_left_hand.set_hand_texture(tex)
+
+
+## cut 단계·양손 텍스처를 초기 상태로 복원한다. 재시작은 씬 재로드(_ready 재실행)로
+## 자동 초기화되지만, 재로드 없이 복원해야 하는 경로를 위해 명시 API로도 노출한다.
+func reset_hands() -> void:
+	_cut_stage = 0
+	_prev_stun_active = false
+	if _left_hand != null:
+		_left_hand.set_hand_texture(null)
+	if _right_hand != null:
+		_right_hand.set_hand_texture(null)
 
 
 # --- 오디오 훅 (가드: /root/AudioManager 미등록 시 무시) ---

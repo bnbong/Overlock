@@ -186,8 +186,8 @@ script = ExtResource("25_skin")
 [node name="TimeCaption" type="Label" parent="HUD"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -238.0
-offset_top = 13.0
+offset_left = -200.0
+offset_top = 17.0
 offset_right = -8.0
 offset_bottom = 35.0
 grow_horizontal = 0
@@ -199,7 +199,7 @@ horizontal_alignment = 1
 [node name="Stopwatch" type="Label" parent="HUD"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -238.0
+offset_left = -200.0
 offset_top = 35.0
 offset_right = -8.0
 offset_bottom = 87.0

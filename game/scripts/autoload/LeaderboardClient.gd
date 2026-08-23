@@ -10,8 +10,10 @@ extends Node
 ## 관리하고, 서버 URL은 UI에서 제거했다 — 데스크톱 기본값은 DEFAULT_BASE_URL(디버그는
 ## DEV_BASE_URL)이며, 셀프호스팅/개발은 settings.json에 base_url을 수동으로 적어 우선시킨다.
 ## 웹 export에서는 사용자가 URL을 지정하지 않았으면(기본값 그대로/빈 값) 현재 페이지
-## origin(window.location.origin)을 자동으로 base URL로 사용한다(게임·API 동일 도메인
-## 배포 전제). 데스크톱 경로와 사용자가 명시한 URL은 이 분기의 영향을 받지 않는다.
+## origin(window.location.origin)이 신뢰 오리진(*.bnbong.com·localhost·127.0.0.1)일 때만
+## 자동으로 base URL로 사용한다(게임·API 동일 도메인 배포 전제). itch.io(*.itch.zone) 등
+## 그 외 오리진에서는 same-origin 호출이 게임 호스트로 가서 실패하므로 DEFAULT_BASE_URL로
+## 폴백한다. 데스크톱 경로와 사용자가 명시한 URL은 이 분기의 영향을 받지 않는다.
 ##
 ## 서버 계약(POST /api/runs, GET /api/leaderboard, GET /api/health)은 §13.3 스키마를
 ## 따른다. RunStats.finalize 결과 dict는 이미 대부분 필드가 정합하며, 여기서
@@ -25,9 +27,10 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "0.2.0"  # §13.3 game_version. 클라이언트 릴리스 버전.
+const GAME_VERSION: String = "1.0.0"  # §13.3 game_version. 클라이언트 릴리스 버전.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
-# 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고 현재 페이지 origin으로 대체한다.
+# 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
+# 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
 const DEFAULT_BASE_URL: String = "https://overlock.bnbong.com"
 # 디버그 빌드(에디터/디버그 데스크톱) 전용 기본값. 개발자가 settings.json을 만지지 않고 로컬
 # 서버로 붙게 한다. 웹 빌드는 디버그여도 DEFAULT_BASE_URL을 써서 same-origin 대체가 항상 동작한다.
@@ -348,21 +351,56 @@ func _base() -> String:
 
 
 ## 실제 요청에 사용할 base URL. 웹 export에서 사용자가 URL을 지정하지 않았으면(기본값/빈 값)
-## 현재 페이지 origin을 쓰고, 사용자가 명시한 URL은 그대로 우선한다. 데스크톱에서는 저장된
-## base_url을 그대로 반환한다(기존 동작 불변).
+## 현재 페이지 origin이 신뢰 오리진일 때만 그것을 쓰고, 아니면 DEFAULT_BASE_URL로 폴백한다.
+## 사용자가 명시한 URL은 그대로 우선한다. 데스크톱에서는 저장된 base_url을 그대로 반환한다(불변).
 func _effective_base_url() -> String:
 	return _resolve_base_url(base_url, OS.has_feature("web"), _web_origin())
 
 
 ## _effective_base_url의 순수 결정 로직. 플랫폼·JS 의존을 인자로 분리해 데스크톱에서도
 ## 웹 분기(is_web=true)를 강제로 태워 단위 검증할 수 있게 한다.
+##
+## 규칙:
+##   1) 사용자가 명시한 URL(빈 값도 DEFAULT_BASE_URL도 아닌 값)은 웹·데스크톱 무관하게 그대로 우선.
+##   2) 웹 + URL 미지정(빈 값/기본값): origin이 신뢰 오리진이면 same-origin(origin) 유지,
+##      아니면(itch.zone 등) DEFAULT_BASE_URL로 폴백 — same-origin API 호출이 게임 호스트로
+##      가서 실패하는 것을 막는다.
+##   3) 데스크톱: 저장된 base_url을 그대로 반환(기존 동작 불변).
 static func _resolve_base_url(raw: String, is_web: bool, origin: String) -> String:
 	var url: String = raw.strip_edges()
 	if is_web and (url.is_empty() or url == DEFAULT_BASE_URL):
-		var trimmed_origin: String = origin.strip_edges()
-		if not trimmed_origin.is_empty():
-			return trimmed_origin
+		if _is_trusted_origin(origin):
+			return origin.strip_edges()
+		return DEFAULT_BASE_URL
 	return url
+
+
+## 웹 origin이 same-origin API 호출을 신뢰할 수 있는 배포처인지 판정한다(순수 함수).
+## 신뢰 = *.bnbong.com 계열(프로덕션·서브도메인) + localhost/127.0.0.1(포트 무관 —
+## 로컬 웹 테스트·mock 서버 워크플로우가 same-origin에 의존). 그 외(itch.zone 등)는 false.
+static func _is_trusted_origin(origin: String) -> bool:
+	var host: String = _origin_host(origin)
+	if host.is_empty():
+		return false
+	if host == "localhost" or host == "127.0.0.1":
+		return true
+	return host == "bnbong.com" or host.ends_with(".bnbong.com")
+
+
+## origin 문자열("scheme://host[:port][/path]")에서 호스트만 소문자로 추출한다(순수 함수).
+## 판정에 스킴·포트·경로는 쓰지 않는다. 형식이 어긋나면 빈 문자열.
+static func _origin_host(origin: String) -> String:
+	var s: String = origin.strip_edges().to_lower()
+	var scheme_end: int = s.find("://")
+	if scheme_end >= 0:
+		s = s.substr(scheme_end + 3)
+	var slash: int = s.find("/")
+	if slash >= 0:
+		s = s.substr(0, slash)
+	var colon: int = s.find(":")
+	if colon >= 0:
+		s = s.substr(0, colon)
+	return s
 
 
 ## 웹 export의 현재 페이지 origin을 반환한다(데스크톱에서는 "" — JavaScriptBridge 미접촉).

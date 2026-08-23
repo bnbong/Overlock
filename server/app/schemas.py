@@ -30,7 +30,9 @@ class RunCreate(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=False)
 
-    player_name: str
+    # max_length=64 는 파싱 단계 조기 차단용(거대 문자열 DoS 방어). 실제 1~16자
+    # 검증은 아래 _validate_player_name 이 strip 후 수행한다.
+    player_name: str = Field(max_length=64)
     track_id: str = Field(min_length=1, max_length=64)
     difficulty: str = Field(min_length=1, max_length=32)
     time_ms: int = Field(ge=0)
