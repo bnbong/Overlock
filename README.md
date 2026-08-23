@@ -6,6 +6,7 @@
 </p>
 <p align="center">
 <img src="https://img.shields.io/badge/GODOT-%23FFFFFF?style=flat&logo=godot-engine" alt="Godot Engine"/>
+<img src="https://img.shields.io/badge/FastAPI-%23009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI"/>
 </p>
 
 ---
@@ -29,10 +30,10 @@ https://overlock.bnbong.com/
 
 ## 문서
 
-- [게임 기획서](https://github.com/bnbong/Overlock/wiki)
+- [게임 기획서](https://github.com/bnbong/Overlock/wiki/Overlock-%EA%B2%8C%EC%9E%84-%EA%B8%B0%ED%9A%8D%EC%84%9C)
 - [클라이언트 아키텍처](docs/architecture.md)
 - [트랙 에디터 설계](docs/track_editor.md)
-- [연출·프레젠테이션](docs/presentation.md)
+- [연출](docs/presentation.md)
 - [웹 배포 가이드](docs/deploy.md)
 - [리더보드 서버](server/README.md)
 - [기여 안내](CONTRIBUTING.md)
