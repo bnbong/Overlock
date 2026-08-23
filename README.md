@@ -2,7 +2,7 @@
   <img src="./game/assets/gfx/overlock_logo.png" width="60%" alt="overlock"/>
 </p>
 <p align="center">
-<em><b>Overlock:</b> 재봉틀 레이싱 게임</em>
+<em><b>Overlock(오버로크):</b> 재봉틀 레이싱</em>
 </p>
 <p align="center">
 <img src="https://img.shields.io/badge/GODOT-%23FFFFFF?style=flat&logo=godot-engine" alt="Godot Engine"/>
@@ -39,5 +39,7 @@ https://overlock.bnbong.com/
 
 
 ## 라이선스
+
+본 게임은 "용과 같이 극 3"의 미니 게임을 오마주한 프로젝트이며, ⓒ SEGA 및 "용과 같이" 시리즈와 무관한 프로젝트입니다. 이 프로젝트의 모든 에셋은 오리지널 제작입니다.
 
 [MIT](LICENSE)
