@@ -9,7 +9,8 @@
 
 | 파일명 | 용도 | 길이 | 피크 레벨 |
 |---|---|---|---|
-| `bgm_main.wav` | 메인 루프 BGM — I-vi-IV-V 코드 진행 아르페지오 | 16.0초 (루프) | 0.85 |
+| `Sewed.mp3` | 메인 타이틀·메뉴 BGM (사용자 제작 음원, 루프) | 210.8초 (루프) | 0.98 |
+| `Locking_In.mp3` | 인게임 BGM (사용자 제작 음원, 루프) | 159.1초 (루프) | 0.98 |
 | `sfx_tick.wav` | 재봉틀 바늘 틱음. 주행 속도에 비례해 반복 재생하는 용도 | 0.08초 | 0.85 |
 | `sfx_countdown.wav` | 카운트다운 비프(낮은 음) | 0.15초 | 0.85 |
 | `sfx_go.wav` | 출발 신호(높은 음, 상승 톤) | 0.30초 | 0.85 |
@@ -20,9 +21,9 @@
 | `sfx_finish.wav` | 피니시 징글 — 3음 상승 아르페지오 | 0.80초 | 0.90 |
 | `sfx_record.wav` | 신기록 팡파레 — 4음 밝은 징글 | 1.20초 | 0.90 |
 
-모든 파일은 44.1kHz / 16-bit / mono WAV이며, 0dBFS(피크 1.0)를 넘지 않도록 정규화했고
-시작·끝 지점을 0으로 페이드해 클릭 노이즈가 없다. `bgm_main.wav`는 루프 경계에서 파형이
-자연스럽게 이어지도록(웨이브 랩어라운드 믹싱) 만들어져 있다.
+효과음(SFX)은 모두 44.1kHz / 16-bit / mono WAV이며, 0dBFS(피크 1.0)를 넘지 않도록 정규화했고
+시작·끝 지점을 0으로 페이드해 클릭 노이즈가 없다. BGM 두 곡(`Sewed.mp3` / `Locking_In.mp3`)은
+사용자가 제작해 제공한 실제 음원(MP3)으로, 피크는 약 -0.14dBFS라 클리핑 없이 재생된다.
 
 ## 교체 방법
 
@@ -38,24 +39,19 @@
 3. 새 파일을 넣을 때는 이 폴더에 정리된 포맷(44.1kHz, 16-bit, mono 또는 스테레오 WAV/OGG)을
    맞추면 Godot 임포트 시 별다른 설정 없이 바로 사용할 수 있다.
 
-## 루프 BGM(`bgm_main.wav`) 주의점
+## 루프 BGM(`Sewed.mp3` / `Locking_In.mp3`) 주의점
 
-Godot은 WAV를 임포트할 때 기본적으로 루프를 걸지 않는다. `bgm_main.wav`를
-`AudioStreamPlayer`에서 끊김 없이 반복 재생하려면 다음 중 하나가 필요하다.
+BGM 두 곡은 `AudioStreamMP3`로 임포트되며, `AudioStreamPlayer`에서 끊김 없이 반복 재생하려면
+루프가 켜져 있어야 한다.
 
-- **에디터에서 설정**: FileSystem 도크에서 `bgm_main.wav`를 선택하고 상단 Import 탭을 연
-  뒤, `Loop Mode`를 `Disabled`에서 `Forward`로 바꾸고 `Reimport`를 누른다. (Godot
-  4.6 기준. 이 경로에서는 임포터가 `Loop End` 기본값(끝)을 전체 길이로 채워 넣으므로
-  `Loop Begin`/`Loop End`를 그대로 둬도 파일 전체가 루프 구간이 된다. 단 아래 런타임
-  코드 경로는 동작이 다르다.)
-- **코드에서 설정**: 리소스를 로드한 뒤 `AudioStreamWAV`라면
-  `stream.loop_mode = AudioStreamWAV.LOOP_FORWARD`로 지정한다. 다만 루프 비활성으로
-  임포트된 리소스는 `loop_end`가 0이라 loop_mode만 켜면 빈 루프 구간이 되어 재생이 즉시
-  끝난다. 그래서 `loop_begin = 0`, `loop_end = 전체 샘플 수`도 함께 지정해야 한다
-  (`AudioManager._load_streams`가 이 방식). 이 설정은 `.import`를 덮어쓰지 않고 런타임에만
-  적용된다.
-- 재생 시 `AudioStreamPlayer.stream_paused`나 `finished` 시그널로 수동 반복시키지 말고,
-  위 루프 모드를 켜서 오디오 엔진이 샘플 단위로 이어붙이게 하는 편이 훨씬 자연스럽다.
+- **임포트에서 설정(1차 소스)**: 두 MP3의 `.import` `[params]`에 `loop=true`를 둔다. 에디터
+  FileSystem 도크에서 파일을 선택하고 Import 탭의 `Loop`를 켠 뒤 `Reimport` 해도 같다. 이러면
+  임포트된 리소스의 `stream.loop == true`가 되어 파일 전체가 루프 구간이 된다.
+- **코드에서 방어(2차)**: `AudioManager._load_streams`가 로드 직후 `AudioStreamMP3`면
+  `stream.loop = true`를 다시 켠다. 임포트 설정이 유실돼도 끊김 없이 반복되게 하는 안전장치다
+  (WAV와 달리 MP3는 `loop_begin`/`loop_end`를 따로 지정할 필요가 없다).
+- 곡 선택은 `AudioManager.play_bgm(loop_id)`가 맡는다. 메뉴 계열은 `Sewed.mp3`, 인게임은
+  `Locking_In.mp3`이며, 같은 곡이 이미 재생 중이면 재시작하지 않는다(메뉴 화면 간 이동에서 곡 끊김 방지).
 - 실제 음원으로 교체할 때도 루프 지점에서 파형 위상/음량이 급격히 끊기지 않는 소스를
   고르거나, 오디오 편집기(Audacity 등)로 루프 크로스페이드를 걸어두는 것이 좋다.
 

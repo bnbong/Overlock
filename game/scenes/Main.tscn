@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/ui/MainMenu.gd" id="1_main"]
 [ext_resource type="Texture2D" uid="uid://xdycstxi1dc2" path="res://assets/gfx/menu_bg.png" id="2_menubg"]
-[ext_resource type="Texture2D" uid="uid://dh1wi0rwnvdg3" path="res://assets/gfx/title_plaque.png" id="3_plaque"]
+[ext_resource type="Texture2D" uid="uid://c60pa52h82jgt" path="res://assets/gfx/overlock_logo.png" id="3_logo"]
 
 [sub_resource type="StyleBoxFlat" id="btn_normal"]
 content_margin_left = 20.0
@@ -114,30 +114,12 @@ grow_vertical = 2
 theme_override_constants/separation = 14
 
 [node name="TitlePlaque" type="TextureRect" parent="Menu"]
-custom_minimum_size = Vector2(380, 182)
+custom_minimum_size = Vector2(380, 190)
 layout_mode = 2
 mouse_filter = 2
-texture = ExtResource("3_plaque")
+texture = ExtResource("3_logo")
 expand_mode = 1
 stretch_mode = 5
-
-[node name="TitleText" type="Label" parent="Menu/TitlePlaque"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 30.0
-offset_top = -12.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.97, 0.93, 0.85, 1)
-theme_override_colors/font_outline_color = Color(0.26, 0.11, 0.15, 1)
-theme_override_constants/outline_size = 8
-theme_override_font_sizes/font_size = 40
-text = "OVERLOCK"
-horizontal_alignment = 1
-vertical_alignment = 1
 
 [node name="SubtitleLabel" type="Label" parent="Menu"]
 layout_mode = 2

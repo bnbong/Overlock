@@ -6,16 +6,22 @@ extends Node
 ## /root/AudioManager를 런타임 조회 + has_method 가드로 부르므로, 이 오토로드가 없어도
 ## 안전하게 무시된다. 여기의 어떤 메서드도 시뮬레이션 상태를 조회하거나 변경하지 않는다.
 ##
-## 버스: Master 아래 BGM/SFX 버스를 코드로 생성한다. BGM은 AudioStreamWAV의 loop_mode를
-## 런타임에 LOOP_FORWARD로 강제(import 메타데이터 비의존). SFX는 라운드로빈 폴리포니 풀로
-## 재생한다. 재봉틀 틱은 속도(0..1)에 비례해 재생 간격/피치를 바꾸는 표현 전용 루프다.
+## 버스: Master 아래 BGM/SFX 버스를 코드로 생성한다. BGM은 loop_id→스트림 매핑으로 메뉴 곡
+## (Sewed)과 인게임 곡(Locking_In)을 전환하며, 같은 곡이 이미 울리고 있으면 재시작하지 않는다
+## (MP3 루프는 .import loop=true가 1차 소스, 런타임에서도 방어적으로 켠다). SFX는 라운드로빈
+## 폴리포니 풀로 재생한다. 재봉틀 틱은 속도(0..1)에 비례해 재생 간격/피치를 바꾸는 표현 전용 루프다.
 
 const BUS_MASTER: String = "Master"
 const BUS_BGM: String = "BGM"
 const BUS_SFX: String = "SFX"
 
 const AUDIO_DIR: String = "res://assets/audio/"
-const BGM_FILE: String = "bgm_main.wav"
+# BGM: loop_id → 파일. 메뉴 계열은 Sewed, 인게임은 Locking_In. 미지의 loop_id는 메뉴 곡 폴백.
+const BGM_FILES: Dictionary = {
+	"menu": "Sewed.mp3",
+	"gameplay": "Locking_In.mp3",
+}
+const BGM_FALLBACK_ID: String = "menu"
 const SFX_FILES: Dictionary = {
 	"tick": "sfx_tick.wav",
 	"countdown": "sfx_countdown.wav",
@@ -42,9 +48,10 @@ const TICK_LOG_STEP: float = 0.15  # 이만큼 rate가 바뀌면 디버그 로�
 # 살아남게 하는 방어(호출부의 이동 판정 히스테리시스와 이중 안전).
 const TICK_ZERO_GRACE: float = 0.12
 
-var _bgm_stream: AudioStream = null
+var _bgm_streams: Dictionary = {}  # loop_id(String) → AudioStream
 var _sfx_streams: Dictionary = {}
 var _bgm_player: AudioStreamPlayer = null
+var _current_bgm_id: String = ""  # 현재 재생 중(또는 마지막으로 설정된) BGM loop_id
 var _tick_player: AudioStreamPlayer = null
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _sfx_next: int = 0
@@ -119,12 +126,22 @@ func reset_run_state() -> void:
 	_log("reset_run_state")
 
 
+## loop_id에 맞는 곡으로 BGM을 전환한다. 메뉴 계열("menu" 등)은 Sewed, 인게임("gameplay")은
+## Locking_In. 미지의 loop_id는 메뉴 곡으로 폴백한다. 같은 곡이 이미 재생 중이면 재시작하지
+## 않아(메뉴 화면 간 이동에서 곡이 끊기지 않게) 곡이 다를 때만 스트림을 교체한다.
 func play_bgm(loop_id: String) -> void:
-	if _bgm_player == null or _bgm_stream == null:
+	if _bgm_player == null:
 		return
-	if not _bgm_player.playing:
-		_bgm_player.play()
-	_log("play_bgm(%s)" % loop_id)
+	var id: String = loop_id if _bgm_streams.has(loop_id) else BGM_FALLBACK_ID
+	var stream: AudioStream = _bgm_streams.get(id, null)
+	if stream == null:
+		return
+	if _current_bgm_id == id and _bgm_player.playing:
+		return
+	_current_bgm_id = id
+	_bgm_player.stream = stream
+	_bgm_player.play()
+	_log("play_bgm(%s -> %s)" % [loop_id, id])
 
 
 func stop_bgm() -> void:
@@ -284,17 +301,15 @@ func _apply_bus_volume(bus_name: String, linear: float) -> float:
 
 
 func _load_streams() -> void:
-	var bgm_path: String = AUDIO_DIR + BGM_FILE
-	if ResourceLoader.exists(bgm_path):
-		_bgm_stream = load(bgm_path)
-		# 루프는 import 메타데이터가 아니라 런타임에서 강제한다(README/§7 지침).
-		if _bgm_stream is AudioStreamWAV:
-			var wav: AudioStreamWAV = _bgm_stream as AudioStreamWAV
-			wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-			# 루프 비활성으로 임포트된 리소스는 loop_end=0이라 loop_mode만 켜면 빈
-			# 루프 구간이 되어 재생이 즉시 끝난다. 런타임 경로에선 전체 샘플을 명시한다.
-			wav.loop_begin = 0
-			wav.loop_end = int(round(wav.get_length() * wav.mix_rate))
+	# BGM(MP3)은 loop_id별로 로드한다. 루프는 .import(loop=true)가 1차 소스지만, 임포트 설정이
+	# 유실돼도 끊김 없이 반복되도록 런타임에서도 AudioStreamMP3.loop를 방어적으로 켠다.
+	for id in BGM_FILES:
+		var bgm_path: String = AUDIO_DIR + String(BGM_FILES[id])
+		if ResourceLoader.exists(bgm_path):
+			var stream: AudioStream = load(bgm_path)
+			if stream is AudioStreamMP3:
+				(stream as AudioStreamMP3).loop = true
+			_bgm_streams[id] = stream
 	for key in SFX_FILES:
 		var path: String = AUDIO_DIR + String(SFX_FILES[key])
 		if ResourceLoader.exists(path):
@@ -302,9 +317,9 @@ func _load_streams() -> void:
 
 
 func _build_players() -> void:
+	# BGM 스트림은 play_bgm(loop_id)에서 곡별로 설정한다(빌드 시엔 미지정).
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.bus = BUS_BGM
-	_bgm_player.stream = _bgm_stream
 	_apply_web_playback(_bgm_player)
 	add_child(_bgm_player)
 

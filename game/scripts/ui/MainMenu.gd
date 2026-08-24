@@ -50,6 +50,7 @@ func _ready() -> void:
 	_leaderboard_button.pressed.connect(_on_leaderboard_pressed)
 	_quit_button.pressed.connect(_on_quit_pressed)
 	_apply_skin()
+	_play_menu_bgm()
 	# 웹(HTML5)에는 앱 종료 개념이 없어 Quit 버튼을 숨긴다(브라우저 탭이 곧 앱 수명).
 	_quit_button.visible = not OS.has_feature("web")
 
@@ -251,3 +252,12 @@ func _on_leaderboard_pressed() -> void:
 
 func _on_quit_pressed() -> void:
 	get_tree().quit()
+
+
+## 메뉴 BGM(메뉴 곡)을 시작한다. /root/AudioManager 런타임 조회 + has_method 가드로 부르므로
+## 오토로드가 없어도 안전하게 무시된다(AudioManager 훅 계약). 같은 곡이 이미 재생 중이면
+## AudioManager가 재시작하지 않아 메뉴 화면 간 이동에서 곡이 끊기지 않는다.
+func _play_menu_bgm() -> void:
+	var am: Node = get_node_or_null("/root/AudioManager")
+	if am != null and am.has_method("play_bgm"):
+		am.play_bgm("menu")

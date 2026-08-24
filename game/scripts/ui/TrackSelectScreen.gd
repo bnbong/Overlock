@@ -85,6 +85,7 @@ func _ready() -> void:
 	_apply_skin()
 	_refresh()
 	_play_button.grab_focus()
+	_play_menu_bgm()
 
 
 ## 사용자 제공 시트 스킨. 대형/소형 필 + 정사각 나브 버튼 + 의미별 아이콘.
@@ -462,3 +463,12 @@ static func _format_ms(ms: int) -> String:
 	var secs: int = (ms / 1000) % 60
 	var millis: int = ms % 1000
 	return "%02d:%02d.%03d" % [minutes, secs, millis]
+
+
+## 메뉴 BGM(메뉴 곡)을 시작한다. /root/AudioManager 런타임 조회 + has_method 가드로 부르므로
+## 오토로드가 없어도 안전하게 무시된다(AudioManager 훅 계약). 인게임(Locking_In)에서 이 화면으로
+## 복귀하면 메뉴 곡(Sewed)으로 전환하고, 이미 메뉴 곡이 재생 중이면 재시작하지 않는다.
+func _play_menu_bgm() -> void:
+	var am: Node = get_node_or_null("/root/AudioManager")
+	if am != null and am.has_method("play_bgm"):
+		am.play_bgm("menu")
