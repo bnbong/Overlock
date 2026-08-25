@@ -13,6 +13,8 @@
 
 원단 위에서 벌어지는 손떨리는 레이싱, 삐끗하면 아야해요
 
+[게임 설명](docs/promo/press.md)
+
 ## 게임 하기
 
 https://overlock.bnbong.com/
@@ -25,6 +27,7 @@ https://overlock.bnbong.com/
 | `→` / `D` | 오른쪽 조향 |
 | `↑` / `W` | 속도 단계 상승 |
 | `↓` / `S` | 속도 단계 하락 |
+| `⇧ Shift` (홀드) | 피벗 드리프트 |
 | `R` | 재시작 |
 | `Esc` | 일시정지 |
 

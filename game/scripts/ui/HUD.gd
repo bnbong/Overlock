@@ -77,6 +77,10 @@ func _update_status(player: PlayerController, band: int) -> void:
 	if player.stun_timer > 0.0:
 		_status_label.text = "FINGER CUT!"
 		_status_label.modulate = Color(1.0, 0.3, 0.3)
+	elif player.offfabric_timer > 0.0:
+		# 맵 이탈 소프트 리셋 잠금 중(부상보다 아래, 오프심보다 위 우선순위) — 주황 안내.
+		_status_label.text = "원단 이탈 · 복귀"
+		_status_label.modulate = Color(1.0, 0.55, 0.1)
 	elif band == RunStats.Band.OFF_SEAM or band == RunStats.Band.TEAR:
 		_status_label.text = "OFF-SEAM"
 		_status_label.modulate = Color(1.0, 0.8, 0.2)

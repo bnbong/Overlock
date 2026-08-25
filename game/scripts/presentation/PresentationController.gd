@@ -26,12 +26,16 @@ const EDGE_WIDTH: float = 0.022
 const EDGE_DARKNESS: float = 0.55
 
 const INJURY_SHAKE: float = 14.0
+# 맵 이탈 소프트 리셋 시 소폭 셰이크(부상 셰이크보다 약하게 — 부상과 구별되는 가벼운 피드백).
+const OFFFABRIC_SHAKE: float = 8.0
 const SHAKE_DECAY: float = 34.0
 # 이동 판정 히스테리시스. 물리는 60Hz 고정이지만 _process는 렌더 프레임(90/120Hz)마다
 # 도므로, 물리 틱 없는 프레임에선 position 변화가 0이라 순간적으로 "정지"로 오판된다.
 # 마지막 이동 시각을 기억해 이 시간 안이면 계속 "주행 중"으로 유지한다(물리 틱 간격보다
 # 넉넉히 큰 값이라 60Hz 동작은 불변).
 const MOVE_HOLD: float = 0.1
+
+const ToastScene := preload("res://scenes/Toast.tscn")
 
 ## cut 누적 단계별 손 텍스처 교체 매핑(표현 전용, §9 함정 13). 배열 원소를 순서대로
 ## 소비한다: 1번째 cut→오른손, 2번째→왼손, 3번째→오른손(업그레이드), … 홀수=오른손,
@@ -46,6 +50,11 @@ const MOVE_HOLD: float = 0.1
 var _mat: ShaderMaterial = null
 var _injury_shake: float = 0.0
 var _prev_stun_active: bool = false
+# 맵 이탈 소프트 리셋 상승엣지 추적(스턴 엣지와 별개). cut 단계는 건드리지 않는다.
+var _prev_offfabric: bool = false
+# 드리프트 상승엣지 추적(가드형 오디오 훅용, 표현 전용). 셰이크는 리스크 연동이라 별도 없음.
+var _prev_drifting: bool = false
+var _toast: Toast = null
 var _prev_pos: Vector2 = Vector2.ZERO
 var _pos_inited: bool = false
 var _move_hold_t: float = 0.0
@@ -60,6 +69,7 @@ var _cut_stage: int = 0
 @onready var _player: PlayerController = get_node_or_null("../SimHost/FabricSource/World/Player")
 @onready var _camera: Camera2D = get_node_or_null("../SimHost/FabricSource/World/Player/Camera2D")
 @onready var _stitch: StitchTrail = get_node_or_null("../SimHost/FabricSource/World/StitchTrail")
+@onready var _skid: DriftSkid = get_node_or_null("../SimHost/FabricSource/World/DriftSkid")
 @onready var _needle: NeedleView = get_node_or_null("../ForegroundLayer/NeedleView")
 @onready var _left_hand: HandView = get_node_or_null("../ForegroundLayer/LeftHand")
 @onready var _right_hand: HandView = get_node_or_null("../ForegroundLayer/RightHand")
@@ -77,6 +87,9 @@ func _ready() -> void:
 	_setup_projection()
 	_setup_fabric()
 	_place_needle()
+	# 맵 이탈 안내용 토스트(재사용 컴포넌트). CanvasLayer라 이 노드 아래 붙어도 화면 최상단에 뜬다.
+	_toast = ToastScene.instantiate()
+	add_child(_toast)
 
 
 ## 트랙 JSON의 fabric 필드로 원단 타일 텍스처와 셰이더 대표색을 결정한다(1회).
@@ -134,6 +147,7 @@ func _process(delta: float) -> void:
 	var pos: Vector2 = _player.position
 	var risk: float = _player.risk
 	var stun_active: bool = _player.stun_timer > 0.0
+	var offfabric_active: bool = _player.offfabric_timer > 0.0
 	var speed_index: int = _player.speed_index
 	# actual_steer: 노루발이 실제로 따라가는 지연 조향값(-1..1, 음수=좌). 얼굴 고개
 	# 꺾기·손 누름 연출의 구동값. 뷰가 프레임 독립적으로 추가 보간한다.
@@ -157,21 +171,27 @@ func _process(delta: float) -> void:
 		_move_hold_t = maxf(_move_hold_t - delta, 0.0)
 	var running: bool = _move_hold_t > 0.0
 
-	# 3) 스티치 샘플링(호길이 기반).
+	# 3) 스티치 샘플링(호길이 기반). 드리프트 중이면 원단 융기 스키드 자국도 함께 남긴다
+	#    (표현 전용, dir=drift_dir 부호=밀린 방향 / intensity=|drift_dir|=길이·오프셋 스케일).
 	if _stitch != null:
 		_stitch.push_if_moved(pos)
+	if _player.is_drifting and _skid != null:
+		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir))
 
 	# 4) 바늘 왕복 = f(speed).
 	if _needle != null:
 		_needle.set_speed(speed)
 
-	# 5) 손: 속도 진동 + 조향 방향 누름 강조(반대 손은 이완).
+	# 5) 손: 속도 진동 + 조향 방향 누름 강조(반대 손은 이완). 드리프트 중이면 그 방향 손을
+	#    더 깊이 누른다(set_drift로 조향 프레스 김믹 증폭, 반대 손은 기존 수준 유지).
 	if _left_hand != null:
 		_left_hand.set_speed(speed)
 		_left_hand.set_steer(steer)
+		_left_hand.set_drift(_player.is_drifting, _player.drift_dir)
 	if _right_hand != null:
 		_right_hand.set_speed(speed)
 		_right_hand.set_steer(steer)
+		_right_hand.set_drift(_player.is_drifting, _player.drift_dir)
 
 	# 6) 얼굴: 표정(부상>고위험>속도 집중) + 조향 고개 꺾기.
 	if _face != null:
@@ -184,12 +204,25 @@ func _process(delta: float) -> void:
 		_play_injury_audio()
 		# 스턴 상승엣지 = cut 1회(정확히 1회). 누적 단계에 맞추어 손 텍스처를 즉시 교체.
 		_advance_cut_stage()
+	# 7b) 맵 이탈 소프트 리셋 상승엣지(스턴 엣지와 별개). 부상이 아니므로 손 텍스처 단계는
+	#     절대 진행하지 않는다(_advance_cut_stage 호출 금지). 소폭 셰이크 + 토스트 + 오프심 SFX 재사용.
+	if offfabric_active and not _prev_offfabric:
+		_injury_shake = maxf(_injury_shake, OFFFABRIC_SHAKE)
+		if _toast != null:
+			_toast.push("원단 이탈! 재봉선 복귀")
+		_play_offfabric_audio()
+	# 7c) 드리프트 상승엣지: 가드형 오디오 훅만(무음 기본, 신규 에셋 없음). 셰이크는 리스크
+	#     연동으로 자동이라 여기서 추가하지 않는다(표현 전용, 시뮬 무관).
+	if _player.is_drifting and not _prev_drifting:
+		_play_drift_audio()
 	_update_shake(delta, risk)
 
 	# 8) 오디오: 속도 비례 재봉틀 틱(주행 중만).
 	_update_machine_rate(running, speed)
 
 	_prev_stun_active = stun_active
+	_prev_offfabric = offfabric_active
+	_prev_drifting = _player.is_drifting
 
 
 func _update_shake(delta: float, risk: float) -> void:
@@ -244,6 +277,22 @@ func _play_injury_audio() -> void:
 	var am: Node = _audio()
 	if am != null and am.has_method("play_injury"):
 		am.play_injury()
+
+
+## 맵 이탈 소프트 리셋 피드백. 신규 에셋 없이 기존 오프심 SFX를 재사용한다(on_band_enter는
+## 밴드 무관하게 sfx_offseam을 재생 — 표현 전용이라 시뮬 값·판정과 무관).
+func _play_offfabric_audio() -> void:
+	var am: Node = _audio()
+	if am != null and am.has_method("on_band_enter"):
+		am.on_band_enter(RunStats.Band.OFF_SEAM)
+
+
+## 드리프트 발동 피드백(표현 전용). 무음 기본 — AudioManager가 on_drift를 노출하면 그때만
+## 재생한다(신규 에셋 없이 가드형 훅만; on_band_enter·play_injury 방식과 동일 관용구).
+func _play_drift_audio() -> void:
+	var am: Node = _audio()
+	if am != null and am.has_method("on_drift"):
+		am.on_drift()
 
 
 func _update_machine_rate(running: bool, speed: float) -> void:

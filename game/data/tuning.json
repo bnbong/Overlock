@@ -4,6 +4,7 @@
   "foot_response_rate": 1.1,
   "steer_tau": 0.16,
   "steer_reversal_boost": 2.0,
+  "steer_expo": 0.55,
   "turn_power": 4.0,
   "steer_speed_floor": 0.825,
   "risk_gain_rate": 3.6,

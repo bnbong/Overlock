@@ -34,6 +34,8 @@ const _KNOT_HI: Color = Color(0.6, 0.44, 0.34)
 @onready var _bgm_value: Label = $Panel/BgmRow/BgmValue
 @onready var _sfx_slider: HSlider = $Panel/SfxRow/SfxSlider
 @onready var _sfx_value: Label = $Panel/SfxRow/SfxValue
+@onready var _steer_slider: HSlider = $Panel/SteerRow/SteerSlider
+@onready var _steer_value: Label = $Panel/SteerRow/SteerValue
 
 
 func _ready() -> void:
@@ -42,6 +44,7 @@ func _ready() -> void:
 	_hint_label.text = "리더보드에 표시될 닉네임 (1~16자)"
 	_apply_skin()
 	_setup_volume()
+	_setup_steer()
 	_save_button.pressed.connect(_on_save_pressed)
 	_back_button.pressed.connect(_on_back_pressed)
 	_nick_edit.text_submitted.connect(_on_nick_submitted)
@@ -58,9 +61,10 @@ func _on_save_pressed() -> void:
 	if nick.is_empty():
 		_status_label.text = "닉네임을 입력하세요 (1~16자)"
 		return
-	# 볼륨은 슬라이더 조작 종료 시 이미 영속하지만, 키보드 조작 등 drag_ended가 없는 변경도
-	# 저장에 포함되도록 현재 버스값을 한 번 더 반영한다.
+	# 볼륨/조향 감도는 슬라이더 조작 종료 시 이미 영속하지만, 키보드 조작 등 drag_ended가 없는
+	# 변경도 저장에 포함되도록 현재값을 한 번 더 반영한다.
 	_persist_volumes()
+	_persist_steer()
 	if not LeaderboardClient.save_nickname(nick):
 		_status_label.text = "저장 실패"
 		return
@@ -133,6 +137,51 @@ func _persist_volumes() -> void:
 		AudioManager.get_bgm_volume(),
 		AudioManager.get_sfx_volume(),
 	)
+
+
+# --- 조향 감도(부드러움) — 볼륨 슬라이더와 동형. Tuning.steer_expo를 라이브로 구동하고
+#     조작 종료/저장 시 LeaderboardClient가 settings.json에 영속한다. turn_power 배율(불공정
+#     판정)이 아니라 heading 출력 expo만 바꾸므로 풀락 기하·리스크 판정은 불변이다.
+
+
+## 슬라이더를 현재 Tuning.steer_expo로 초기화하고 시그널을 배선한다(값 설정을 연결보다 먼저 해
+## 초기화 시 불필요한 set이 튀지 않게 한다 — 볼륨 패턴 동일).
+func _setup_steer() -> void:
+	_skin_slider(_steer_slider)
+	_steer_slider.min_value = 0.0
+	_steer_slider.max_value = 100.0
+	_steer_slider.step = 1.0
+	_steer_slider.value = roundf(_expo_to_percent(Tuning.steer_expo))
+	_update_percent(_steer_value, _steer_slider.value)
+	_steer_slider.value_changed.connect(_on_steer_changed)
+	_steer_slider.drag_ended.connect(_on_steer_drag_ended)
+
+
+func _on_steer_changed(percent: float) -> void:
+	Tuning.steer_expo = _percent_to_expo(percent)
+	_update_percent(_steer_value, percent)
+
+
+## 슬라이더 조작 종료: 현재 조향 감도를 영속한다(볼륨과 달리 미리듣기 없음).
+func _on_steer_drag_ended(_value_changed: bool) -> void:
+	_persist_steer()
+
+
+## 현재 Tuning.steer_expo를 settings.json에 영속한다(LeaderboardClient가 클램프 소유자).
+func _persist_steer() -> void:
+	LeaderboardClient.save_steer_expo(Tuning.steer_expo)
+
+
+## steer_expo(∈[MIN,MAX]) → 부드러움 퍼센트(0..100). 슬라이더/표시용(볼륨 %와 동형).
+func _expo_to_percent(expo: float) -> float:
+	var span: float = LeaderboardClient.STEER_EXPO_MAX - LeaderboardClient.STEER_EXPO_MIN
+	return clampf((expo - LeaderboardClient.STEER_EXPO_MIN) / span * 100.0, 0.0, 100.0)
+
+
+## 부드러움 퍼센트(0..100) → steer_expo(∈[MIN,MAX]).
+func _percent_to_expo(percent: float) -> float:
+	var span: float = LeaderboardClient.STEER_EXPO_MAX - LeaderboardClient.STEER_EXPO_MIN
+	return LeaderboardClient.STEER_EXPO_MIN + percent / 100.0 * span
 
 
 ## 재봉 톤 슬라이더 스타일: 원단 그늘 트랙 + 실 보라 채움 + 단추(매듭) 그래버.

@@ -25,6 +25,14 @@ const FINISH_VIEW_DURATION: float = 3.5  # 줌아웃(~1s) + 홀드(~2.5s) 후 �
 # 입력은 버리고, 유예 후 새로 눌린 키만 스킵으로 인정한다.
 const FINISH_VIEW_SKIP_GRACE: float = 0.4
 
+# 맵(원단) 이탈 소프트 리셋(설계 §B). 오차가 임계를 RESET_DWELL 이상 "지속" 초과하면
+# 마지막 정상 지점으로 되돌린다. 임계는 절대값 하한(RESET_ABS)과 트랙 fail 폭 배수
+# (fail*RESET_FAIL_MULT) 중 큰 값 — 넓은 트랙에서 관대하고 좁은 트랙에서도 오발동하지 않게.
+# 순간적 이탈(코너 컷 등)은 dwell로 걸러내 정상 주행을 방해하지 않는다.
+const RESET_ABS: float = 300.0
+const RESET_FAIL_MULT: float = 3.5
+const RESET_DWELL: float = 0.12
+
 var _track: TrackData
 var _stats: RunStats
 var _state: State = State.COUNTDOWN
@@ -34,16 +42,23 @@ var _countdown_time: float = COUNTDOWN_SECONDS
 var _finish_view_time: float = 0.0
 var _pending_result: Dictionary = {}
 
+# 소프트 리셋용 "마지막 정상 지점"(PERFECT/GOOD 밴드에서만 갱신)과 이탈 지속 시간.
+var _last_good_hint: int = 0
+var _last_good_s: float = 0.0
+var _offfabric_dwell: float = 0.0
+
 # 이산 입력 버퍼 (_unhandled_input에서 세팅, 물리 틱에서 소비).
 var _buf_speed_delta: int = 0
 var _buf_restart: bool = false
 var _buf_pause: bool = false
+var _buf_to_menu: bool = false  # 일시정지 중 M(메인 메뉴 복귀) 버퍼. 일시정지 상태에서만 세팅한다.
 var _buf_finish_skip: bool = false  # FINISH_VIEW 중 아무 키 입력(스킵) 버퍼.
 
 @onready var _player: PlayerController = $SimHost/FabricSource/World/Player
 @onready var _track_renderer: TrackRenderer = $SimHost/FabricSource/World/TrackRenderer
 @onready var _finish_line: FinishLine = $SimHost/FabricSource/World/FinishLine
 @onready var _stitch: StitchTrail = $SimHost/FabricSource/World/StitchTrail
+@onready var _skid: DriftSkid = get_node_or_null("SimHost/FabricSource/World/DriftSkid")
 @onready var _finish_view: FinishView = $FinishViewLayer/FinishView
 @onready var _hud: HUD = $HUD
 
@@ -74,6 +89,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_buf_pause = true
 	elif event.is_action_pressed("restart"):
 		_buf_restart = true
+	elif event.is_action_pressed("to_menu"):
+		# 일시정지 상태일 때만 유효. 그 외에는 아무 동작도 하지 않는다.
+		if get_tree().paused:
+			_buf_to_menu = true
 	elif event.is_action_pressed("speed_up"):
 		_buf_speed_delta += 1
 	elif event.is_action_pressed("speed_down"):
@@ -126,6 +145,10 @@ func _consume_meta_input() -> bool:
 		_buf_restart = false
 		_restart()
 		return true
+	if _buf_to_menu:
+		_buf_to_menu = false
+		_to_menu()
+		return true
 	return false
 
 
@@ -140,6 +163,12 @@ func _toggle_pause() -> void:
 func _restart() -> void:
 	get_tree().paused = false
 	get_tree().reload_current_scene()
+
+
+## 일시정지 중 M 입력: 런을 파기하고 메인 메뉴로 돌아간다(확인창 없음, 재시작과 동일하게 즉시형).
+func _to_menu() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/Main.tscn")
 
 
 func _tick_countdown(delta: float) -> void:
@@ -159,10 +188,44 @@ func _tick_running(delta: float) -> void:
 	_hint = int(probe["idx"])
 	var err: float = float(probe["error"])
 	var band: int = _classify(err)
+	# 맵 이탈 소프트 리셋(설계 §B): 정상 밴드(PERFECT/GOOD)에서만 복귀 기준점을 기억하고,
+	# 오차가 임계를 RESET_DWELL 이상 지속 초과하면 마지막 정상 지점으로 되돌린 뒤 그 틱을 끝낸다.
+	if band == RunStats.Band.PERFECT or band == RunStats.Band.GOOD:
+		_last_good_hint = _hint
+		_last_good_s = float(probe["s"])
+	if err > maxf(RESET_ABS, _track.fail * RESET_FAIL_MULT):
+		_offfabric_dwell += delta
+		if _offfabric_dwell >= RESET_DWELL:
+			_soft_reset_off_fabric()
+			return
+	else:
+		_offfabric_dwell = 0.0
 	_stats.accumulate(delta, _player.speed_index, band, err, _player.consume_just_cut())
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
 	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
 		_finish()
+
+
+## 마지막 정상 지점(센터라인 점 + 진행 방향)으로 플레이어를 되돌리고 페널티를 부과한다.
+## _hint를 복원해 다음 query가 그 주변에서 재로컬라이즈하게 함으로써 s가 전진하지 않도록
+## 막는다(리셋을 진행 단축에 악용하는 것을 차단). 부상 카운트는 건드리지 않는다.
+func _soft_reset_off_fabric() -> void:
+	var reset_pos: Vector2 = Vector2.ZERO
+	if _track.points.size() > _last_good_hint:
+		reset_pos = _track.points[_last_good_hint]
+	_player.off_fabric_reset(reset_pos, _heading_at(_last_good_hint))
+	_hint = _last_good_hint
+	_stats.add_reset_penalty()
+	_offfabric_dwell = 0.0
+
+
+## 폴리라인 인덱스 idx에서의 진행(접선) 방향 각도. 세그먼트가 없으면 0.
+func _heading_at(idx: int) -> float:
+	var n: int = _track.points.size()
+	if n < 2:
+		return 0.0
+	var i: int = clampi(idx, 0, n - 2)
+	return (_track.points[i + 1] - _track.points[i]).angle()
 
 
 func _sample_input() -> InputFrame:
@@ -173,7 +236,8 @@ func _sample_input() -> InputFrame:
 		steer += 1.0
 	var speed_delta: int = _buf_speed_delta
 	_buf_speed_delta = 0
-	return InputFrame.new(steer, speed_delta, false)
+	var drift: bool = Input.is_action_pressed("drift")
+	return InputFrame.new(steer, speed_delta, false, drift)
 
 
 func _classify(err: float) -> int:
@@ -200,6 +264,7 @@ func _finish() -> void:
 	_buf_speed_delta = 0
 	_buf_restart = false
 	_buf_pause = false
+	_buf_to_menu = false
 	_buf_finish_skip = false
 	if _hud != null:
 		_hud.enter_finish_view()
@@ -207,7 +272,9 @@ func _finish() -> void:
 		var trail: PackedVector2Array = PackedVector2Array()
 		if _stitch != null:
 			trail = _stitch.get_full_points()
-		_finish_view.begin(_track, trail, _player.position, result)
+		# 드리프트 스키드 전체 자국도 줌아웃 뷰에 넘긴다(null-safe, 없으면 빈 배열).
+		var skids: Array = _skid.get_full_marks() if _skid != null else []
+		_finish_view.begin(_track, trail, _player.position, result, skids)
 
 
 ## 확정된 결과로 Result 씬으로 전환한다(중복 호출 방지 가드).
@@ -224,6 +291,9 @@ func _init_player() -> void:
 		start_pos = _track.points[0]
 	_player.reset_state(start_pos, _track.start_heading())
 	_hint = 0
+	_last_good_hint = 0
+	_last_good_s = 0.0
+	_offfabric_dwell = 0.0
 
 
 func _place_finish_line() -> void:

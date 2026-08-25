@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/track/FinishLine.gd" id="10_fin"]
 [ext_resource type="Script" path="res://scripts/presentation/FabricSurface.gd" id="11_fab"]
 [ext_resource type="Script" path="res://scripts/presentation/StitchTrail.gd" id="12_st"]
+[ext_resource type="Script" path="res://scripts/presentation/DriftSkid.gd" id="12_skid"]
 [ext_resource type="Script" path="res://scripts/presentation/BackgroundFace.gd" id="13_face"]
 [ext_resource type="Script" path="res://scripts/presentation/NeedleView.gd" id="14_ndl"]
 [ext_resource type="Script" path="res://scripts/presentation/HandView.gd" id="15_hand"]
@@ -50,6 +51,9 @@ script = ExtResource("11_fab")
 
 [node name="TrackRenderer" type="Node2D" parent="SimHost/FabricSource/World"]
 script = ExtResource("2_trk")
+
+[node name="DriftSkid" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("12_skid")
 
 [node name="StitchTrail" type="Node2D" parent="SimHost/FabricSource/World"]
 script = ExtResource("12_st")
@@ -284,7 +288,7 @@ theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
 theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 0.9)
 theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 15
-text = "←  /  →   TURN"
+text = "←/→ TURN    ⇧ DRIFT"
 horizontal_alignment = 1
 
 [node name="RiskMeter" type="Control" parent="HUD"]
@@ -381,6 +385,6 @@ offset_bottom = 60.0
 grow_horizontal = 2
 theme_override_colors/font_color = Color(0.435, 0.337, 0.267, 1)
 theme_override_font_sizes/font_size = 22
-text = "[Esc] Resume      [R] Restart"
+text = "[Esc] Resume      [R] Restart      [M] Main"
 horizontal_alignment = 1
 vertical_alignment = 1

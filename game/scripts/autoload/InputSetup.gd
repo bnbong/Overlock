@@ -11,8 +11,10 @@ func _ready() -> void:
 	_bind(&"steer_right", [KEY_RIGHT, KEY_D])
 	_bind(&"speed_up", [KEY_UP, KEY_W])
 	_bind(&"speed_down", [KEY_DOWN, KEY_S])
+	_bind(&"drift", [KEY_SHIFT])
 	_bind(&"restart", [KEY_R])
 	_bind(&"pause", [KEY_ESCAPE])
+	_bind(&"to_menu", [KEY_M])
 
 
 func _bind(action: StringName, keys: Array) -> void:

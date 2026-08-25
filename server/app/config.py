@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     # 물리 하한 계산용 최고 속도(px/s). 기획서 §7.2 Overlock 단계 = 300.
     max_speed_px_s: float = 300.0
+    # 물리 하한 안전계수(§18). 코너컷으로 실주행거리 < 중심선 길이가 되면 (중심선/최고속도)
+    # 기준 하한이 정당한 기록을 오거부한다. 계수(<1)를 곱해 하한을 낮춰 이를 보정한다.
+    # OVERLOCK_MIN_TIME_SAFETY_FACTOR 로 오버라이드(env_prefix 기존 패턴).
+    min_time_safety_factor: float = 0.75
 
     @field_validator("tracks_dir", mode="before")
     @classmethod

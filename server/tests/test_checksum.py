@@ -9,6 +9,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
+from app.models import Track
 from app.seed import compute_file_checksum, compute_min_final_time_ms
 
 TRACKS_DIR = Path(__file__).resolve().parent.parent / "app" / "tracks"
@@ -33,7 +36,39 @@ def test_compute_file_checksum_format():
 
 
 def test_physical_floor_formula():
-    # (length / max_speed) * 1000 을 floor. cotton_01 length=3206, max=300 → 10686.
-    assert compute_min_final_time_ms(3206, 300.0) == 10686
+    # floor((length / max_speed) * 1000 * safety_factor). cotton_01 length=3206, max=300.
+    # 안전계수 0.75(코너컷 보정, §18) → 8015, 계수 1.0(=기본) → 10686.
+    assert compute_min_final_time_ms(3206, 300.0, 0.75) == 8015
+    assert compute_min_final_time_ms(3206, 300.0, 1.0) == 10686
+    assert compute_min_final_time_ms(3206, 300.0) == 10686  # 기본 계수 1.0
     assert compute_min_final_time_ms(0, 300.0) == 0
     assert compute_min_final_time_ms(3000, 0) == 0  # 0 나눗셈 방지
+
+
+# 전 트랙 물리 하한 회귀(§18). 안전계수 0.75(client 기본 설정)로 시드된 각 트랙의
+# min_final_time_ms 가 표와 일치해야 한다. 트랙 길이나 계수가 바뀌면 여기서 잡힌다.
+# NOTE: cat_01 은 수학적 정확값이 8095 지만, 지정 공식의 부동소수점 연산
+# ((3238/300.0)*1000.0*0.75 = 8094.999999999999) 을 floor 하면 8094 다(코드 실제값).
+_EXPECTED_MIN_TIME_075 = {
+    "cotton_01": 8015,
+    "heart_01": 7242,
+    "cat_01": 8094,
+    "star_01": 8862,
+    "fish_01": 8360,
+    "spool_01": 8995,
+    "basin_01": 7785,
+    "selvedge_01": 9755,
+    "harbor_01": 6912,
+    "summit_01": 7142,
+}
+
+
+@pytest.mark.parametrize("track_id,expected", list(_EXPECTED_MIN_TIME_075.items()))
+def test_seeded_min_final_time_regression(client, track_id, expected):
+    session = client.app.state.sessionmaker()
+    try:
+        track = session.get(Track, track_id)
+        assert track is not None, f"{track_id} 미시드"
+        assert track.min_final_time_ms == expected, track_id
+    finally:
+        session.close()

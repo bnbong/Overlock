@@ -27,7 +27,7 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "1.0.0"  # §13.3 game_version. 클라이언트 릴리스 버전.
+const GAME_VERSION: String = "1.0.1"  # §13.3 game_version. 시뮬 수학 변경(조향 expo) 반영 범프.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -48,6 +48,12 @@ const DEFAULT_VOLUME_SFX: float = 1.0
 # 맞춰, 볼륨 API 도입 전후 BGM 체감을 동일하게 유지한다. const에서 db_to_linear() 호출이 불가하여
 # 환산값(10^(-6/20) ≈ 0.5012)을 고정한다 — AudioManager.DEFAULT_BGM_DB를 바꾸면 함께 갱신할 것.
 const DEFAULT_VOLUME_BGM: float = 0.5011872336272722
+
+# 조향 감도(부드러움) = Tuning.steer_expo. 슬라이더가 이 범위로 구동하고 settings.json에 영속한다.
+# 볼륨과 동형으로 취급: 여기가 영속·클램프 소유자이고, 시작 시/변경 시 Tuning.steer_expo에 주입한다.
+const STEER_EXPO_MIN: float = 0.25
+const STEER_EXPO_MAX: float = 0.65
+const DEFAULT_STEER_EXPO: float = 0.55  # v1.0.1 국소화 곡선 기본값(Tuning.gd·tuning.json과 정합).
 
 # 설정(user://settings.json 미러). 비어 있는 base_url = 온라인 비활성.
 var base_url: String = DEFAULT_BASE_URL
@@ -76,6 +82,10 @@ var volume_master: float = DEFAULT_VOLUME_MASTER
 var volume_bgm: float = DEFAULT_VOLUME_BGM
 var volume_sfx: float = DEFAULT_VOLUME_SFX
 
+# 조향 감도(부드러움) 미러(= Tuning.steer_expo). 시작 시 Tuning에 주입하고, 설정 화면이
+# save_steer_expo로 영속한다(볼륨과 동형 — 클램프·저장 소유자).
+var steer_expo: float = DEFAULT_STEER_EXPO
+
 # settings.json에 사용자가 수동으로 적은 셀프호스팅/개발용 base_url이 있으면 true. 이 경우에만
 # base_url을 다시 settings.json에 기록해 보존한다(기본값은 코드에서 결정 — 향후 기본 변경 자동 반영).
 var _base_url_manual: bool = false
@@ -88,6 +98,10 @@ var _web_origin_resolved: bool = false
 
 func _ready() -> void:
 	_load_settings()
+	# 저장된 조향 감도(부드러움)를 Tuning에 주입한다(볼륨 주입과 동일 타이밍 패턴). Tuning은
+	# 앞선 오토로드라 이 시점에 준비돼 있다 — 설정 화면·게임플레이가 이후 이 값을 그대로 쓴다.
+	if is_instance_valid(Tuning):
+		Tuning.steer_expo = steer_expo
 
 
 # --- 설정(SettingsStore) API ---
@@ -120,6 +134,15 @@ func save_volumes(master: float, bgm: float, sfx: float) -> bool:
 	return _write_settings()
 
 
+## 조향 감도(부드러움) = Tuning.steer_expo를 갱신하고 settings.json에 영속한다([0.25,0.65]로
+## 클램프). Tuning에도 즉시 반영해 저장 직후부터 새 값이 적용되게 한다. 저장 성공 시 true.
+func save_steer_expo(expo: float) -> bool:
+	steer_expo = clampf(expo, STEER_EXPO_MIN, STEER_EXPO_MAX)
+	if is_instance_valid(Tuning):
+		Tuning.steer_expo = steer_expo
+	return _write_settings()
+
+
 ## 맵 선택 화면에서 마지막으로 고른 트랙 id를 settings.json에 기록한다(재진입 복원용).
 func remember_last_track(track_id: String) -> void:
 	last_track_id = track_id
@@ -148,6 +171,7 @@ func _settings_dict() -> Dictionary:
 		"volume_master": volume_master,
 		"volume_bgm": volume_bgm,
 		"volume_sfx": volume_sfx,
+		"steer_expo": steer_expo,
 	}
 	if _base_url_manual:
 		d["base_url"] = base_url
@@ -457,6 +481,7 @@ func _load_settings() -> void:
 	volume_master = DEFAULT_VOLUME_MASTER
 	volume_bgm = DEFAULT_VOLUME_BGM
 	volume_sfx = DEFAULT_VOLUME_SFX
+	steer_expo = DEFAULT_STEER_EXPO
 	if not FileAccess.file_exists(SETTINGS_PATH):
 		return
 	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.READ)
@@ -487,6 +512,7 @@ func _load_settings() -> void:
 	volume_master = _read_volume(dict, "volume_master", DEFAULT_VOLUME_MASTER)
 	volume_bgm = _read_volume(dict, "volume_bgm", DEFAULT_VOLUME_BGM)
 	volume_sfx = _read_volume(dict, "volume_sfx", DEFAULT_VOLUME_SFX)
+	steer_expo = _read_steer_expo(dict)
 
 
 ## settings.json에서 선형 볼륨 키를 읽어 0..1로 클램프한다(키 없음/비수치 → 기본값 유지).
@@ -495,6 +521,15 @@ func _read_volume(dict: Dictionary, key: String, fallback: float) -> float:
 	if v is float or v is int:
 		return clampf(float(v), 0.0, 1.0)
 	return fallback
+
+
+## settings.json에서 조향 감도(부드러움)를 읽어 [STEER_EXPO_MIN,MAX]로 클램프한다(키 없음/비수치
+## → 기본값). 하위 호환: 이 키가 없던 저장본은 기본값(DEFAULT_STEER_EXPO)을 쓴다.
+func _read_steer_expo(dict: Dictionary) -> float:
+	var v: Variant = dict.get("steer_expo", DEFAULT_STEER_EXPO)
+	if v is float or v is int:
+		return clampf(float(v), STEER_EXPO_MIN, STEER_EXPO_MAX)
+	return DEFAULT_STEER_EXPO
 
 
 ## 플랫폼별 기본 base URL. 디버그 데스크톱은 로컬 서버, 그 외(릴리스·웹)는 프로덕션.

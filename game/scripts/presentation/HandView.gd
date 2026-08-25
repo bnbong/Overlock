@@ -20,6 +20,8 @@ const PRESS_SCALE: float = 0.07  # 누르는 손 확대 / 이완 손 축소 비�
 const PRESS_INWARD: float = 16.0  # 누를 때 안쪽(재봉선)으로 이동(px)
 const PRESS_DOWN: float = 12.0  # 누를 때 아래(원단)로 이동(px)
 const STEER_LERP: float = 9.0  # 조향 값 보간 속도(1/s)
+## 드리프트 누름 증폭: 드리프트 방향 손의 프레스에 더해지는 추가 press(반대 손은 0 유지).
+const DRIFT_PRESS_BOOST: float = 0.85
 
 ## true면 좌측 손(기준 우측 손 텍스처를 좌우 반전).
 @export var mirror: bool = false
@@ -31,6 +33,9 @@ var _jitter: Vector2 = Vector2.ZERO
 var _steer: float = 0.0
 var _steer_target: float = 0.0
 var _press: float = 0.0
+# 드리프트 증폭(이 손이 드리프트 방향이면 1로 수렴, 아니면 0). 프레임 독립 보간.
+var _drift_target: float = 0.0
+var _drift_amt: float = 0.0
 # 씬이 지정한 기본 손 텍스처(hand.png). set_hand_texture(null)로 복원할 때 사용.
 var _base_texture: Texture2D = null
 
@@ -46,6 +51,8 @@ func _process(delta: float) -> void:
 	_jitter = Vector2(randf_range(-amount, amount), randf_range(-amount, amount))
 	# 조향 값 보간(프레임 독립적 지수 감쇠).
 	_steer += (_steer_target - _steer) * clampf(STEER_LERP * delta, 0.0, 1.0)
+	# 드리프트 증폭도 같은 감쇠로 보간(급변 방지).
+	_drift_amt += (_drift_target - _drift_amt) * clampf(STEER_LERP * delta, 0.0, 1.0)
 	# 이 손 쪽으로 조향할수록 press>0(누름), 반대면 press<0(이완). mirror=false=우측 손은
 	# 우조향(steer>0), mirror=true=좌측 손은 좌조향(steer<0)에서 누른다.
 	var own_side: float = -1.0 if mirror else 1.0
@@ -63,6 +70,14 @@ func set_steer(steer: float) -> void:
 	_steer_target = clampf(steer, -1.0, 1.0)
 
 
+## PresentationController가 매 프레임 드리프트 상태를 주입(active, dir=drift_dir -1..1).
+## 드리프트 방향(dir 부호)과 같은 쪽 손이면 프레스를 더 깊게(DRIFT_PRESS_BOOST) 증폭하고,
+## 반대 손은 증폭 없이 기존 조향 프레스 수준을 유지한다.
+func set_drift(active: bool, dir: float) -> void:
+	var own_side: float = -1.0 if mirror else 1.0
+	_drift_target = 1.0 if (active and dir * own_side > 0.0) else 0.0
+
+
 ## 부상 단계에 따라 손 텍스처를 통째로 교체한다(§9 함정 13, 표현 전용).
 ## tex가 null이면 씬 기본 텍스처(hand.png)로 복원한다. 밴드가 그림에 구워진
 ## 손 텍스처들은 hand.png와 동일 캔버스·동일 손 위치로 정렬돼 있어, 교체해도
@@ -74,10 +89,13 @@ func set_hand_texture(tex: Texture2D) -> void:
 
 func _draw() -> void:
 	var flip: float = -1.0 if mirror else 1.0
-	var s: float = 1.0 + PRESS_SCALE * _press
+	# 유효 프레스 = 조향 프레스 + 드리프트 증폭(드리프트 방향 손만 _drift_amt>0). 이 손이
+	# 드리프트 방향일 때 1을 넘어 더 깊이 눌린다(반대 손은 증폭 0이라 기존 수준 그대로).
+	var eff_press: float = _press + DRIFT_PRESS_BOOST * _drift_amt
+	var s: float = 1.0 + PRESS_SCALE * eff_press
 	# 누름은 아래(+y)로, 그리고 재봉선 쪽(안쪽)으로 이동한다. 안쪽은 우측 손이 -x,
 	# 좌측 손이 +x이므로 flip 부호를 뒤집어(-flip) 양쪽 다 화면 중앙을 향하게 한다.
-	var offset: Vector2 = _jitter + Vector2(-PRESS_INWARD * _press * flip, PRESS_DOWN * _press)
+	var offset: Vector2 = _jitter + Vector2(-PRESS_INWARD * eff_press * flip, PRESS_DOWN * eff_press)
 	draw_set_transform(offset, 0.0, Vector2(flip * s, s))
 	if texture != null:
 		var ts: Vector2 = texture.get_size()

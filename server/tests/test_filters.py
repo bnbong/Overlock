@@ -32,7 +32,7 @@ def test_reject_below_physical_floor(client, cotton_checksum, make_payload):
 
 
 def test_accept_just_above_physical_floor(client, cotton_checksum, make_payload):
-    # 하한(10686ms) 바로 위는 허용되어야 한다.
+    # 안전계수 적용 하한 위 기록은 허용되어야 한다.
     resp = client.post(
         "/api/runs",
         json=make_payload(
@@ -40,6 +40,30 @@ def test_accept_just_above_physical_floor(client, cotton_checksum, make_payload)
         ),
     )
     assert resp.status_code == 201, resp.text
+
+
+def test_accept_between_old_and_new_floor(client, cotton_checksum, make_payload):
+    # 회귀 핵심(오거부 버그 수정): cotton_01 하한이 낮아졌다.
+    # 구 하한(10686)에서는 422 로 거부됐을 10600ms 정당 기록이 이제 201 로 수용돼야 한다.
+    resp = client.post(
+        "/api/runs",
+        json=make_payload(
+            cotton_checksum, time_ms=10600, penalty_ms=0, final_time_ms=10600
+        ),
+    )
+    assert resp.status_code == 201, resp.text
+
+
+def test_reject_far_below_physical_floor(client, cotton_checksum, make_payload):
+    # 하한(8015ms)보다 한참 빠른 1000ms 는 여전히 물리적으로 불가능 → 422.
+    resp = client.post(
+        "/api/runs",
+        json=make_payload(
+            cotton_checksum, time_ms=1000, penalty_ms=0, final_time_ms=1000
+        ),
+    )
+    assert resp.status_code == 422
+    assert "물리" in resp.json()["detail"] or "min=" in resp.json()["detail"]
 
 
 @pytest.mark.parametrize("accuracy", [-0.1, 100.1, 150.0])

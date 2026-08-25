@@ -120,6 +120,46 @@ def test_http_leaderboard_ranks_match_reference(client, cotton_checksum):
     assert [e["rank"] for e in body["entries"]] == list(range(1, len(ref) + 1))
 
 
+def test_best_record_dedup_faster_replaces_slower(client, cotton_checksum):
+    # 이슈 D 회귀: 리더보드는 플레이어당 최고 1건만 노출한다.
+    # 같은 플레이어가 18000 → 17000(더 빠른 신기록) → 19000(더 느린 기록) 순으로
+    # 제출해도, 리더보드에는 최고 기록(17000)만 단 1행 노출돼야 한다.
+    #   - 더 빠른 신기록(17000)은 BEST 로 반영됨
+    #   - 더 느리거나 더 최근인 기록(18000/19000)은 BEST 를 대체하지 못함
+    def submit(final: int) -> None:
+        resp = client.post(
+            "/api/runs",
+            json={
+                "player_name": "sasha",
+                "track_id": "cotton_01",
+                "difficulty": "normal",
+                "time_ms": final,
+                "penalty_ms": 0,
+                "final_time_ms": final,
+                "accuracy": 90.0,
+                "cuts": 0,
+                "off_seam_ms": 100,
+                "game_version": "0.1.0",
+                "track_checksum": cotton_checksum,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    submit(18000)
+    submit(17000)  # 더 빠른 신기록 → BEST 로 반영돼야 함
+    submit(19000)  # 더 느리고 더 최근 → BEST 를 대체하면 안 됨
+
+    resp = client.get(
+        "/api/leaderboard",
+        params={"track_id": "cotton_01", "difficulty": "normal", "limit": 500},
+    )
+    body = resp.json()
+    entries = [e for e in body["entries"] if e["player_name"] == "sasha"]
+    assert len(entries) == 1, "플레이어당 최고 1건만 노출돼야 한다"
+    assert entries[0]["final_time_ms"] == 17000
+    assert body["count"] == 1  # 서로 다른 플레이어 수(sasha 1명)
+
+
 def test_leaderboard_sql_limit_smoke(client):
     # 수백 행 직접 시드 후 조회가 LIMIT 반영 행 수만 반환하는지(SQL 단계 LIMIT) 확인.
     n_players = 100

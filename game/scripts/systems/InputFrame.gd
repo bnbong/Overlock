@@ -8,9 +8,13 @@ extends RefCounted
 var steer: float = 0.0  # -1.0 왼쪽, +1.0 오른쪽, 0.0 없음
 var speed_delta: int = 0  # -1 하락, 0 유지, +1 상승 (이산 입력 소비 결과)
 var restart: bool = false
+var drift: bool = false  # 피벗 드리프트 홀드(v1.0.1). 눌린 동안 조향 각속도↑·리스크↑.
 
 
-func _init(p_steer: float = 0.0, p_speed_delta: int = 0, p_restart: bool = false) -> void:
+func _init(
+	p_steer: float = 0.0, p_speed_delta: int = 0, p_restart: bool = false, p_drift: bool = false
+) -> void:
 	steer = p_steer
 	speed_delta = p_speed_delta
 	restart = p_restart
+	drift = p_drift

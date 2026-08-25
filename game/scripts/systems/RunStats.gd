@@ -9,6 +9,7 @@ enum Band { PERFECT, GOOD, OFF_SEAM, TEAR }
 
 const OFF_SEAM_PENALTY_PER_S: float = 0.5  # §7.7
 const CUT_PENALTY: float = 2.0  # §7.7 부상 1회 +2.0s
+const RESET_PENALTY: float = 3.0  # 맵 이탈 소프트 리셋 1회 +3.0s(설계 §B). penalty_time에 합산.
 
 # 재봉 평점(Seam Grade, 아키텍처 §6.5). in-line 충실도를 등급으로 환산한다.
 # 점수 = accuracy×0.6 + perfect_rate×0.4 − cuts×5 (0~100 clamp).
@@ -31,6 +32,7 @@ var speed_index_sum: float = 0.0
 var samples: int = 0
 var max_speed_index: int = 1
 var cuts: int = 0
+var resets: int = 0  # 맵 이탈 소프트 리셋 횟수(집계·표시용).
 var penalty_time: float = 0.0
 var combo: int = 0
 var max_combo: int = 0
@@ -60,6 +62,13 @@ func accumulate(dt: float, sidx: int, band: int, err: float, just_cut: bool) -> 
 		combo = 0
 
 
+## 맵 이탈 소프트 리셋 1회를 집계한다(RaceDirector가 리셋 시 호출). 페널티는 penalty_time에
+## 합산되어 finish + penalty = final 경로로 자동 정합한다(제출 스키마 불변, 서버 검증 통과).
+func add_reset_penalty() -> void:
+	resets += 1
+	penalty_time += RESET_PENALTY
+
+
 func finalize(finish_time: float, safe_width: float, track_id: String, diff: String) -> Dictionary:
 	var mean_err: float = error_sum / maxf(active_time, 0.0001)
 	var normalized: float = mean_err / safe_width * 100.0  # §7.6
@@ -81,6 +90,7 @@ func finalize(finish_time: float, safe_width: float, track_id: String, diff: Str
 		"perfect_rate": perfect_rate,
 		"off_seam_ms": int(off_seam_time * 1000.0),
 		"cuts": cuts,
+		"resets": resets,
 		"max_speed": max_speed_index,
 		"avg_speed": speed_index_sum / float(maxi(samples, 1)),
 		"max_combo": max_combo,

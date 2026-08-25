@@ -75,7 +75,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 공식 트랙 시드(스냅샷 → tracks 테이블). 스냅샷 없으면 조용히 건너뛴다.
     if settings.tracks_dir.is_dir():
         with sessionmaker() as session:
-            seed_tracks(session, settings.tracks_dir, settings.max_speed_px_s)
+            seed_tracks(
+                session,
+                settings.tracks_dir,
+                settings.max_speed_px_s,
+                settings.min_time_safety_factor,
+            )
 
     # 앱 상태에 의존성 원본을 보관(라우트에서 request.app.state 로 접근).
     app.state.settings = settings

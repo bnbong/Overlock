@@ -17,6 +17,15 @@ var foot_response_rate: float = 1.1  # (구 move_toward 추종 계수) steer_tau
 var steer_tau: float = 0.16
 # 반전 부스트: 입력 부호 ≠ target 부호일 때만 충전 속도에 곱하는 배수(§4.3 누적 유지, 반전만 민첩).
 var steer_reversal_boost: float = 2.0
+# 서브맥시멀(중간) 조향 완화 곡선(국소화). heading 출력에만 적용한다:
+# out = sign(a)*(|a| - s*|a|*(1-|a|)^p), s=steer_expo, p=steer_soft_p. out(±1)=±1 항등이라
+# 풀락 기하(회전반경·풀 반전·풀락 도달)는 완전히 불변이다. 완화 항 s*|a|*(1-|a|)^p는
+# |a|=1에서 0으로 꺼지고 저·중간 |a|에서 봉긋해져(집중 지수 p) "탭만" 부드럽게 하면서
+# 중간 authority는 3차 곡선보다 빨리 회복한다(hold 300ms 조향각을 3차보다 크게 되살림).
+# target_steer/actual_steer 자체와 위험도 입력에는 절대 관여하지 않는다(리스크 밴드 보존).
+# 설정 화면의 "조향 감도(부드러움)" 슬라이더가 [0.25,0.65]로 구동한다(LeaderboardClient 주입) —
+# 엔드포인트 항등이라 슬라이더 전 구간에서 풀락 기하가 불변이라 기록 공정성이 유지된다.
+var steer_expo: float = 0.55
 var turn_power: float = 4.0  # 회전력. floor와 함께 고속 코너링 완화 재튜닝(구 3.3, §21 v3)
 # 회전 각속도의 speed_factor 하한. turn_speed_factor = max(speed/max_speed, floor).
 # floor를 4단 비율(230/300=0.767)과 5단 비율(1.0) 사이인 0.825로 두면 1~4단은 floor에
@@ -41,6 +50,15 @@ var risk_proximity_base: float = 0.35
 var risk_static_bias: float = 0.09
 var stun_duration: float = 2.0
 var stun_steer_return_rate: float = 1.1  # §19 표에 없음 → foot_response_rate 값 재사용
+# 맵 이탈 소프트 리셋 후 조작 잠금 시간(초). 재배치 직후 잘못된 입력이 바로 다시 원단을
+# 이탈시키는 것을 막고 방향 재인지 여유를 준다(스턴과 별개 게이트, PlayerController가 참조).
+var reset_lockout: float = 1.2
+
+# --- 피벗 드리프트 (v1.0.1) ---
+var drift_turn_mult: float = 2.5      # 드리프트 중 조향 각속도 배율(=반경 ÷2.5). g5 반경 75→30px.
+var drift_static_bias: float = 0.18   # 드리프트 중 risk_static_bias 대체값(0.09→0.18).
+var drift_proximity: float = 1.0      # 드리프트 중 손↔바늘 근접 강제 하한(피벗 손 누름).
+var steer_soft_p: float = 2.0         # 국소화 곡선 집중 지수 out=m - s*m*(1-m)^p.
 
 
 func _ready() -> void:

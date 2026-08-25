@@ -31,15 +31,18 @@ def compute_file_checksum(path: Path) -> str:
     return f"{CHECKSUM_PREFIX}{digest}"
 
 
-def compute_min_final_time_ms(length_px: float, max_speed_px_s: float) -> int:
-    """물리적으로 가능한 최소 완주 시간(ms) = floor((length / max_speed) * 1000).
+def compute_min_final_time_ms(
+    length_px: float, max_speed_px_s: float, safety_factor: float = 1.0
+) -> int:
+    """물리적으로 가능한 최소 완주 시간(ms) = floor((length / max_speed) * 1000 * safety_factor).
 
-    최고속도(300px/s, §7.2)로 트랙 전체를 달렸을 때의 시간. 이보다 빠른 기록은
-    물리적으로 불가능하므로 거부한다(§18). floor 로 경계를 살짝 관대하게 둔다.
+    최고속도(300px/s, §7.2)로 트랙 전체를 달렸을 때의 시간에 안전계수를 곱한다.
+    코너컷으로 실주행거리가 중심선 길이보다 짧아질 수 있어, safety_factor(<1)로 하한을
+    낮춰 정당한 기록의 오거부를 막는다(§18). floor 로 경계를 살짝 관대하게 둔다.
     """
     if max_speed_px_s <= 0:
         return 0
-    return int(math.floor((length_px / max_speed_px_s) * 1000.0))
+    return int(math.floor((length_px / max_speed_px_s) * 1000.0 * safety_factor))
 
 
 def _iter_snapshot_tracks(tracks_dir: Path) -> list[Path]:
@@ -66,7 +69,9 @@ def _iter_snapshot_tracks(tracks_dir: Path) -> list[Path]:
     return ordered
 
 
-def seed_tracks(session: Session, tracks_dir: Path, max_speed_px_s: float) -> int:
+def seed_tracks(
+    session: Session, tracks_dir: Path, max_speed_px_s: float, safety_factor: float
+) -> int:
     """스냅샷 트랙을 tracks 테이블에 upsert. 등록/갱신된 트랙 수를 반환한다.
 
     기존 행이 있으면 checksum/name/난이도/길이/하한을 갱신하고 created_at 은 보존한다.
@@ -81,7 +86,9 @@ def seed_tracks(session: Session, tracks_dir: Path, max_speed_px_s: float) -> in
         track_id = str(raw.get("track_id", "")) or path.stem
         checksum = compute_file_checksum(path)
         length_px = int(raw.get("length", 0) or 0)
-        min_final_time_ms = compute_min_final_time_ms(length_px, max_speed_px_s)
+        min_final_time_ms = compute_min_final_time_ms(
+            length_px, max_speed_px_s, safety_factor
+        )
 
         existing = session.get(Track, track_id)
         if existing is None:
