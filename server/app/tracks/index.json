@@ -3,12 +3,17 @@
     { "track_id": "cotton_01", "name": "Cotton Warm-up", "difficulty": "normal" },
     { "track_id": "heart_01", "name": "Sweetheart Seam", "difficulty": "normal" },
     { "track_id": "cat_01", "name": "Cat's Cradle", "difficulty": "normal" },
+    { "track_id": "tee_01", "name": "Tailor's Tee", "difficulty": "normal" },
+    { "track_id": "button_01", "name": "Button Blossom", "difficulty": "normal" },
     { "track_id": "star_01", "name": "Five-Point Finish", "difficulty": "expert" },
     { "track_id": "fish_01", "name": "Overlock Koi", "difficulty": "expert" },
     { "track_id": "spool_01", "name": "Spool Sprint", "difficulty": "expert" },
     { "track_id": "basin_01", "name": "Backstitch Basin", "difficulty": "expert" },
     { "track_id": "selvedge_01", "name": "Selvedge Sweep", "difficulty": "expert" },
+    { "track_id": "bowtie_01", "name": "Bowtie Bind", "difficulty": "expert" },
+    { "track_id": "sock_01", "name": "Darning Detour", "difficulty": "expert" },
     { "track_id": "harbor_01", "name": "Harbor Hem", "difficulty": "master" },
-    { "track_id": "summit_01", "name": "Serge Summit", "difficulty": "master" }
+    { "track_id": "summit_01", "name": "Serge Summit", "difficulty": "master" },
+    { "track_id": "ridge_01", "name": "Overlock Ridge", "difficulty": "master" }
   ]
 }

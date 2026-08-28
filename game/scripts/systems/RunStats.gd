@@ -99,8 +99,16 @@ func finalize(finish_time: float, safe_width: float, track_id: String, diff: Str
 	}
 
 
+## 메트릭에서 재봉 등급 문자를 바로 산출(정적, 클라이언트 단일 소스 진입점). finalize()
+## 경로의 _grade_score/_grade_letter 와 완전히 동일하다. 서버 grade 필드가 없는 구버전
+## 리더보드 응답을 만났을 때, 화면이 결과 등급과 같은 공식으로 폴백 유도하도록 공개한다.
+## 서버 복제본은 server/app/grade.py — 이 셋 중 하나를 바꾸면 나머지도 함께 바꾼다.
+static func grade_from_metrics(accuracy: float, perfect_rate: float, cut_count: int) -> String:
+	return _grade_letter(_grade_score(accuracy, perfect_rate, cut_count))
+
+
 ## in-line 충실도 점수(0~100). accuracy·perfect_rate 가중 + cuts 감점.
-func _grade_score(accuracy: float, perfect_rate: float, cut_count: int) -> float:
+static func _grade_score(accuracy: float, perfect_rate: float, cut_count: int) -> float:
 	var raw: float = (
 		accuracy * GRADE_ACCURACY_WEIGHT
 		+ perfect_rate * GRADE_PERFECT_WEIGHT

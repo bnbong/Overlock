@@ -39,6 +39,9 @@ class RunCreate(BaseModel):
     penalty_ms: int = Field(ge=0)
     final_time_ms: int = Field(ge=0)
     accuracy: float = Field(ge=0.0, le=100.0)
+    # 등급 산정용 perfect_rate(%). 구버전 클라이언트 호환을 위해 선택값(기본 0.0)이다
+    # (없으면 등급이 다소 낮게 유도됨). app/grade.py·RunStats.gd 와 정합.
+    perfect_rate: float = Field(default=0.0, ge=0.0, le=100.0)
     cuts: int = Field(ge=0)
     off_seam_ms: int = Field(ge=0)
     game_version: str = Field(pattern=GAME_VERSION_PATTERN)
@@ -92,6 +95,7 @@ class RunDetail(BaseModel):
     penalty_ms: int
     final_time_ms: int
     accuracy: float
+    perfect_rate: float
     cuts: int
     off_seam_ms: int
     game_version: str
@@ -113,8 +117,12 @@ class LeaderboardEntry(BaseModel):
     penalty_ms: int
     final_time_ms: int
     accuracy: float
+    perfect_rate: float
     cuts: int
     off_seam_ms: int
+    # 재봉 등급(S/A/B/C/D). 서버가 저장 메트릭에서 클라와 동일 공식으로 유도한다
+    # (app/grade.py). 리더보드 정렬(등급 우선) 및 클라 표시용.
+    grade: str
     game_version: str
     verification_status: str
     created_at: str

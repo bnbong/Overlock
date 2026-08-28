@@ -18,6 +18,12 @@ const BG_MAX_ALPHA: float = 0.95
 const TEXT_FADE_START: float = 0.75  # 줌아웃이 거의 끝날 때 텍스트가 떠오른다.
 const TEXT_FADE_END: float = 1.25
 
+# 등급 시나리오 일러스트 매핑. 이미지 자체는 결과 화면(ResultScreen)이 완주 정보 창 안에서
+# 보여주고, 줌아웃은 트랙 실루엣·등급·최종 시간만 남긴다. 여기서는 등급→파일 매핑만
+# 단일 소스로 공개한다(grade_color와 같은 자리).
+const SCENARIO_DIR: String = "res://assets/gfx/"  # 등급 일러스트 위치. 파일명 <tier>_rank.png.
+const SCENARIO_TIERS: Array = ["s", "a", "b", "c", "d"]  # 매핑 가능한 등급(소문자). 그 외("-")는 표시 생략.
+
 const BG_COLOR: Color = Color(0.09, 0.072, 0.062)  # 웜톤 어두운 배경(재봉실 무드)
 const BAND_COLOR: Color = Color(0.34, 0.24, 0.44, 0.28)  # 재봉 코리도(fail 폭, 옅게)
 const CENTER_COLOR: Color = Color(0.72, 0.56, 0.96, 0.95)  # 서킷 윤곽(중심선, 실 보라)
@@ -182,6 +188,19 @@ func _skid_tangent(pts: PackedVector2Array, i: int, count: int) -> Vector2:
 	if d.length_squared() < 0.0001:
 		return Vector2.RIGHT
 	return d.normalized()
+
+
+## 등급 문자를 소문자 tier로 환산해 해당 일러스트 1장만 지연 로드한다(ResultScreen과 공유하는
+## 단일 소스). 매핑 불가("-"·미지원)이거나 파일이 없으면 null을 돌려 호출부가 표시를 생략하게
+## 한다(하위호환·에셋 부재 안전).
+static func scenario_texture(grade: String) -> Texture2D:
+	var tier: String = grade.strip_edges().to_lower()
+	if not SCENARIO_TIERS.has(tier):
+		return null
+	var path: String = "%s%s_rank.png" % [SCENARIO_DIR, tier]
+	if not ResourceLoader.exists(path):
+		return null
+	return load(path) as Texture2D
 
 
 func _draw_text(vp: Vector2) -> void:

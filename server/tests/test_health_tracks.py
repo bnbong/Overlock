@@ -16,10 +16,11 @@ def test_tracks_lists_all_official(client):
     assert resp.status_code == 200
     tracks = resp.json()
     ids = {t["id"] for t in tracks}
-    # 공식 트랙 10종(기존 5 + F1 형상 참고 신규 5)이 모두 시드되어야 한다.
+    # 공식 트랙 15종(기존 5 + F1 형상 참고 5 + v1.1.0 장거리 신규 5)이 모두 시드되어야 한다.
     assert ids == {
         "cotton_01", "heart_01", "cat_01", "star_01", "fish_01",
         "spool_01", "basin_01", "selvedge_01", "harbor_01", "summit_01",
+        "tee_01", "button_01", "bowtie_01", "sock_01", "ridge_01",
     }
     for track in tracks:
         assert track["checksum"].startswith("sha256:")

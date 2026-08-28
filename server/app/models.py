@@ -46,6 +46,10 @@ class Run(Base):
     penalty_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     final_time_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     accuracy: Mapped[float] = mapped_column(Float, nullable=False)
+    # 재봉 등급 산정에 쓰는 perfect_rate(%). 등급 공식이 accuracy 와 함께 이 값을 가중하므로
+    # 서버가 클라와 동일한 등급을 유도하려면 저장해야 한다(app/grade.py 상호 참조). 구버전
+    # 클라이언트는 이 값을 보내지 않으므로 기본 0.0(등급이 다소 낮게 유도됨 — 하위 호환).
+    perfect_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     cuts: Mapped[int] = mapped_column(Integer, nullable=False)
     off_seam_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     game_version: Mapped[str] = mapped_column(Text, nullable=False)

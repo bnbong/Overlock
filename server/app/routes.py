@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from . import __version__
+from . import grade as grade_calc
 from .config import Settings
 from .database import get_session
 from .models import Run, Track
@@ -34,12 +35,23 @@ router = APIRouter(prefix="/api")
 HTTP_422_UNPROCESSABLE = 422
 
 def _leaderboard_order(entity):
-    """리더보드 정렬 키(기획서 §14.1). id 는 완전 결정성을 위한 최종 타이브레이커.
+    """리더보드 정렬 키(기획서 §14.1: 등급 우선 → 시간 차선). id 는 완전 결정성을 위한
+    최종 타이브레이커.
 
-    윈도 함수(플레이어당 최고 1건 선별)와 전역 정렬·순위 산출에 완전히 동일한 키를
-    쓰기 위해, 원본 ``Run`` 또는 서브쿼리 alias 를 받아 같은 순서로 생성한다.
+    v1.1.0 정렬 규칙:
+      1) 재봉 등급 티어 내림차순(S > A > B > C > D) — app/grade.py 가 저장 메트릭
+         (accuracy·perfect_rate·cuts)에서 클라와 동일 공식으로 유도한다.
+      2) 같은 등급 안에서 final_time_ms 오름차순(빠른 기록 우선).
+      3) 이하 동률 타이브레이커: accuracy 내림차순 → cuts 오름차순 → off_seam_ms 오름차순
+         → created_at 오름차순 → id 오름차순.
+
+    "플레이어당 베스트"의 정의도 이 키로 바뀐다: 같은 플레이어의 S등급 25초가 A등급
+    20초보다 상위(=베스트)다. 윈도 함수(플레이어당 최고 1건 선별)와 전역 정렬·순위
+    산출에 완전히 동일한 키를 쓰기 위해, 원본 ``Run`` 또는 서브쿼리 alias 를 받아 같은
+    순서로 생성한다.
     """
     return (
+        grade_calc.grade_tier_expr(entity).desc(),
         entity.final_time_ms.asc(),
         entity.accuracy.desc(),
         entity.cuts.asc(),
@@ -197,8 +209,10 @@ def get_leaderboard(
             penalty_ms=run.penalty_ms,
             final_time_ms=run.final_time_ms,
             accuracy=run.accuracy,
+            perfect_rate=run.perfect_rate,
             cuts=run.cuts,
             off_seam_ms=run.off_seam_ms,
+            grade=grade_calc.grade_for(run.accuracy, run.perfect_rate, run.cuts),
             game_version=run.game_version,
             verification_status=run.verification_status,
             created_at=run.created_at,
@@ -268,6 +282,7 @@ def submit_run(
         penalty_ms=payload.penalty_ms,
         final_time_ms=payload.final_time_ms,
         accuracy=payload.accuracy,
+        perfect_rate=payload.perfect_rate,
         cuts=payload.cuts,
         off_seam_ms=payload.off_seam_ms,
         game_version=payload.game_version,

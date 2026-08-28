@@ -27,7 +27,7 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "1.0.1"  # §13.3 game_version. 시뮬 수학 변경(조향 expo) 반영 범프.
+const GAME_VERSION: String = "1.1.0"  # §13.3 game_version. 아이템·드리프트·트랙 15종·등급 정렬 릴리즈.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -350,6 +350,10 @@ func _build_submit_body(result: Dictionary) -> Dictionary:
 		"penalty_ms": int(result.get("penalty_ms", 0)),
 		"final_time_ms": int(result.get("final_time_ms", 0)),
 		"accuracy": float(result.get("accuracy", 0.0)),
+		# 재봉 등급 산정 입력(서버가 accuracy 와 함께 가중해 등급을 유도한다 — 리더보드 정렬
+		# 키. RunStats.finalize 가 결과 dict에 이미 담아 둔다). 서버 스키마는 선택값이라
+		# 구버전 서버와도 호환된다(§13.3, server/app/grade.py 상호 참조).
+		"perfect_rate": float(result.get("perfect_rate", 0.0)),
 		"cuts": int(result.get("cuts", 0)),
 		"off_seam_ms": int(result.get("off_seam_ms", 0)),
 		"game_version": GAME_VERSION,

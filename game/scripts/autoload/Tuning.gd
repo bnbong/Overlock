@@ -60,6 +60,27 @@ var drift_static_bias: float = 0.18   # 드리프트 중 risk_static_bias 대체
 var drift_proximity: float = 1.0      # 드리프트 중 손↔바늘 근접 강제 하한(피벗 손 누름).
 var steer_soft_p: float = 2.0         # 국소화 곡선 집중 지수 out=m - s*m*(1-m)^p.
 
+# --- 필드 아이템 (v1.1.0) ---
+# 위 스칼라들과 마찬가지로 전부 tuning.json 오버라이드가 자동 적용된다(_load_overrides가 self의
+# 키면 값으로 덮어씀 — 배열 타입만 제외).
+# 골무(thimble): 획득 후 이 시간(초) 동안 부상(cut)이 봉인된다. risk는 정상 누적하되 활성 창에서는
+# 0.95로 상한이 걸려 절대 1.0에 도달하지 못한다(급반전을 안전하게 소화, 만료 후엔 상한 해제).
+var thimble_duration: float = 4.5
+# 엄마찬스(autopilot): 획득 후 이 시간(초) 동안 노루발이 중심선을 자동 순주행한다(position/heading을
+# 중심선 타깃으로 스냅, risk 회복, 조작 무시). 창은 재획득 시 refresh된다.
+var autopilot_duration: float = 2.8
+# 오토파일럿 핸드오프 곡률 게이트(rad/px = 1/반경). 만료 임박 틱에 현재 중심선 곡률이 이 값을
+# 초과하면(=반경 100px보다 급한 코너) grace 한도 내에서 자동주행을 연장해, 급코너 한복판에서
+# 수동 조작으로 넘어가 즉시 이탈하는 것을 막는다(곡률이 낮아지는 지점까지 핸드오프를 지연).
+var autopilot_handoff_curvature: float = 0.010
+# 핸드오프 곡률 연장의 총 상한(초). 곡률이 계속 높아도 이 시간 이상은 자동주행을 끌지 않는다
+# (무한 연장 방지 — 상한에 도달하면 코너 한복판이라도 수동으로 넘긴다).
+var autopilot_handoff_max_grace: float = 1.2
+# 아이템 획득 판정 반경(px). 노루발 위치와 아이템 월드 좌표(중심선 점 + lat*법선)의 거리가 이 값
+# 이하이면 획득한다. PERFECT 밴드(18px)보다 약간 넓은 수준(구 30.0) — 재봉선 위를 제대로 지나야
+# 획득되게 해 off-seam 스치기만으로 먹히는 체감을 줄인다.
+var item_pickup_radius: float = 20.0
+
 
 func _ready() -> void:
 	_load_overrides()

@@ -25,7 +25,7 @@ const DIFFS: Array = [
 	{"name": "Expert", "id": "expert", "perfect": 14.0, "safe": 34.0, "fail": 72.0},
 	{"name": "Master", "id": "master", "perfect": 12.0, "safe": 28.0, "fail": 60.0},
 ]
-const FABRICS: Array = ["cotton", "denim", "silk", "knit", "wool"]
+const FABRICS: Array = ["cotton", "denim", "silk", "knit", "wool", "felt", "satin", "leather"]
 
 const OK_COLOR: Color = Color(0.45, 0.92, 0.55, 1.0)
 const FAIL_COLOR: Color = Color(0.92, 0.42, 0.42, 1.0)

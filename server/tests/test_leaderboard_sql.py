@@ -18,20 +18,22 @@ from app.routes import (
     _player_rank,
 )
 
-# (player_name, difficulty, final_time_ms, accuracy, cuts, off_seam_ms)
-# 동률(final/acc/cuts/off_seam 완전 일치) · 다중 제출 · 다중 플레이어 · 다중 난이도.
+# (player_name, difficulty, final_time_ms, accuracy, cuts, off_seam_ms, perfect_rate)
+# 동률 · 다중 제출 · 다중 플레이어 · 다중 난이도 + 등급 스펙트럼(S/A/B/C/D). 정렬이
+# 등급 우선(§14.1)으로 바뀌었으므로 perfect_rate 를 섞어 등급 티어를 다양하게 만든다.
+# 특히 alice 의 normal 베스트는 이제 "더 느리지만 등급이 높은" 20000(S) 이다(18000 은 B).
 _SEED = [
-    ("alice", "normal", 18000, 90.0, 1, 500),
-    ("alice", "normal", 20000, 95.0, 0, 300),  # alice normal best = 18000
-    ("bob", "normal", 18000, 90.0, 1, 500),  # alice best 와 메트릭 완전 동률 → created_at/id 타이브레이크
-    ("carol", "normal", 18000, 95.0, 0, 200),  # 더 높은 acc → 앞
-    ("dave", "normal", 25000, 99.0, 0, 100),
-    ("erin", "normal", 18000, 90.0, 2, 400),  # cuts 더 많음
-    ("frank", "normal", 18000, 90.0, 1, 400),  # off_seam 더 적음
-    ("alice", "expert", 16000, 88.0, 1, 500),  # difficulty=None 이면 alice 전체 best = 16000
-    ("gina", "expert", 22000, 91.0, 0, 200),
-    ("gina", "normal", 30000, 80.0, 3, 900),
-    ("bob", "expert", 17000, 92.0, 0, 100),
+    ("alice", "normal", 18000, 90.0, 1, 500, 96.0),  # B (87.4)
+    ("alice", "normal", 20000, 95.0, 0, 300, 98.0),  # S (96.2) → alice normal best(등급 우선)
+    ("bob", "normal", 18000, 90.0, 1, 500, 96.0),  # alice 18000 과 메트릭 완전 동률 → id 타이브레이크
+    ("carol", "normal", 18000, 95.0, 0, 200, 100.0),  # S (97.0)
+    ("dave", "normal", 25000, 99.0, 0, 100, 100.0),  # S (99.4) 이지만 시간이 느림
+    ("erin", "normal", 18000, 90.0, 2, 400, 80.0),  # B (76.0), cuts 더 많음
+    ("frank", "normal", 18000, 90.0, 1, 400, 50.0),  # C (69.0)
+    ("alice", "expert", 16000, 88.0, 1, 500, 90.0),  # B (83.8)
+    ("gina", "expert", 22000, 91.0, 0, 200, 70.0),  # B (82.6)
+    ("gina", "normal", 30000, 80.0, 3, 900, 40.0),  # D (49.0)
+    ("bob", "expert", 17000, 92.0, 0, 100, 60.0),  # B (79.2)
 ]
 
 
@@ -52,7 +54,7 @@ def _reference_rows(session, track_id, difficulty):
 
 
 def _seed_via_api(client, checksum):
-    for name, difficulty, final, acc, cuts, off_seam in _SEED:
+    for name, difficulty, final, acc, cuts, off_seam, perfect in _SEED:
         resp = client.post(
             "/api/runs",
             json={
@@ -63,6 +65,7 @@ def _seed_via_api(client, checksum):
                 "penalty_ms": 0,
                 "final_time_ms": final,
                 "accuracy": acc,
+                "perfect_rate": perfect,
                 "cuts": cuts,
                 "off_seam_ms": off_seam,
                 "game_version": "0.1.0",

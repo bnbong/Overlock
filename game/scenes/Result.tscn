@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/ResultScreen.gd" id="1_result"]
 [ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="2_skin"]
@@ -67,6 +67,22 @@ corner_radius_top_right = 9
 corner_radius_bottom_right = 9
 corner_radius_bottom_left = 9
 
+[sub_resource type="StyleBoxFlat" id="scenario_frame"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0.478, 0.333, 0.243, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.278, 0.203, 0.153, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
 [node name="Result" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -92,59 +108,119 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -262.0
-offset_top = -348.0
-offset_right = 262.0
-offset_bottom = 348.0
+offset_left = -474.0
+offset_top = -244.0
+offset_right = 474.0
+offset_bottom = 244.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("2_skin")
 
-[node name="Panel" type="VBoxContainer" parent="."]
+[node name="Panel" type="HBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -270.0
-offset_right = 220.0
-offset_bottom = 270.0
+offset_left = -430.0
+offset_top = -200.0
+offset_right = 430.0
+offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 9
+theme_override_constants/separation = 24
+alignment = 1
 
-[node name="TitleLabel" type="Label" parent="Panel"]
+[node name="ScenarioFrame" type="PanelContainer" parent="Panel"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("scenario_frame")
+
+[node name="ScenarioImage" type="TextureRect" parent="Panel/ScenarioFrame"]
+custom_minimum_size = Vector2(520, 293)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Info" type="VBoxContainer" parent="Panel"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 8
+
+[node name="TrackLabel" type="Label" parent="Panel/Info"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
-theme_override_font_sizes/font_size = 36
-text = "RESULT"
+theme_override_font_sizes/font_size = 28
+text = "Cotton Warm-up"
 horizontal_alignment = 1
 
-[node name="GradeLabel" type="Label" parent="Panel"]
+[node name="GradeRow" type="HBoxContainer" parent="Panel/Info"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="GradeBox" type="VBoxContainer" parent="Panel/Info/GradeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="GradeCaption" type="Label" parent="Panel/Info/GradeRow/GradeBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478, 0.333, 0.243, 1)
+theme_override_font_sizes/font_size = 14
+text = "SEAM GRADE"
+horizontal_alignment = 1
+
+[node name="GradeLabel" type="Label" parent="Panel/Info/GradeRow/GradeBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.45, 0.92, 0.55, 1)
-theme_override_font_sizes/font_size = 64
+theme_override_font_sizes/font_size = 72
 text = "A"
 horizontal_alignment = 1
 
-[node name="StatsLabel" type="Label" parent="Panel"]
+[node name="TimeBox" type="VBoxContainer" parent="Panel/Info/GradeRow"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.32, 0.24, 0.19, 1)
-theme_override_font_sizes/font_size = 16
-text = "..."
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="TimeCaption" type="Label" parent="Panel/Info/GradeRow/TimeBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478, 0.333, 0.243, 1)
+theme_override_font_sizes/font_size = 14
+text = "FINAL TIME"
 horizontal_alignment = 1
 
-[node name="NewRecordLabel" type="Label" parent="Panel"]
+[node name="TimeLabel" type="Label" parent="Panel/Info/GradeRow/TimeBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_font_sizes/font_size = 32
+text = "00:00.000"
+horizontal_alignment = 1
+
+[node name="PenaltyLabel" type="Label" parent="Panel/Info/GradeRow/TimeBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.678, 0.294, 0.259, 1)
+theme_override_font_sizes/font_size = 15
+text = "penalty +0.0s"
+horizontal_alignment = 1
+
+[node name="NewRecordLabel" type="Label" parent="Panel/Info"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.831, 0.278, 0.263, 1)
 theme_override_font_sizes/font_size = 22
 text = "NEW RECORD!"
 horizontal_alignment = 1
 
-[node name="SubmitButton" type="Button" parent="Panel"]
+[node name="StatsLabel" type="Label" parent="Panel/Info"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.32, 0.24, 0.19, 1)
+theme_override_font_sizes/font_size = 15
+text = "..."
+horizontal_alignment = 1
+
+[node name="SubmitButton" type="Button" parent="Panel/Info"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
 theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
@@ -158,15 +234,21 @@ theme_override_styles/pressed = SubResource("btn_pressed")
 theme_override_styles/focus = SubResource("btn_focus")
 text = "Submit to Leaderboard"
 
-[node name="SubmitStatusLabel" type="Label" parent="Panel"]
+[node name="SubmitStatusLabel" type="Label" parent="Panel/Info"]
 custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.478, 0.333, 0.243, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 15
 horizontal_alignment = 1
 
-[node name="RetryButton" type="Button" parent="Panel"]
+[node name="ButtonRow" type="HBoxContainer" parent="Panel/Info"]
 layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="RetryButton" type="Button" parent="Panel/Info/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
 theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
 theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
@@ -178,8 +260,9 @@ theme_override_styles/pressed = SubResource("btn_pressed")
 theme_override_styles/focus = SubResource("btn_focus")
 text = "Retry"
 
-[node name="MenuButton" type="Button" parent="Panel"]
+[node name="MenuButton" type="Button" parent="Panel/Info/ButtonRow"]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
 theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
 theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
