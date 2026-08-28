@@ -47,6 +47,14 @@ var _last_good_hint: int = 0
 var _last_good_s: float = 0.0
 var _offfabric_dwell: float = 0.0
 
+# 필드 아이템 시뮬 상태(v1.1.0). _items는 트랙에서 로드한 아이템 배열(불변), _collected는 인덱스별
+# 획득 여부(bool). _autopilot_s는 자동주행 중심선 진행 아크길이, _autopilot_grace_used는 핸드오프
+# 곡률 연장에 이미 소비한 시간(초, autopilot_handoff_max_grace 상한). 전부 고정 틱에서만 갱신(결정론).
+var _items: Array = []
+var _collected: Array = []
+var _autopilot_s: float = 0.0
+var _autopilot_grace_used: float = 0.0
+
 # 이산 입력 버퍼 (_unhandled_input에서 세팅, 물리 틱에서 소비).
 var _buf_speed_delta: int = 0
 var _buf_restart: bool = false
@@ -59,6 +67,9 @@ var _buf_finish_skip: bool = false  # FINISH_VIEW 중 아무 키 입력(스킵) 
 @onready var _finish_line: FinishLine = $SimHost/FabricSource/World/FinishLine
 @onready var _stitch: StitchTrail = $SimHost/FabricSource/World/StitchTrail
 @onready var _skid: DriftSkid = get_node_or_null("SimHost/FabricSource/World/DriftSkid")
+# 필드 아이템 표현 노드. 표현 워커가 나중에 Gameplay.tscn에 추가한다 — 그 전까지 null이며,
+# 시뮬은 이 노드 없이도 완전히 동작하므로 모든 참조·호출을 null-safe(has_method 가드)로 둔다.
+@onready var _item_field: Node = get_node_or_null("SimHost/FabricSource/World/ItemField")
 @onready var _finish_view: FinishView = $FinishViewLayer/FinishView
 @onready var _hud: HUD = $HUD
 
@@ -182,12 +193,19 @@ func _tick_countdown(delta: float) -> void:
 
 func _tick_running(delta: float) -> void:
 	_elapsed += delta
+	# 오토파일럿 활성 중에는 simulate 전에 중심선 타깃을 주입한다(PlayerController._autopilot_update가
+	# 소비). 진행 아크길이를 speed*delta 만큼 전진시키고, 만료 임박 틱에는 곡률 게이트로 급코너
+	# 한복판 핸드오프를 grace 한도 내에서 지연한다.
+	if _player.autopilot_timer > 0.0:
+		_advance_autopilot(delta)
 	var input: InputFrame = _sample_input()
 	_player.simulate(input, delta)
 	var probe: Dictionary = _track.query(_player.position, _hint)
 	_hint = int(probe["idx"])
 	var err: float = float(probe["error"])
 	var band: int = _classify(err)
+	# 아이템 픽업 판정(query 후, 고정 틱에서만 — 결정론). 획득 시 효과를 즉시 적용한다.
+	_check_item_pickups(float(probe["s"]))
 	# 맵 이탈 소프트 리셋(설계 §B): 정상 밴드(PERFECT/GOOD)에서만 복귀 기준점을 기억하고,
 	# 오차가 임계를 RESET_DWELL 이상 지속 초과하면 마지막 정상 지점으로 되돌린 뒤 그 틱을 끝낸다.
 	if band == RunStats.Band.PERFECT or band == RunStats.Band.GOOD:
@@ -204,6 +222,68 @@ func _tick_running(delta: float) -> void:
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
 	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
 		_finish()
+
+
+## 오토파일럿 자동주행 타깃 주입(simulate 전). 진행 아크길이를 전진시키고, 만료 임박 틱이면
+## 곡률 게이트로 핸드오프를 grace 한도 내에서 지연한 뒤 중심선 타깃을 세팅한다. 실제 만료 시엔
+## 조향(target/actual_steer)을 0으로 동기해 수동 조작이 접선 방향으로 곧게 재개되게 한다.
+func _advance_autopilot(delta: float) -> void:
+	_autopilot_s = clampf(_autopilot_s + _player.speed * delta, 0.0, _track.length)
+	# 이번 틱 simulate의 타이머 감소로 autopilot_timer가 0 이하가 되는가(=만료 임박)?
+	var will_expire: bool = _player.autopilot_timer <= delta
+	if will_expire:
+		var curv: float = _track.curvature_at_s(_autopilot_s)
+		if (
+			curv > Tuning.autopilot_handoff_curvature
+			and _autopilot_grace_used < Tuning.autopilot_handoff_max_grace
+		):
+			# grace 한도 내에서 자동주행을 연장한다(곡률이 낮아질 때까지 핸드오프 지연).
+			var ext: float = minf(delta, Tuning.autopilot_handoff_max_grace - _autopilot_grace_used)
+			_player.autopilot_timer += ext
+			_autopilot_grace_used += ext
+			will_expire = _player.autopilot_timer <= delta
+	_player.autopilot_target_pos = _track.point_at_s(_autopilot_s)
+	_player.autopilot_target_heading = _track.tangent_at_s(_autopilot_s).angle()
+	if will_expire:
+		# 핸드오프: 조향을 0으로 맞춰 수동 재개 시 중심선 접선 방향으로 곧게 이어가게 한다.
+		_player.target_steer = 0.0
+		_player.actual_steer = 0.0
+
+
+## 아이템 픽업 판정(고정 틱). 미획득 아이템의 월드 좌표(point_at_s + lat*접선법선)와 노루발 위치의
+## 거리가 item_pickup_radius 이하이면 획득 처리: 표현 노드 통지(null-safe) + type별 효과 적용.
+func _check_item_pickups(probe_s: float) -> void:
+	if _items.is_empty():
+		return
+	var ppos: Vector2 = _player.position
+	for i in _items.size():
+		if bool(_collected[i]):
+			continue
+		var item: Dictionary = _items[i]
+		var item_s: float = float(item.get("s", 0.0))
+		var lat: float = float(item.get("lat", 0.0))
+		var world: Vector2 = _track.point_at_s(item_s) + _track.tangent_at_s(item_s).orthogonal() * lat
+		if ppos.distance_to(world) > Tuning.item_pickup_radius:
+			continue
+		_collected[i] = true
+		if _item_field != null and _item_field.has_method("on_collected"):
+			_item_field.on_collected(i)
+		_apply_item(item, probe_s)
+
+
+## 아이템 type별 효과 적용. thimble→골무(부상 봉인), autopilot(엄마찬스)→오토파일럿 자동주행.
+## 엄마찬스는 현재 진행 아크길이(probe_s)에서 자동주행을 시작하도록 _autopilot_s를 맞추고 grace를
+## 리셋한다. 미지원 type은 무시한다(가산적 확장 여지).
+func _apply_item(item: Dictionary, probe_s: float) -> void:
+	match str(item.get("type", "")):
+		"thimble":
+			_player.grant_thimble()
+		"autopilot":
+			_player.grant_autopilot()
+			_autopilot_s = probe_s
+			_autopilot_grace_used = 0.0
+		_:
+			pass
 
 
 ## 마지막 정상 지점(센터라인 점 + 진행 방향)으로 플레이어를 되돌리고 페널티를 부과한다.
@@ -294,6 +374,16 @@ func _init_player() -> void:
 	_last_good_hint = 0
 	_last_good_s = 0.0
 	_offfabric_dwell = 0.0
+	# 필드 아이템 로드·초기화(씬 재로드 시 여기서 전부 리셋된다). ItemField 표현 노드가 있으면
+	# 셋업을 통지한다(null-safe). 표현 노드는 track.items로 시각을 구성한다.
+	_items = _track.items
+	_collected.clear()
+	for _i in _items.size():
+		_collected.append(false)
+	_autopilot_s = 0.0
+	_autopilot_grace_used = 0.0
+	if _item_field != null and _item_field.has_method("setup"):
+		_item_field.setup(_track)
 
 
 func _place_finish_line() -> void:

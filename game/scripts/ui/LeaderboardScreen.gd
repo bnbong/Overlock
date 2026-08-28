@@ -1,7 +1,8 @@
 extends Control
 ## 리더보드 조회 화면(재봉 스킨 목록). 선택한 트랙의 Top 100 기록을 GET /api/leaderboard로
-## 받아 rank·닉네임·시간(MM:SS.mmm)·accuracy·cuts로 렌더한다(기획서 §18 Phase 5 트랙별
-## Top 100). 로딩/에러/빈 상태를 표시한다.
+## 받아 rank·닉네임·시간(MM:SS.mmm)·재봉 등급·accuracy·cuts로 렌더한다(기획서 §18 Phase 5
+## 트랙별 Top 100). 정렬은 서버가 등급 우선 → 시간 차선으로 반환한다(§14.1). 등급은 서버
+## grade 필드를 우선하고 없으면 로컬 유도한다(_grade_text). 로딩/에러/빈 상태를 표시한다.
 ##
 ## 진입 경로는 둘이다. 맵 선택 화면에서 "이 트랙 리더보드"로 열면 해당 트랙으로 시작하고,
 ## 메인에서 직접 열면 트랙 컨텍스트가 없으므로 첫 공식 트랙으로 자체 초기화한다. 어느
@@ -14,12 +15,15 @@ const _INK: Color = Color(0.278, 0.203, 0.153)
 const _INK_SOFT: Color = Color(0.435, 0.337, 0.267)
 const _INK_HOVER: Color = Color(0.2, 0.14, 0.1)
 
-# 열 최소 폭(헤더·데이터 행 공통으로 써 정렬을 맞춘다).
-const _COL_RANK: float = 54.0
-const _COL_NAME: float = 150.0
-const _COL_TIME: float = 118.0
-const _COL_ACC: float = 74.0
-const _COL_CUTS: float = 54.0
+# 열 최소 폭(헤더·데이터 행 공통으로 써 정렬을 맞춘다). Grade 열을 추가하며 Time/Acc/Cuts
+# 를 소폭 줄이고 Name(확장 열)이 남는 폭을 흡수하게 했다 — 합계 min ≈ 482px 로 패널 내부
+# 폭(≈524px) 안에 들어가 가로 넘침이 없다(clip_text 로 초과 문자열은 잘린다).
+const _COL_RANK: float = 48.0
+const _COL_NAME: float = 128.0
+const _COL_TIME: float = 112.0
+const _COL_GRADE: float = 52.0
+const _COL_ACC: float = 64.0
+const _COL_CUTS: float = 48.0
 
 # 리더보드를 연 곳으로 돌아가기 위한 복귀 씬(메인 또는 맵 선택). 진입 직전 호출자가
 # 이 정적 변수를 설정한다. 정적 변수라 씬 전환 사이에도 유지된다(오토로드 미사용).
@@ -173,6 +177,7 @@ func _fill_header() -> void:
 	_add_cell(_header_box, "#", _COL_RANK, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(_header_box, "Player", _COL_NAME, _c_main, HORIZONTAL_ALIGNMENT_LEFT, true)
 	_add_cell(_header_box, "Time", _COL_TIME, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
+	_add_cell(_header_box, "Grade", _COL_GRADE, _c_main, HORIZONTAL_ALIGNMENT_CENTER)
 	_add_cell(_header_box, "Acc", _COL_ACC, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(_header_box, "Cuts", _COL_CUTS, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
 
@@ -183,6 +188,7 @@ func _make_data_row(entry: Dictionary, index: int) -> Control:
 	var rank: int = int(entry.get("rank", index + 1))
 	var name_text: String = str(entry.get("player_name", "-"))
 	var time_text: String = _format_ms(int(entry.get("final_time_ms", 0)))
+	var grade_text: String = _grade_text(entry)
 	var acc_text: String = "%.1f%%" % float(entry.get("accuracy", 0.0))
 	var cuts_text: String = str(int(entry.get("cuts", 0)))
 	var row: HBoxContainer = HBoxContainer.new()
@@ -192,6 +198,9 @@ func _make_data_row(entry: Dictionary, index: int) -> Control:
 	_add_cell(row, str(rank), _COL_RANK, rank_color, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(row, name_text, _COL_NAME, _c_main, HORIZONTAL_ALIGNMENT_LEFT, true)
 	_add_cell(row, time_text, _COL_TIME, _c_main, HORIZONTAL_ALIGNMENT_RIGHT)
+	# 등급은 FinishView.grade_color 로 등급별 색(S 금 ~ D 붉은톤) — 결과 화면과 동일 팔레트.
+	var grade_col: Color = FinishView.grade_color(grade_text)
+	_add_cell(row, grade_text, _COL_GRADE, grade_col, HORIZONTAL_ALIGNMENT_CENTER)
 	_add_cell(row, acc_text, _COL_ACC, _c_soft, HORIZONTAL_ALIGNMENT_RIGHT)
 	_add_cell(row, cuts_text, _COL_CUTS, _c_soft, HORIZONTAL_ALIGNMENT_RIGHT)
 	if not _is_mine(name_text):
@@ -200,6 +209,20 @@ func _make_data_row(entry: Dictionary, index: int) -> Control:
 	mine.add_theme_stylebox_override("panel", _mine_box())
 	mine.add_child(row)
 	return mine
+
+
+## 행에 표시할 재봉 등급 문자. 서버 grade 필드를 권위 있는 값으로 우선한다(결과 화면
+## 등급과 정확히 일치, 정렬 기준과도 동일). 구버전 서버가 grade 를 주지 않으면 응답
+## 메트릭으로 로컬 유도한다(RunStats 와 동일 공식). 구버전은 perfect_rate 도 주지 않으므로
+## accuracy 를 근사치로 대입하는 폴백이다(정확 값은 신버전 서버에서만).
+func _grade_text(entry: Dictionary) -> String:
+	var g: String = str(entry.get("grade", "")).strip_edges()
+	if not g.is_empty():
+		return g
+	var accuracy: float = float(entry.get("accuracy", 0.0))
+	var perfect: float = float(entry.get("perfect_rate", accuracy))
+	var cuts: int = int(entry.get("cuts", 0))
+	return RunStats.grade_from_metrics(accuracy, perfect, cuts)
 
 
 ## 리더보드 행/하단 기록에 쓰는 "내 것" 판정(닉네임 정확 일치, 빈 닉네임 제외).

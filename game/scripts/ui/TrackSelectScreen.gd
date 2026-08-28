@@ -17,6 +17,19 @@ const EDITOR_SCENE: String = "res://scenes/TrackEditor.tscn"
 const LEADERBOARD_SCENE: String = "res://scenes/Leaderboard.tscn"
 const SELF_SCENE: String = "res://scenes/TrackSelect.tscn"
 
+## 원단 재질 한국어 라벨. FabricSurface.FABRIC_BASE(presentation/FabricSurface.gd)가
+## 실제로 렌더 지원하는 재질 목록과 맞춘다 — 목록에 없는 값(미지 재질)은 원문 그대로 노출.
+const FABRIC_LABELS: Dictionary = {
+	"cotton": "면",
+	"denim": "데님",
+	"silk": "실크",
+	"knit": "니트",
+	"felt": "펠트",
+	"satin": "새틴",
+	"wool": "울",
+	"leather": "가죽",
+}
+
 # 리더보드 복귀 씬을 진입 직전 설정한다(맵 선택에서 열면 뒤로가기는 이 화면으로).
 const LeaderboardScreenScript = preload("res://scripts/ui/LeaderboardScreen.gd")
 const ToastScene = preload("res://scenes/Toast.tscn")
@@ -27,10 +40,24 @@ const _PREVIEW_BG_COLOR: Color = Color(0.16, 0.11, 0.10, 1.0)
 const _PREVIEW_RADIUS: float = 10.0
 const _PREVIEW_STITCH_INSET: float = 6.0
 
+# --- 원단 스와치(정보 라인 옆 견본 이미지) 스타일. FabricSurface.swatch_source가 넘기는
+# 텍스처/색을 이 크기로 라운드 패치 + 옅은 스티치 테두리로 그린다(재봉 UI 무드 통일).
+const _SWATCH_SIZE: float = 24.0
+const _SWATCH_GAP: float = 5.0
+const _SWATCH_RADIUS: float = 6.0
+const _SWATCH_STITCH_INSET: float = 2.0
+const _SWATCH_STITCH_COLOR: Color = Color(0.97, 0.93, 0.85, 0.5)
+const _SWATCH_UNKNOWN_COLOR: Color = Color(0.5, 0.5, 0.5, 1.0)
+const _SWATCH_MAX_COUNT: int = 3
+
 var _tracks: Array = []
 var _index: int = 0
 var _confirm: ConfirmationDialog
 var _toast: Toast
+# 현재 선택 트랙의 원단 토큰(스와치 draw 핸들러가 참조 — _update_fabric_row가 채운다).
+var _swatch_tokens: PackedStringArray = PackedStringArray()
+# 스와치 타일 텍스처 표시용 자식 TextureRect(_SWATCH_MAX_COUNT개, _ready에서 생성).
+var _swatch_texture_rects: Array = []
 # 웹 전용 파일 브리지(업로드/다운로드). 데스크톱에서는 null(FileDialog·드래그드롭을 씀).
 var _web_bridge: WebFileBridge
 # 데스크톱 내보내기 다이얼로그가 열려 있는 동안 캐러셀이 움직여도 대상이 흔들리지 않게 캡처.
@@ -42,6 +69,9 @@ var _export_disp: String = ""
 @onready var _prev_button: Button = $Panel/Selector/PrevButton
 @onready var _next_button: Button = $Panel/Selector/NextButton
 @onready var _info_label: Label = $Panel/InfoLabel
+@onready var _fabric_row: HBoxContainer = $Panel/FabricRow
+@onready var _swatch_row: Control = $Panel/FabricRow/SwatchRow
+@onready var _fabric_text_label: Label = $Panel/FabricRow/FabricTextLabel
 @onready var _best_time_label: Label = $Panel/BestTimeLabel
 @onready var _play_button: Button = $Panel/PlayButton
 @onready var _create_button: Button = $Panel/ActionRow/CreateButton
@@ -59,6 +89,17 @@ func _ready() -> void:
 	_index = _index_of(LeaderboardClient.last_track_id)
 	_preview.draw.connect(_on_preview_draw)
 	_preview.resized.connect(_preview.queue_redraw)
+	_swatch_row.draw.connect(_on_swatch_row_draw)
+	for _i in range(_SWATCH_MAX_COUNT):
+		var tr: TextureRect = TextureRect.new()
+		tr.visible = false
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr.stretch_mode = TextureRect.STRETCH_SCALE
+		# AtlasTexture 크롭 영역이 스와치보다 커서(중앙 크롭 확대), 최소 크기가 텍스처를
+		# 따라가지 않게 한다 — 아니면 Control.set_size가 최소 크기로 다시 클램프해 버린다.
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_swatch_row.add_child(tr)
+		_swatch_texture_rects.append(tr)
 	_prev_button.pressed.connect(_cycle.bind(-1))
 	_next_button.pressed.connect(_cycle.bind(1))
 	_play_button.pressed.connect(_on_play_pressed)
@@ -217,10 +258,12 @@ func _refresh() -> void:
 	var is_custom: bool = bool(entry.get("is_custom", false))
 	_track_label.text = disp_name
 	var badge: String = "CUSTOM · " if is_custom else ""
-	_info_label.text = (
-		"%s%s    %d px    (%d / %d)"
-		% [badge, diff.to_upper(), length_px, _index + 1, _tracks.size()]
-	)
+	var info_parts: PackedStringArray = PackedStringArray()
+	info_parts.append("%s%s" % [badge, diff.to_upper()])
+	info_parts.append("%d px" % length_px)
+	info_parts.append("(%d / %d)" % [_index + 1, _tracks.size()])
+	_info_label.text = "    ".join(info_parts)
+	_update_fabric_row(track.fabric if track != null else "")
 	_delete_button.visible = is_custom
 	# 내보내기는 커스텀 트랙만(공식은 저장소에 있으니 공유 불필요 — §8).
 	_export_button.visible = is_custom
@@ -456,6 +499,107 @@ func _on_preview_draw() -> void:
 	SewingSkin.draw_stitch_border(
 		_preview, patch_rect, SewingSkin.THREAD_PURPLE, _PREVIEW_STITCH_INSET, _PREVIEW_RADIUS
 	)
+
+
+## InfoLabel 바로 옆(FabricRow)에 원단 스와치 + 재질 텍스트를 갱신한다. 스와치·텍스트가
+## 같은 토큰 목록(_fabric_tokens)에서 파생돼 항상 일치한다. 재질 값이 비어 있는 트랙(빈
+## 문자열/빈 배열)은 행 전체를 숨긴다(기존 InfoLabel이 fabric 세그먼트를 생략하던 동작과 동일).
+func _update_fabric_row(fabric_value: Variant) -> void:
+	var tokens: PackedStringArray = _fabric_tokens(fabric_value)
+	_fabric_row.visible = not tokens.is_empty()
+	if tokens.is_empty():
+		_swatch_tokens = PackedStringArray()
+		_hide_swatch_textures()
+		return
+	_fabric_text_label.text = _fabric_label(tokens)
+	_swatch_tokens = tokens
+	var count: int = mini(tokens.size(), _SWATCH_MAX_COUNT)
+	var width: float = float(count) * _SWATCH_SIZE + float(maxi(count - 1, 0)) * _SWATCH_GAP
+	_swatch_row.custom_minimum_size = Vector2(width, _SWATCH_SIZE)
+	_layout_swatch_textures(tokens, count)
+	_swatch_row.queue_redraw()
+
+
+func _hide_swatch_textures() -> void:
+	for tr in _swatch_texture_rects:
+		tr.visible = false
+
+
+## 스와치의 타일 텍스처는 자식 TextureRect(+AtlasTexture 크롭) 실 노드로 배치한다 — 방금
+## load()한 CompressedTexture2D를 draw_texture_rect*로 직접 그리면 이 프로젝트 GL
+## Compatibility 렌더러에서 "첫 draw가 빈 화면(흰색)으로 남는" 증상이 실측 확인됐다
+## (TextureRect처럼 정식 노드 경로로 텍스처를 배정하면 해결됨 — 엔진/드라이버 쪽 텍스처
+## 초기화 타이밍 문제로 추정, ImageTexture로 바꿔도 동일 증상이라 리소스 자체 문제는 아니다).
+## 배경 패치·스티치 테두리는 계속 draw 시그널로 절차적으로 그린다(텍스처가 없어 문제없음).
+func _layout_swatch_textures(tokens: PackedStringArray, count: int) -> void:
+	var inset: float = _SWATCH_RADIUS * 0.5
+	for i in range(_SWATCH_MAX_COUNT):
+		var tr: TextureRect = _swatch_texture_rects[i]
+		if i >= count:
+			tr.visible = false
+			continue
+		var src: Dictionary = FabricSurface.swatch_source(tokens[i])
+		var tex: Texture2D = src.get("texture", null)
+		if tex == null:
+			tr.visible = false
+			continue
+		var x: float = float(i) * (_SWATCH_SIZE + _SWATCH_GAP)
+		tr.position = Vector2(x + inset, inset)
+		tr.size = Vector2(_SWATCH_SIZE, _SWATCH_SIZE) - Vector2(inset, inset) * 2.0
+		var tex_size: Vector2 = tex.get_size()
+		var crop: float = minf(tex_size.x, tex_size.y) * 0.55
+		var atlas: AtlasTexture = AtlasTexture.new()
+		atlas.atlas = tex
+		atlas.region = Rect2((tex_size - Vector2(crop, crop)) * 0.5, Vector2(crop, crop))
+		tr.texture = atlas
+		tr.visible = true
+
+
+## SwatchRow의 draw 시그널 핸들러. 토큰별로 나란히(최대 _SWATCH_MAX_COUNT개) 배경 패치 +
+## 스티치 테두리를 그린다(다중 재질 배열 대비 §요구 3). 타일 텍스처 자체는
+## _layout_swatch_textures가 배치한 자식 TextureRect가 그 위에 겹쳐 보여준다.
+func _on_swatch_row_draw() -> void:
+	var count: int = mini(_swatch_tokens.size(), _SWATCH_MAX_COUNT)
+	for i in range(count):
+		var x: float = float(i) * (_SWATCH_SIZE + _SWATCH_GAP)
+		var rect: Rect2 = Rect2(Vector2(x, 0.0), Vector2(_SWATCH_SIZE, _SWATCH_SIZE))
+		_draw_swatch(rect, _swatch_tokens[i])
+
+
+## 스와치 1개의 배경 패치 + 스티치 테두리. FabricSurface.swatch_source(단일 소스:
+## FABRIC_BASE/FABRIC_DIR)에서 대표색을 읽어 채운다(타일 텍스처가 있는 원단도 텍스처
+## 로드 전 배경 겸 여백 색으로 쓰인다). 완전 미지 재질은 회색 패치로 폴백한다(§요구 4).
+func _draw_swatch(rect: Rect2, token: String) -> void:
+	var src: Dictionary = FabricSurface.swatch_source(token)
+	var known: bool = bool(src.get("known", false))
+	var fill: Color = src.get("color", _SWATCH_UNKNOWN_COLOR) if known else _SWATCH_UNKNOWN_COLOR
+	SewingSkin.draw_patch(_swatch_row, rect, fill, _SWATCH_RADIUS, false)
+	SewingSkin.draw_stitch_border(
+		_swatch_row, rect, _SWATCH_STITCH_COLOR, _SWATCH_STITCH_INSET, _SWATCH_RADIUS, 1.0
+	)
+
+
+## 트랙의 fabric 값에서 개별 재질 토큰(공백 제거, 빈 값 제외)을 뽑는다. 문자열/배열 모두
+## 그대로 수용한다(현재 트랙 JSON 스키마는 fabric을 단일 문자열로 고정하지만, 추후 트랙
+## 1개에 원단 재질이 여러 개인 스키마 확장을 고려). _fabric_label과 스와치 렌더가 이
+## 토큰 목록을 공유해 텍스트·스와치가 항상 같은 소스에서 파생된다.
+static func _fabric_tokens(value: Variant) -> PackedStringArray:
+	var raw: Array = value if value is Array else [value]
+	var tokens: PackedStringArray = PackedStringArray()
+	for item in raw:
+		var trimmed: String = str(item).strip_edges()
+		if not trimmed.is_empty():
+			tokens.append(trimmed)
+	return tokens
+
+
+## 재질 토큰 목록 → 한국어 라벨 조인 텍스트(FABRIC_LABELS, 예: ["cotton","silk"] → "면 · 실크").
+## 지원 목록에 없는 토큰은 원문을 그대로 쓴다. 빈 목록이면 "".
+static func _fabric_label(tokens: PackedStringArray) -> String:
+	var labels: PackedStringArray = PackedStringArray()
+	for token in tokens:
+		labels.append(str(FABRIC_LABELS.get(token, token)))
+	return " · ".join(labels)
 
 
 static func _format_ms(ms: int) -> String:

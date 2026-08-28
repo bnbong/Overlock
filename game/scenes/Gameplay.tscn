@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3]
+[gd_scene load_steps=32 format=3]
 
 [ext_resource type="Script" path="res://scripts/systems/RaceDirector.gd" id="1_dir"]
 [ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="25_skin"]
@@ -29,6 +29,8 @@
 [ext_resource type="Texture2D" uid="uid://ccc6niucjfsyg" path="res://assets/gfx/face_normal.png" id="26_facenrm"]
 [ext_resource type="Texture2D" uid="uid://prgo0lwyvpgb" path="res://assets/gfx/face_focus.png" id="27_facefoc"]
 [ext_resource type="Texture2D" uid="uid://8pidi5sr0u32" path="res://assets/gfx/face_injured.png" id="28_faceinj"]
+[ext_resource type="Script" path="res://scripts/presentation/ItemField.gd" id="29_item"]
+[ext_resource type="Script" path="res://scripts/presentation/ItemBillboardLayer.gd" id="30_bb"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_warp"]
 shader = ExtResource("18_shdr")
@@ -57,6 +59,9 @@ script = ExtResource("12_skid")
 
 [node name="StitchTrail" type="Node2D" parent="SimHost/FabricSource/World"]
 script = ExtResource("12_st")
+
+[node name="ItemField" type="Node2D" parent="SimHost/FabricSource/World"]
+script = ExtResource("29_item")
 
 [node name="FinishLine" type="Node2D" parent="SimHost/FabricSource/World"]
 script = ExtResource("10_fin")
@@ -118,6 +123,18 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="ItemLayer" type="CanvasLayer" parent="."]
+process_mode = 1
+layer = -5
+
+[node name="Billboards" type="Control" parent="ItemLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("30_bb")
 
 [node name="ForegroundLayer" type="CanvasLayer" parent="."]
 process_mode = 1

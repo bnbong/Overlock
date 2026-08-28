@@ -369,4 +369,7 @@ func _load_from_file(path: String) -> TrackData:
 	var path_json: Array = dict.get("path", [])
 	track.bake(path_json)
 	track.modifiers = dict.get("modifiers", [])  # MVP는 파싱만, 시뮬레이션에는 미반영
+	# 필드 아이템(v1.1.0). 스키마 [{"s","type","lat"}], lat 기본 0(소비 측에서 적용), respawn은
+	# 미래용이라 무시. 원본을 그대로 싣고 RaceDirector가 고정 틱에서 소비한다.
+	track.items = dict.get("items", [])
 	return track

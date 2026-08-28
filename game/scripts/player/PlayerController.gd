@@ -23,6 +23,14 @@ var offfabric_timer: float = 0.0
 var is_drifting: bool = false
 var drift_dir: float = 0.0
 
+# 필드 아이템 상태(v1.1.0). thimble_timer>0이면 부상(cut)이 봉인되고 risk는 0.95 상한으로 눌린다.
+# autopilot_timer>0이면 simulate가 정상 경로를 우회해 _autopilot_update로 중심선 타깃에 스냅한다.
+# autopilot_target_pos/heading은 RaceDirector가 매 틱 simulate 전에 주입한다(시뮬 결정론 유지).
+var thimble_timer: float = 0.0
+var autopilot_timer: float = 0.0
+var autopilot_target_pos: Vector2 = Vector2.ZERO
+var autopilot_target_heading: float = 0.0
+
 var _just_cut: bool = false
 
 @onready var _needle_visual: Polygon2D = $NeedleVisual
@@ -40,6 +48,10 @@ func reset_state(start_pos: Vector2, start_heading: float) -> void:
 	offfabric_timer = 0.0
 	is_drifting = false
 	drift_dir = 0.0
+	thimble_timer = 0.0
+	autopilot_timer = 0.0
+	autopilot_target_pos = Vector2.ZERO
+	autopilot_target_heading = 0.0
 	_just_cut = false
 	if _needle_visual != null:
 		_needle_visual.rotation = heading
@@ -47,6 +59,17 @@ func reset_state(start_pos: Vector2, start_heading: float) -> void:
 
 ## RaceDirector가 매 물리 틱에 호출하는 시뮬레이션 진입점.
 func simulate(input: InputFrame, delta: float) -> void:
+	# 골무 타이머는 항상 감소한다(정상·오토파일럿 경로 모두). 활성 중 부상 봉인·risk 상한(0.95)은
+	# _update_risk가 처리한다.
+	if thimble_timer > 0.0:
+		thimble_timer -= delta
+		if thimble_timer < 0.0:
+			thimble_timer = 0.0
+	# 엄마찬스(오토파일럿) 활성 중에는 정상 시뮬 경로를 통째로 우회한다. 타깃은 RaceDirector가
+	# 이번 틱 simulate 전에 주입해 둔 값이다(온-레일 결정론 구간).
+	if autopilot_timer > 0.0:
+		_autopilot_update(delta)
+		return
 	# 드리프트 판정은 스턴/이탈 타이머가 이번 틱에 감소하기 전 값으로 확정한다(_update_steering이
 	# 두 타이머를 깎으므로 반드시 최상단에서). 눌림 + 잠금 아님일 때만 드리프트가 걸린다.
 	is_drifting = input.drift and stun_timer <= 0.0 and offfabric_timer <= 0.0
@@ -56,6 +79,22 @@ func simulate(input: InputFrame, delta: float) -> void:
 	_update_risk(delta)
 	# 이번 틱 드리프트 방향(표현·리플레이 소비용). 드리프트가 아니면 0.0.
 	drift_dir = actual_steer if is_drifting else 0.0
+
+
+## 엄마찬스(오토파일럿) 자동주행 갱신. RaceDirector가 주입한 중심선 타깃으로 position/heading을
+## 스냅하고, risk를 회복시키며(부상 방지), 드리프트 상태를 해제하고 타이머를 감소시킨다. 조향 입력·
+## 속도 변경·위험 누적은 전부 우회한다(자동주행 창은 완전 결정론적 온-레일 구간).
+func _autopilot_update(delta: float) -> void:
+	position = autopilot_target_pos
+	heading = autopilot_target_heading
+	if _needle_visual != null:
+		_needle_visual.rotation = heading
+	risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
+	is_drifting = false
+	drift_dir = 0.0
+	autopilot_timer -= delta
+	if autopilot_timer < 0.0:
+		autopilot_timer = 0.0
 
 
 ## RaceDirector가 이번 틱의 부상 발생 여부를 소비한다(집계용).
@@ -160,7 +199,12 @@ func _update_risk(delta: float) -> void:
 		risk += gain * Tuning.risk_gain_rate * delta
 	else:
 		risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
-	if risk >= 1.0 and stun_timer <= 0.0:
+	# 골무(thimble) 활성 중에는 risk를 정상 누적하되 0.95로 상한을 둔다 — 절대 1.0에 도달하지
+	# 못해 부상이 봉인된다. 창 만료 후에는 상한이 풀려 누적분이 즉시 컷으로 이어질 수 있다.
+	if thimble_timer > 0.0:
+		risk = clampf(risk, 0.0, 0.95)
+	# 컷 게이트: 스턴 중이 아니고 골무가 비활성일 때만 부상이 발동한다.
+	if risk >= 1.0 and stun_timer <= 0.0 and thimble_timer <= 0.0:
 		_trigger_cut()
 
 
@@ -188,6 +232,16 @@ func off_fabric_reset(reset_pos: Vector2, reset_heading: float) -> void:
 	drift_dir = 0.0
 	if _needle_visual != null:
 		_needle_visual.rotation = heading  # needle 시각 회전을 새 heading에 동기
+
+
+## 골무 획득: 부상 봉인 창을 refresh한다(RaceDirector가 픽업 시 호출).
+func grant_thimble() -> void:
+	thimble_timer = Tuning.thimble_duration
+
+
+## 엄마찬스 획득: 오토파일럿(자동주행) 창을 refresh한다(RaceDirector가 픽업 시 호출).
+func grant_autopilot() -> void:
+	autopilot_timer = Tuning.autopilot_duration
 
 
 func _finger_proximity(steer_mag: float) -> float:

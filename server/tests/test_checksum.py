@@ -49,17 +49,25 @@ def test_physical_floor_formula():
 # min_final_time_ms 가 표와 일치해야 한다. 트랙 길이나 계수가 바뀌면 여기서 잡힌다.
 # NOTE: cat_01 은 수학적 정확값이 8095 지만, 지정 공식의 부동소수점 연산
 # ((3238/300.0)*1000.0*0.75 = 8094.999999999999) 을 floor 하면 8094 다(코드 실제값).
+# v1.1.0: 트랙 6~10(spool/basin/selvedge/harbor/summit)은 코너 완화를 위해 균등
+# 스케일 업(길이 +20~40%)되어 하한이 상향됐고, 장거리 신규 5종(tee/button/bowtie/
+# sock/ridge)이 추가돼 표는 15종이다. 각 값 = floor((length/300.0)*1000.0*0.75).
 _EXPECTED_MIN_TIME_075 = {
     "cotton_01": 8015,
     "heart_01": 7242,
     "cat_01": 8094,
+    "tee_01": 14752,
+    "button_01": 14762,
     "star_01": 8862,
     "fish_01": 8360,
-    "spool_01": 8995,
-    "basin_01": 7785,
-    "selvedge_01": 9755,
-    "harbor_01": 6912,
-    "summit_01": 7142,
+    "spool_01": 11242,
+    "basin_01": 10897,
+    "selvedge_01": 11707,
+    "bowtie_01": 14757,
+    "sock_01": 15502,
+    "harbor_01": 9335,
+    "summit_01": 8572,
+    "ridge_01": 18242,
 }
 
 

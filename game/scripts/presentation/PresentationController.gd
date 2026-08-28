@@ -34,8 +34,15 @@ const SHAKE_DECAY: float = 34.0
 # 마지막 이동 시각을 기억해 이 시간 안이면 계속 "주행 중"으로 유지한다(물리 틱 간격보다
 # 넉넉히 큰 값이라 60Hz 동작은 불변).
 const MOVE_HOLD: float = 0.1
+# 엄마 찬스 스와이프 진행 속도(1/s). 0→1 전환에 ~0.35s(사용자 확정 연출). 오토파일럿 상승엣지에
+# 목표 1로, 하강엣지에 목표 0으로 잡아 이 속도로 프레임 보간한다(표현 전용, 시뮬 무관).
+const MOM_SWIPE_RATE: float = 1.0 / 0.35
 
 const ToastScene := preload("res://scenes/Toast.tscn")
+
+## 양손 골무 기본 변형(컷 이전) 텍스처. 좌·우 base가 같은 에셋이라 단일 로드를 공유한다
+## (HandView.mirror가 좌우 반전 — right/left_thimble_base export 기본값이 이 상수를 참조).
+const _BASE_THIMBLE_TEX := preload("res://assets/gfx/hand_thimble.png")
 
 ## cut 누적 단계별 손 텍스처 교체 매핑(표현 전용, §9 함정 13). 배열 원소를 순서대로
 ## 소비한다: 1번째 cut→오른손, 2번째→왼손, 3번째→오른손(업그레이드), … 홀수=오른손,
@@ -47,6 +54,23 @@ const ToastScene := preload("res://scenes/Toast.tscn")
 	preload("res://assets/gfx/handcut3.png"),
 ]
 
+## 골무 착용 손 텍스처(표현 전용). 양손 모두 골무를 착용한다: 각 손이 표시하는 현재 컷 단계에
+## 대응하는 _thimble 변형을 두어, 골무 효과 활성 중 부상이 발생해도 손 상태가 정합한다.
+## 우측 손: 기본 hand_thimble / 컷1 handcut1_thimble / 컷3 handcut3_thimble.
+## 좌측 손: 기본 hand_thimble(미러) / 컷2 handcut2_thimble(미러). handcut2_thimble는 좌측 손이
+## 표시하는 중지 밴드 변형으로, HandView.mirror=true가 좌우 반전해 좌측 손 포즈로 그린다.
+## 우측 손 기본(컷 이전) 골무 변형.
+@export var right_thimble_base: Texture2D = _BASE_THIMBLE_TEX
+## 좌측 손 기본(컷 이전) 골무 변형(우측과 동일 에셋 — HandView.mirror가 좌우 반전).
+@export var left_thimble_base: Texture2D = _BASE_THIMBLE_TEX
+## cut_hand_textures와 평행한 골무 변형 배열. 홀수 슬롯(index 0=handcut1, 2=handcut3)=우측 손,
+## 짝수 슬롯(index 1=handcut2)=좌측 손. _advance_cut_stage가 컷 발생 손 쪽 변형을 갱신한다.
+@export var thimble_cut_textures: Array[Texture2D] = [
+	preload("res://assets/gfx/handcut1_thimble.png"),
+	preload("res://assets/gfx/handcut2_thimble.png"),
+	preload("res://assets/gfx/handcut3_thimble.png"),
+]
+
 var _mat: ShaderMaterial = null
 var _injury_shake: float = 0.0
 var _prev_stun_active: bool = false
@@ -54,12 +78,22 @@ var _prev_stun_active: bool = false
 var _prev_offfabric: bool = false
 # 드리프트 상승엣지 추적(가드형 오디오 훅용, 표현 전용). 셰이크는 리스크 연동이라 별도 없음.
 var _prev_drifting: bool = false
+# 필드 아이템 엣지 트래커(표현 전용). 오토파일럿(엄마 찬스)·골무(실드) 상승엣지에서 토스트/SFX를
+# 1회만 발화하고, 오토파일럿은 하강엣지에서 스와이프 아웃을 시작한다.
+var _prev_autopilot: bool = false
+var _prev_thimble: bool = false
+# 엄마 찬스 스와이프 진행값(0=플레이어 얼굴/손, 1=엄마 얼굴/손). 매 프레임 목표로 보간한다.
+var _mom_swipe: float = 0.0
 var _toast: Toast = null
 var _prev_pos: Vector2 = Vector2.ZERO
 var _pos_inited: bool = false
 var _move_hold_t: float = 0.0
 # cut 누적 단계(소비한 cut_hand_textures 개수). 씬 재로드 시 _ready로 0에서 시작.
 var _cut_stage: int = 0
+# 양손의 현재 골무 변형(각 손의 현재 컷 단계 대응). _ready에서 각 손 base 변형으로 초기화하고,
+# 각 손에 컷이 발생할 때 _advance_cut_stage가 해당 손 변형을 갱신한다(export 참조라 선언부 초기화 불가).
+var _right_thimble_variant: Texture2D = null
+var _left_thimble_variant: Texture2D = null
 
 @onready var _viewport: SubViewport = get_node_or_null("../SimHost/FabricSource")
 @onready var _warp: ColorRect = get_node_or_null("../FabricLayer/FabricWarp")
@@ -70,6 +104,9 @@ var _cut_stage: int = 0
 @onready var _camera: Camera2D = get_node_or_null("../SimHost/FabricSource/World/Player/Camera2D")
 @onready var _stitch: StitchTrail = get_node_or_null("../SimHost/FabricSource/World/StitchTrail")
 @onready var _skid: DriftSkid = get_node_or_null("../SimHost/FabricSource/World/DriftSkid")
+@onready var _item_field: ItemField = get_node_or_null("../SimHost/FabricSource/World/ItemField")
+# 완주 줌아웃 오버레이. 빌보드 숨김 판단에 가시성만 읽는다(다른 소유 파일이라 변경 없음).
+@onready var _finish_view: CanvasItem = get_node_or_null("../FinishViewLayer/FinishView")
 @onready var _needle: NeedleView = get_node_or_null("../ForegroundLayer/NeedleView")
 @onready var _left_hand: HandView = get_node_or_null("../ForegroundLayer/LeftHand")
 @onready var _right_hand: HandView = get_node_or_null("../ForegroundLayer/RightHand")
@@ -84,6 +121,9 @@ static func v_needle() -> float:
 
 
 func _ready() -> void:
+	# 양손 골무 변형은 export 값이라 선언부가 아닌 여기서 초기화한다(컷 이전 = 기본 변형).
+	_right_thimble_variant = right_thimble_base
+	_left_thimble_variant = left_thimble_base
 	_setup_projection()
 	_setup_fabric()
 	_place_needle()
@@ -149,6 +189,9 @@ func _process(delta: float) -> void:
 	var stun_active: bool = _player.stun_timer > 0.0
 	var offfabric_active: bool = _player.offfabric_timer > 0.0
 	var speed_index: int = _player.speed_index
+	# 필드 아이템 상태(표현 전용 읽기). 오토파일럿=엄마 찬스 전환, 골무=리스크 실드.
+	var autopilot_active: bool = _player.autopilot_timer > 0.0
+	var thimble_active: bool = _player.thimble_timer > 0.0
 	# actual_steer: 노루발이 실제로 따라가는 지연 조향값(-1..1, 음수=좌). 얼굴 고개
 	# 꺾기·손 누름 연출의 구동값. 뷰가 프레임 독립적으로 추가 보간한다.
 	var steer: float = _player.actual_steer
@@ -220,9 +263,14 @@ func _process(delta: float) -> void:
 	# 8) 오디오: 속도 비례 재봉틀 틱(주행 중만).
 	_update_machine_rate(running, speed)
 
+	# 9) 필드 아이템 연출(표현 전용, 시뮬 무관).
+	_update_items(delta, autopilot_active, thimble_active)
+
 	_prev_stun_active = stun_active
 	_prev_offfabric = offfabric_active
 	_prev_drifting = _player.is_drifting
+	_prev_autopilot = autopilot_active
+	_prev_thimble = thimble_active
 
 
 func _update_shake(delta: float, risk: float) -> void:
@@ -245,14 +293,21 @@ func _update_shake(delta: float, risk: float) -> void:
 func _advance_cut_stage() -> void:
 	if _cut_stage >= cut_hand_textures.size():
 		return  # 런당 최대 단계 도달 → 이후 cut은 손을 더 바꾸지 않는다.
-	var tex: Texture2D = cut_hand_textures[_cut_stage]
+	var idx: int = _cut_stage
+	var tex: Texture2D = cut_hand_textures[idx]
 	_cut_stage += 1
 	if _cut_stage % 2 == 1:
 		if _right_hand != null:
 			_right_hand.set_hand_texture(tex)
+		# 우측 손 컷 → 우측 골무 변형도 이 단계에 맞춰 갱신(골무 활성 중이면 다음 _update_items에서 반영).
+		if idx < thimble_cut_textures.size() and thimble_cut_textures[idx] != null:
+			_right_thimble_variant = thimble_cut_textures[idx]
 	else:
 		if _left_hand != null:
 			_left_hand.set_hand_texture(tex)
+		# 좌측 손 컷 → 좌측 골무 변형도 이 단계에 맞춰 갱신(우측과 대칭).
+		if idx < thimble_cut_textures.size() and thimble_cut_textures[idx] != null:
+			_left_thimble_variant = thimble_cut_textures[idx]
 
 
 ## cut 단계·양손 텍스처를 초기 상태로 복원한다. 재시작은 씬 재로드(_ready 재실행)로
@@ -260,10 +315,47 @@ func _advance_cut_stage() -> void:
 func reset_hands() -> void:
 	_cut_stage = 0
 	_prev_stun_active = false
+	_right_thimble_variant = right_thimble_base
+	_left_thimble_variant = left_thimble_base
 	if _left_hand != null:
 		_left_hand.set_hand_texture(null)
+		_left_hand.set_thimble(false, null)
 	if _right_hand != null:
 		_right_hand.set_hand_texture(null)
+		_right_hand.set_thimble(false, null)
+
+
+## 필드 아이템 연출 구동(표현 전용). 오토파일럿(엄마 찬스) 상승엣지→토스트+SFX, 하강엣지는
+## 스와이프 목표 0으로 잡혀 자동 복귀. 골무 상승엣지→토스트+SFX(실드 게이지는 HUD가 구동).
+## 엄마 스와이프는 목표(오토파일럿 활성=1, 아니면 0)로 프레임 보간해 얼굴·양손에 주입한다.
+func _update_items(delta: float, autopilot_active: bool, thimble_active: bool) -> void:
+	if autopilot_active and not _prev_autopilot:
+		if _toast != null:
+			# 효과 설명 포함(지속 시간은 Tuning 값에서 동적 조립, 소수점 한 자리).
+			_toast.push("엄마 찬스! %.1f초 동안 자동 주행" % Tuning.autopilot_duration)
+		_play_moms_chance_audio()
+	if thimble_active and not _prev_thimble:
+		if _toast != null:
+			_toast.push("골무! %.1f초 동안 부상 면역" % Tuning.thimble_duration)
+		_play_thimble_audio()
+	# 골무 손 텍스처(양손): 활성 중엔 각 손의 현재 컷 단계 _thimble 변형으로 스왑, 종료 시 복원.
+	# 엄마 스와이프 중이어도 변형 texture가 슬라이드 아웃되고 엄마 손이 우선 렌더된다(엄마 우선순위 보존).
+	# HandView.set_thimble는 값이 그대로면 조기 반환하므로 매 프레임 호출해도 비용이 없다.
+	if _right_hand != null:
+		_right_hand.set_thimble(thimble_active, _right_thimble_variant)
+	if _left_hand != null:
+		_left_hand.set_thimble(thimble_active, _left_thimble_variant)
+	# 스와이프 보간: 오토파일럿 활성=1, 종료=0. move_toward라 발동/종료가 대칭 슬라이드가 된다.
+	var target: float = 1.0 if autopilot_active else 0.0
+	_mom_swipe = move_toward(_mom_swipe, target, MOM_SWIPE_RATE * delta)
+	# 얼굴·양손에 주입(swipe>0이거나 활성 중이면 전환 렌더). 값이 안 바뀌면 각 뷰가 알아서 무시.
+	var mom_on: bool = autopilot_active or _mom_swipe > 0.001
+	if _face != null:
+		_face.set_mom(mom_on, _mom_swipe)
+	if _left_hand != null:
+		_left_hand.set_mom(mom_on, _mom_swipe)
+	if _right_hand != null:
+		_right_hand.set_mom(mom_on, _mom_swipe)
 
 
 # --- 오디오 훅 (가드: /root/AudioManager 미등록 시 무시) ---
@@ -293,6 +385,21 @@ func _play_drift_audio() -> void:
 	var am: Node = _audio()
 	if am != null and am.has_method("on_drift"):
 		am.on_drift()
+
+
+## 엄마 찬스(오토파일럿) 발동 피드백(표현 전용). 무음 기본 — AudioManager가 on_moms_chance를
+## 노출하면 그때만 재생한다(신규 에셋 없이 가드형 훅만; on_drift 선례와 동일 관용구).
+func _play_moms_chance_audio() -> void:
+	var am: Node = _audio()
+	if am != null and am.has_method("on_moms_chance"):
+		am.on_moms_chance()
+
+
+## 골무 획득 피드백(표현 전용). 무음 기본 — AudioManager가 on_thimble을 노출하면 그때만 재생.
+func _play_thimble_audio() -> void:
+	var am: Node = _audio()
+	if am != null and am.has_method("on_thimble"):
+		am.on_thimble()
 
 
 func _update_machine_rate(running: bool, speed: float) -> void:

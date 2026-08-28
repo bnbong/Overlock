@@ -28,6 +28,9 @@ var track_name: String = ""
 var difficulty: String = "normal"
 var fabric: String = ""
 var modifiers: Array = []
+# 필드 아이템 (v1.1.0). 스키마 [{"s":640,"type":"thimble","lat":0}, ...]. TrackLoader가 파일에서
+# 그대로 싣고, RaceDirector가 고정 틱에서 소비한다(월드 좌표 = point_at_s(s) + lat*접선법선).
+var items: Array = []
 
 
 ## path 세그먼트를 폴리라인으로 베이크한다. type별 분기(가산적 확장):
@@ -86,6 +89,60 @@ func start_heading() -> float:
 	if points.size() >= 2:
 		return (points[1] - points[0]).angle()
 	return 0.0
+
+
+## 아크길이 s에서의 중심선 점(s_arr 이진탐색 + 세그먼트 선형보간). 결정론. s는 [0,length]로 클램프.
+func point_at_s(s: float) -> Vector2:
+	if points.is_empty():
+		return Vector2.ZERO
+	if points.size() == 1:
+		return points[0]
+	var sc: float = clampf(s, 0.0, length)
+	var i: int = _seg_index_at_s(sc)
+	var seg_len: float = s_arr[i + 1] - s_arr[i]
+	var t: float = 0.0
+	if seg_len > 0.0:
+		t = (sc - s_arr[i]) / seg_len
+	return points[i].lerp(points[i + 1], t)
+
+
+## 아크길이 s에서의 단위 접선(진행 방향) 벡터. 세그먼트가 없거나 퇴화하면 +X. 결정론.
+func tangent_at_s(s: float) -> Vector2:
+	if points.size() < 2:
+		return Vector2.RIGHT
+	var sc: float = clampf(s, 0.0, length)
+	var i: int = _seg_index_at_s(sc)
+	var dir: Vector2 = points[i + 1] - points[i]
+	if dir.length_squared() <= 0.0:
+		return Vector2.RIGHT
+	return dir.normalized()
+
+
+## 아크길이 s 부근의 곡률(rad/px = 1/반경). s±ds/2에서 접선 각차를 span(ds)으로 나눈 유한차분
+## 근사다(접선이 세그먼트별 상수라 근사). 결정론. 오토파일럿 핸드오프 게이트가 소비한다.
+func curvature_at_s(s: float, ds: float = 12.0) -> float:
+	if length <= 0.0 or ds <= 0.0:
+		return 0.0
+	var half: float = ds * 0.5
+	var t0: Vector2 = tangent_at_s(s - half)
+	var t1: Vector2 = tangent_at_s(s + half)
+	return absf(t0.angle_to(t1)) / ds
+
+
+## s_arr[i] <= s <= s_arr[i+1]를 만족하는 세그먼트 인덱스 i(이진탐색, 결과는 [0, size-2]).
+func _seg_index_at_s(s: float) -> int:
+	var n: int = s_arr.size()
+	if n < 2:
+		return 0
+	var lo: int = 0
+	var hi: int = n - 2
+	while lo < hi:
+		var mid: int = (lo + hi + 1) >> 1
+		if s_arr[mid] <= s:
+			lo = mid
+		else:
+			hi = mid - 1
+	return lo
 
 
 ## pos에 대해 hint 주변 윈도에서 최근접 폴리라인 점을 찾는다.

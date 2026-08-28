@@ -104,6 +104,17 @@ const MIRROR_SWEAT_X_FRAC: float = 0.38
 ## null이면 _draw 도형, 지정되면 스프라이트로 렌더(레거시 base + 오버레이).
 @export var texture: Texture2D = null
 
+## --- 엄마 찬스 전환(오토파일럿 활성 중) — 스크립트 preload 배선 ---
+## 엄마 얼굴은 face_base_clean 캔버스·눈선(눈 중심 간격 372px, 중점 640,248)에 정렬해
+## 구운 전체 얼굴이라, 기존 얼굴과 동일한 _face_rect로 렌더하면 눈이 같은 화면 위치에 온다.
+## set_mom(active, swipe)이 활성화되면 base+눈 오버레이 대신 이 텍스처를 그리고, swipe(0..1)로
+## 두 얼굴을 가로 슬라이드시켜 교차한다(기존 캐릭터 왼쪽으로 나가고 엄마가 오른쪽에서 들어옴).
+## 엄마 활성 중에는 땀·표정 오버레이를 표시하지 않는다(엄마 얼굴엔 표정이 이미 구워져 있음).
+@export var mom_face: Texture2D = preload("res://assets/gfx/face_mom.png")
+## 엄마 얼굴 세로 미세 조정(px, 캔버스 기준). 눈선 정렬 기준의 미세 오차를 export 오프셋으로
+## 보정한다(±10px 수준 합격 기준). 기본 0 — 눈선 정렬 그대로.
+@export var mom_offset_y: float = 0.0
+
 ## @deprecated 전체-얼굴 텍스처 스왑(레거시). Gameplay.tscn이 여전히 값을 할당하므로
 ## 프로퍼티는 유지하되, 위 눈 오버레이 스왑 모드가 우선한다(base_clean 지정 시 미사용).
 ## 오버레이 슬롯을 전부 비워야 이 레거시 스왑 경로가 활성화된다.
@@ -133,6 +144,10 @@ var _sweat: float = 0.0
 var _stunned: bool = false
 var _steer: float = 0.0
 var _steer_target: float = 0.0
+## 엄마 찬스 전환 상태(PresentationController 주입). _mom_swipe>0이면 _draw가 슬라이드 교차를
+## 그린다(0=플레이어 얼굴, 1=엄마 얼굴). _mom_active는 전환 게이트(표현 전용).
+var _mom_active: bool = false
+var _mom_swipe: float = 0.0
 
 var _state: int = FaceState.NORMAL  # 현재 표정 상태(스왑용)
 var _fade_from: int = FaceState.NORMAL  # 크로스페이드 시작 상태
@@ -174,6 +189,18 @@ func _compute_state(tension: float, stunned: bool) -> int:
 ## PresentationController가 매 프레임 player.actual_steer를 주입(-1..1, 음수=좌).
 func set_steer(steer: float) -> void:
 	_steer_target = clampf(steer, -1.0, 1.0)
+
+
+## PresentationController가 엄마 찬스(오토파일럿) 상태를 주입. active=엄마 전환 게이트,
+## swipe∈[0,1]=전환 진행값(0=플레이어, 1=엄마). 값이 바뀔 때만 다시 그린다(hold 중 정지 화면
+## 낭비 방지 — 슬라이드가 멈춘 hold 구간은 재드로우가 필요 없다).
+func set_mom(active: bool, swipe: float) -> void:
+	var sw: float = clampf(swipe, 0.0, 1.0)
+	if active == _mom_active and is_equal_approx(sw, _mom_swipe):
+		return
+	_mom_active = active
+	_mom_swipe = sw
+	queue_redraw()
 
 
 func _process(delta: float) -> void:
@@ -224,6 +251,11 @@ func _face_rect() -> Rect2:
 func _draw() -> void:
 	var rect: Rect2 = _face_rect()
 	_ovl_scale = face_draw_scale
+	# 엄마 찬스 전환 중이면 두 얼굴 슬라이드 교차만 그린다(고개꺾기·표정·땀 오버레이 제외 —
+	# 오토파일럿 중이라 조향이 없고, 엄마 얼굴엔 표정이 이미 구워져 있음).
+	if _mom_swipe > 0.001 and mom_face != null:
+		_draw_mom_transition(rect)
+		return
 	# 조향 방향으로 고개를 기울인다(face_rect 하단 피벗 기준 회전 + 약간의 수평 이동).
 	var pivot: Vector2 = Vector2(
 		rect.position.x + rect.size.x * 0.5, rect.position.y + rect.size.y * HEAD_PIVOT_FRAC
@@ -239,6 +271,47 @@ func _draw() -> void:
 		# 레거시: base 스프라이트 + 상태(집중/부상)일 때만 앞머리 사이 피부 창 오버레이.
 		draw_texture_rect(texture, rect, false)
 		_draw_state_overlay(rect)
+	else:
+		_draw_fallback(rect)
+
+
+## 엄마 찬스 슬라이드 교차: 플레이어 얼굴은 왼쪽으로(player_dx), 엄마 얼굴은 오른쪽에서(mom_dx)
+## 들어온다. swipe=0에서 플레이어 x=0·엄마 x=+W(화면 밖), swipe=1에서 플레이어 x=-W(화면 밖)·
+## 엄마 x=0. 이 한 매핑이 발동(0→1: 플레이어 왼쪽 퇴장·엄마 우측 진입)과 종료(1→0: 엄마 우측
+## 퇴장·플레이어 좌측 복귀)를 모두 만든다(사용자 확정 연출). 슬라이드는 draw_set_transform의
+## translation으로만 주므로 고개꺾기·표정·땀은 그리지 않는다(전환 중 깔끔함).
+func _draw_mom_transition(rect: Rect2) -> void:
+	var w: float = size.x
+	# 플레이어 얼굴(base + 현재 상태 눈 오버레이) 왼쪽으로 슬라이드.
+	draw_set_transform(Vector2(-_mom_swipe * w, 0.0), 0.0, Vector2.ONE)
+	_draw_player_static(rect)
+	# 엄마 얼굴 오른쪽에서 슬라이드 인(같은 _face_rect + mom_offset_y 미세 보정).
+	draw_set_transform(Vector2((1.0 - _mom_swipe) * w, 0.0), 0.0, Vector2.ONE)
+	var mrect: Rect2 = rect
+	mrect.position.y += mom_offset_y * face_draw_scale
+	draw_texture_rect(mom_face, mrect, false)
+
+
+## 전환 중 플레이어 얼굴을 표정/땀/크로스페이드 없이 현재 상태 그대로 1장 그린다(슬라이드
+## 아웃용). 활성 모드(오버레이/스왑/스프라이트/폴백)를 그대로 따르되 사이드 이펙트는 뺀다.
+func _draw_player_static(rect: Rect2) -> void:
+	if _overlay_active():
+		draw_texture_rect(base_clean, rect, false)
+		var eye_rect: Rect2 = rect
+		eye_rect.position.y += eyes_offset_y * face_draw_scale
+		if not is_equal_approx(eyes_scale, 1.0):
+			var pivot: Vector2 = eye_rect.position + EYE_ANCHOR_FRAC * eye_rect.size
+			var new_size: Vector2 = eye_rect.size * eyes_scale
+			eye_rect = Rect2(pivot - EYE_ANCHOR_FRAC * new_size, new_size)
+		var ov: Texture2D = _eye_overlay(_state)
+		if ov != null:
+			draw_texture_rect(ov, eye_rect, false)
+	elif _swap_active():
+		var tex: Texture2D = _state_tex(_state)
+		if tex != null:
+			draw_texture_rect(tex, rect, false)
+	elif texture != null:
+		draw_texture_rect(texture, rect, false)
 	else:
 		_draw_fallback(rect)
 
