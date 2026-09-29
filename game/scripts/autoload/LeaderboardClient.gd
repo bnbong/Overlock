@@ -86,6 +86,10 @@ var volume_sfx: float = DEFAULT_VOLUME_SFX
 # save_steer_expo로 영속한다(볼륨과 동형 — 클램프·저장 소유자).
 var steer_expo: float = DEFAULT_STEER_EXPO
 
+# 최초 1회 튜토리얼 모달을 이미 봤는지(전역 1회, 트랙 무관). RaceDirector가 false일 때만 띄우고
+# 닫히면 save_tutorial_seen으로 영속한다(하위 호환: settings.json에 키 없으면 false).
+var tutorial_seen: bool = false
+
 # settings.json에 사용자가 수동으로 적은 셀프호스팅/개발용 base_url이 있으면 true. 이 경우에만
 # base_url을 다시 settings.json에 기록해 보존한다(기본값은 코드에서 결정 — 향후 기본 변경 자동 반영).
 var _base_url_manual: bool = false
@@ -143,6 +147,12 @@ func save_steer_expo(expo: float) -> bool:
 	return _write_settings()
 
 
+## 최초 1회 튜토리얼을 본 것으로 기록하고 settings.json에 영속한다. 저장 성공 시 true.
+func save_tutorial_seen() -> bool:
+	tutorial_seen = true
+	return _write_settings()
+
+
 ## 맵 선택 화면에서 마지막으로 고른 트랙 id를 settings.json에 기록한다(재진입 복원용).
 func remember_last_track(track_id: String) -> void:
 	last_track_id = track_id
@@ -172,6 +182,7 @@ func _settings_dict() -> Dictionary:
 		"volume_bgm": volume_bgm,
 		"volume_sfx": volume_sfx,
 		"steer_expo": steer_expo,
+		"tutorial_seen": tutorial_seen,
 	}
 	if _base_url_manual:
 		d["base_url"] = base_url
@@ -486,6 +497,7 @@ func _load_settings() -> void:
 	volume_bgm = DEFAULT_VOLUME_BGM
 	volume_sfx = DEFAULT_VOLUME_SFX
 	steer_expo = DEFAULT_STEER_EXPO
+	tutorial_seen = false
 	if not FileAccess.file_exists(SETTINGS_PATH):
 		return
 	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.READ)
@@ -517,6 +529,9 @@ func _load_settings() -> void:
 	volume_bgm = _read_volume(dict, "volume_bgm", DEFAULT_VOLUME_BGM)
 	volume_sfx = _read_volume(dict, "volume_sfx", DEFAULT_VOLUME_SFX)
 	steer_expo = _read_steer_expo(dict)
+	# 하위 호환: 키가 없거나 bool이 아니면 false(= 아직 안 봄) 유지.
+	if dict.get("tutorial_seen", false) is bool:
+		tutorial_seen = dict.get("tutorial_seen", false)
 
 
 ## settings.json에서 선형 볼륨 키를 읽어 0..1로 클램프한다(키 없음/비수치 → 기본값 유지).

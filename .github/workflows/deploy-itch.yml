@@ -1,0 +1,148 @@
+name: Deploy itch.io
+
+# itch.io HTML5 배포 자동화(deploy-web.yml 재사용 + butler push). 수동 트리거 전용.
+#   1) Godot 4.6.1 headless 로 "Web" 프리셋 export (build/web/)
+#   2) game/web_static/*.png 를 export 산출물과 함께 build/web 로 복사(deploy-web 와 동일)
+#   3) butler(itch.io 공식 CLI) 로 build/web 을 itch 채널에 push
+#
+# 사전 준비(한 번만) ------------------------------------------------------------
+#   (1) itch.io 에서 게임 페이지를 개설한다(Kind of project: HTML).
+#   (2) 레포 Settings → Secrets and variables → Actions 에 아래 2종을 등록한다.
+#         - BUTLER_API_KEY : itch.io API 키(https://itch.io/user/settings/api-keys)
+#         - ITCH_TARGET    : 푸시 대상 채널. 형식 "user/game:channel" (예: bnbong/overlock:html5)
+#   (3) 첫 푸시 후 itch 게임 페이지 편집 화면에서 업로드된 파일의
+#       'This file will be played in the browser' 체크박스를 수동으로 켠다(최초 1회).
+# 참고: 웹 export 는 thread_support=false 라 SharedArrayBuffer 가 필요 없으므로
+#       itch 의 COOP/COEP 헤더 부재와 무관하게 브라우저에서 실행된다.
+# Godot 설치·캐시 방식은 deploy-web.yml 과 동일하다(자세한 내용은 docs/deploy.md §7).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-itch
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.6.1"
+  GODOT_RELEASE: "4.6.1-stable"
+
+jobs:
+  build-push:
+    name: Export web build & push to itch.io
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 시크릿이 없으면 무거운 Godot 다운로드/export 전에 조기 실패시킨다.
+      - name: Verify itch.io secrets present (조기 실패 가드)
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_TARGET: ${{ secrets.ITCH_TARGET }}
+        run: |
+          set -eu
+          missing=0
+          if [ -z "${BUTLER_API_KEY}" ]; then
+            echo "::error::BUTLER_API_KEY 시크릿이 없습니다. itch.io API 키를 레포 Settings→Secrets 에 등록하세요(https://itch.io/user/settings/api-keys)."
+            missing=1
+          fi
+          if [ -z "${ITCH_TARGET}" ]; then
+            echo "::error::ITCH_TARGET 시크릿이 없습니다. 형식 예: bnbong/overlock:html5 (user/game:channel)."
+            missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+
+      # 헤드리스 export 에서 공유 라이브러리 누락으로 실패하면 아래 주석을 해제한다.
+      # - name: Install headless runtime libs
+      #   run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
+
+      - name: Cache Godot editor binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-bin
+          key: godot-bin-${{ env.GODOT_RELEASE }}-linux-x86_64
+
+      - name: Download Godot ${{ env.GODOT_RELEASE }} (headless linux)
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          mkdir -p ~/godot-bin
+          url="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          echo "Downloading $url"
+          curl -fL -o /tmp/godot.zip "$url"
+          unzip -o /tmp/godot.zip -d ~/godot-bin
+          mv "$HOME/godot-bin/Godot_v${GODOT_RELEASE}_linux.x86_64" "$HOME/godot-bin/godot"
+          chmod +x "$HOME/godot-bin/godot"
+
+      - name: Cache Godot export templates (~1GB tpz, web 만 추출)
+        id: cache-templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-templates-${{ env.GODOT_VERSION }}.stable-web
+
+      - name: Install web export templates
+        if: steps.cache-templates.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          url="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          echo "Downloading $url"
+          curl -fL -o /tmp/templates.tpz "$url"
+          # .tpz 는 zip. web_*.zip + version.txt 만 dest 직하로 추출(-j 로 경로 junk).
+          unzip -o -j /tmp/templates.tpz "templates/web_*.zip" "templates/version.txt" -d "$dest"
+          echo "installed template version: $(cat "$dest/version.txt")"
+
+      - name: Export "Web" preset (deploy-web 과 동일한 명령)
+        run: |
+          set -eu
+          export PATH="$HOME/godot-bin:$PATH"
+          mkdir -p build/web
+          # 첫 빌드라 리소스 임포트를 먼저 한 번 수행(.godot 은 커밋 대상 아님).
+          godot --headless --path game --import
+          godot --headless --path game --export-release "Web" ../build/web/index.html
+          # OG 프리뷰·apple-touch-icon 등 정적 자산을 export 산출물과 함께 웹 루트로 복사.
+          # (game/web_static/*.png → build/web/*.png)
+          cp game/web_static/*.png build/web/
+          echo "=== build/web ==="
+          ls -la build/web
+          test -f build/web/index.html
+          test -f build/web/index.wasm
+
+      - name: Upload web build artifact (디버깅용, 짧은 보존)
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlock-itch-${{ github.sha }}
+          path: build/web/
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Install butler (itch.io CLI)
+        run: |
+          set -eu
+          mkdir -p ~/butler
+          # broth.itch.ovh 는 itch.io 공식 butler 배포 채널(LATEST = 최신 안정판).
+          curl -fL -o /tmp/butler.zip "https://broth.itch.ovh/butler/linux-amd64/LATEST/archive/default"
+          # butler 실행에 필요한 7z.so 등 동봉 파일과 함께 압축을 푼다.
+          unzip -o /tmp/butler.zip -d ~/butler
+          chmod +x ~/butler/butler
+          ~/butler/butler -V
+
+      - name: Push to itch.io (butler push)
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_TARGET: ${{ secrets.ITCH_TARGET }}
+        run: |
+          set -eu
+          export PATH="$HOME/butler:$PATH"
+          # 실행 회차 기반 유저 버전(itch 페이지에 표시). 예: 2026.08.23-r42
+          userversion="$(date -u +%Y.%m.%d)-r${GITHUB_RUN_NUMBER}"
+          echo "Pushing build/web → ${ITCH_TARGET} (userversion ${userversion})"
+          butler push build/web "${ITCH_TARGET}" --userversion "${userversion}"
+          echo "Done. itch 게임 페이지에서 최초 1회 'This file will be played in the browser' 를 켜세요."

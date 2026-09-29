@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/TutorialDialog.gd" id="1_tut"]
+
+[node name="TutorialDialog" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_tut")
+
+[node name="CloseButton" type="Button" parent="."]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 0
+offset_right = 220.0
+offset_bottom = 48.0
+text = "시작하기"
