@@ -51,6 +51,7 @@ func _ready() -> void:
 
 ## 좌하단 RISK 패널(offset_top=-186) 바로 위에 효과 타이머 카드 VBox를 동적 생성한다(씬 미수정 —
 ## 동적 생성 컨벤션). 아래 앵커에 붙여 위로 자라게(GROW_BEGIN) 두고, 골무·엄마찬스 카드를 담는다.
+## 터치 모드에서는 _apply_touch_layout이 RISK 패널과 함께 위로 옮긴다.
 ## 각 카드는 비활성 시 숨김(visible=false)이라 컨테이너가 자동 축소되고, 활성 시 팝 등장한다.
 func _build_effect_cards() -> void:
 	_effect_box = VBoxContainer.new()
@@ -183,6 +184,7 @@ func _build_touch_controls() -> void:
 		return
 	_touch = TouchControls.new()
 	add_child(_touch)
+	_apply_touch_layout()
 	# 버튼보다 일시정지 오버레이가 위에 그려지도록 오버레이 바로 앞에 둔다.
 	move_child(_touch, _pause_overlay.get_index())
 	# 키 이름 힌트는 터치 화면에서 뜻이 없으니 정리한다(속도 게이지 라벨 역할은 유지).
@@ -192,6 +194,47 @@ func _build_touch_controls() -> void:
 	_build_pause_touch_buttons()
 	# _ready 이후 HUD에 붙는 Control(튜토리얼 모달 등)은 모달로 보고 떠 있는 동안 버튼을 막는다.
 	child_entered_tree.connect(_on_child_entered)
+
+
+## 터치 모드 하단 위젯 재배치(씬 미수정 — 키보드 모드는 씬 배치 그대로). 조향 버튼은 왼쪽 끝,
+## 속도·드리프트 버튼은 오른쪽 끝에 붙으므로(TouchControls.button_rect) 그 위로 위젯을 올린다.
+## - 좌측: RISK 패널을 ◀ 바로 위(왼쪽 정렬)로, 효과 카드 스택은 RISK 위 간격(10px)을 유지한 채 함께.
+## - 우측: SPEED 패널을 ▲ 열 폭에 맞춰(오른쪽 정렬) ▲ 바로 위로, 게이지·힌트 라벨은 패널 안에서
+##   씬과 같은 세로 관계를 유지한 채 함께 옮긴다.
+## 모든 위젯이 하단(좌/우) 앵커라 offset만 바꾸면 되고, 캔버스는 1280×720 고정(stretch keep)이다.
+func _apply_touch_layout() -> void:
+	var m: float = TouchControls.EDGE_MARGIN
+	var gap: float = TouchControls.HUD_GAP
+	# 좌측: RISK 바닥 = ◀ 윗변 - gap. 효과 카드 VBox(아래 앵커, 위로 자람)도 같은 만큼 올린다.
+	var risk_bottom: float = -(m + TouchControls.STEER_SIZE + gap)
+	var dy_left: float = risk_bottom - _risk_meter.offset_bottom
+	_shift_offsets(_risk_meter, 0.0, dy_left)
+	if _effect_box != null:
+		_shift_offsets(_effect_box, 0.0, dy_left)
+	# 우측: SPEED 패널 = ▲ 열(오른쪽 여백 m, 폭 SPEED_SIZE), 바닥 = ▲ 윗변 - gap. 높이는 씬 값 유지.
+	var panel: Control = $SpeedPanel
+	var col_w: float = TouchControls.SPEED_SIZE
+	var panel_bottom: float = -(m + TouchControls.SPEED_SIZE * 2.0 + TouchControls.BUTTON_GAP + gap)
+	var dy_right: float = panel_bottom - panel.offset_bottom
+	var dx_right: float = (-m - col_w * 0.5) - (panel.offset_left + panel.offset_right) * 0.5
+	var inset: float = 8.0
+	for c in [$SpeedHintUp, $SpeedGauge, $SpeedHintDown]:
+		var ctrl: Control = c
+		_shift_offsets(ctrl, dx_right, dy_right)
+		if ctrl is Label:
+			# 캡션 라벨은 좁아진 패널 안쪽 폭에 맞춘다(가운데 정렬 유지).
+			ctrl.offset_left = -m - col_w + inset
+			ctrl.offset_right = -m - inset
+	panel.offset_left = -m - col_w
+	panel.offset_right = -m
+	_shift_offsets(panel, 0.0, dy_right)
+
+
+static func _shift_offsets(c: Control, dx: float, dy: float) -> void:
+	c.offset_left += dx
+	c.offset_right += dx
+	c.offset_top += dy
+	c.offset_bottom += dy
 
 
 func _build_pause_touch_buttons() -> void:

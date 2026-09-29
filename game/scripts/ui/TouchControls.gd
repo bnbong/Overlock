@@ -32,15 +32,21 @@ const ACTIONS: Dictionary = {
 ## 홀드형(미끄러져 들어오기 허용) 버튼.
 const HOLD_BUTTONS: Array = [Btn.STEER_LEFT, Btn.STEER_RIGHT, Btn.DRIFT]
 
-# 레이아웃(1280×720 기준 캔버스 좌표). 하단 버튼은 HUD 위젯을 피해 배치한다.
-#  - 좌하단 RISK 패널(x 16~136, 아래에서 186~36)과 그 위 효과 카드 스택 → 조향은 x 152부터.
-#  - 우하단 SPEED 패널(오른쪽에서 150~8, 아래에서 278~40) → 속도·드리프트는 그 왼쪽.
+# 레이아웃(1280×720 기준 캔버스 좌표). 조향·속도 버튼은 화면 좌우 가장자리에 붙이고,
+# HUD가 터치 모드에서 하단 위젯을 버튼 위로 옮긴다(HUD._apply_touch_layout).
+#  - 좌측: ◀ ▶를 왼쪽 끝·바닥에 나란히 → 그 위에 RISK 패널, 다시 그 위에 효과 카드 스택.
+#  - 우측: ▲ ▼를 오른쪽 끝 열에 세로로 쌓고 DRIFT는 그 왼쪽 열 바닥 정렬 → ▲ 위에 SPEED 패널.
 #  - 우상단 TIME 패널(오른쪽에서 238~8, 위 6~92) → 일시정지는 그 왼쪽.
 const STEER_SIZE: float = 112.0
 const SPEED_SIZE: float = 112.0
 const DRIFT_SIZE: float = 132.0
 const PAUSE_SIZE: float = 80.0
-const BOTTOM_MARGIN: float = 28.0
+## 화면 가장자리(좌·우·아래)와 버튼 사이 여백.
+const EDGE_MARGIN: float = 16.0
+## 이웃한 버튼 사이 간격.
+const BUTTON_GAP: float = 16.0
+## 버튼 윗변과 그 위로 옮긴 HUD 위젯(RISK·SPEED 패널) 사이 간격.
+const HUD_GAP: float = 12.0
 ## 시각 사각형보다 넓게 잡는 판정 여유(엄지가 가장자리를 눌러도 인정).
 const HIT_PAD: float = 8.0
 
@@ -109,19 +115,28 @@ func is_blocked() -> bool:
 func button_rect(b: int) -> Rect2:
 	var w: float = size.x
 	var h: float = size.y
-	var steer_y: float = h - BOTTOM_MARGIN - STEER_SIZE
+	var steer_y: float = h - EDGE_MARGIN - STEER_SIZE
+	var speed_x: float = w - EDGE_MARGIN - SPEED_SIZE
 	var r: Rect2 = Rect2()
 	match b:
 		Btn.STEER_LEFT:
-			r = Rect2(152.0, steer_y, STEER_SIZE, STEER_SIZE)
+			r = Rect2(EDGE_MARGIN, steer_y, STEER_SIZE, STEER_SIZE)
 		Btn.STEER_RIGHT:
-			r = Rect2(152.0 + STEER_SIZE + 16.0, steer_y, STEER_SIZE, STEER_SIZE)
+			r = Rect2(EDGE_MARGIN + STEER_SIZE + BUTTON_GAP, steer_y, STEER_SIZE, STEER_SIZE)
 		Btn.SPEED_UP:
-			r = Rect2(w - 282.0, h - 40.0 - SPEED_SIZE * 2.0 - 16.0, SPEED_SIZE, SPEED_SIZE)
+			r = Rect2(
+				speed_x, h - EDGE_MARGIN - SPEED_SIZE * 2.0 - BUTTON_GAP, SPEED_SIZE, SPEED_SIZE
+			)
 		Btn.SPEED_DOWN:
-			r = Rect2(w - 282.0, h - 40.0 - SPEED_SIZE, SPEED_SIZE, SPEED_SIZE)
+			r = Rect2(speed_x, h - EDGE_MARGIN - SPEED_SIZE, SPEED_SIZE, SPEED_SIZE)
 		Btn.DRIFT:
-			r = Rect2(w - 282.0 - 16.0 - DRIFT_SIZE, h - 40.0 - DRIFT_SIZE, DRIFT_SIZE, DRIFT_SIZE)
+			# 오른손 엄지가 쉬는 바닥 줄에 둔다(◀ ▶·▼와 같은 바닥선, 가장 자주 누르는 홀드 버튼).
+			r = Rect2(
+				speed_x - BUTTON_GAP - DRIFT_SIZE,
+				h - EDGE_MARGIN - DRIFT_SIZE,
+				DRIFT_SIZE,
+				DRIFT_SIZE
+			)
 		Btn.PAUSE:
 			r = Rect2(w - 238.0 - 16.0 - PAUSE_SIZE, 10.0, PAUSE_SIZE, PAUSE_SIZE)
 	return r
