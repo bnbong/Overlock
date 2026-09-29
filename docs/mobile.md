@@ -266,3 +266,63 @@ Godot 4.6.1에서 `display/window/stretch/aspect`의 기본값은 이미 `keep`�
 | 약 44MB(wasm과 pck 합계, 8월 빌드 기준이며 최근 스크래치 빌드는 `index.pck`만 약 26MB로 더 큽니다)의 첫 다운로드가 느립니다. | 모바일 데이터 환경에서 이탈할 수 있습니다. | 3단계에서 텍스처 축소와 PWA 캐시를 검토합니다. |
 | 터치 버튼이 손과 원단 일부를 가립니다. | 시야가 일부 줄어듭니다. | 버튼을 반투명으로 두었습니다. 2단계에서 `expand` 여백으로 옮기는 방안을 검토합니다(§5.2). |
 | 튜토리얼과 터치 버튼의 터치 판별 기준이 일부 환경에서 다를 수 있습니다. | 안내 문구와 실제 조작 수단이 어긋납니다. | §4.3에 적은 대로 필요하면 `TouchControls.should_show()`로 통일합니다. |
+
+## 8. iOS WebKit "WebGL context lost" 대응
+
+### 8.1 증상
+
+iPhone 15 Pro Max의 Chrome(iOS용 Chrome은 WebKit을 씁니다)으로 https://overlock.bnbong.com 에 접속하면 로딩이 끝날 무렵 "WebGL context lost, please reload the page" 알림이 뜹니다. 확인을 누르면 로딩 화면에 `null is not an object (evaluating 'gl.getContextAttributes().antialias')` 오류가 표시되고, 게임 화면으로 넘어가지 않습니다.
+
+### 8.2 원인 분석
+
+두 메시지가 나오는 위치를 Godot 4.6.1 웹 템플릿(`web_nothreads_release.zip`의 `godot.js`)과 엔진 소스(`platform/web/display_server_web.cpp`)에서 확인했습니다.
+
+1. 엔진은 WebGL 컨텍스트를 만들기 직전에 `godot_js_display_setup_canvas()`로 캔버스에 `webglcontextlost` 리스너를 등록합니다. 첫 번째 알림은 이 리스너가 띄웁니다.
+2. 이어서 엔진은 `explicitSwapControl = true`로 `emscripten_webgl_create_context()`를 호출합니다. Emscripten은 이 옵션을 보면 `renderViaOffscreenBackBuffer`를 켜고, `GL.registerContext()` 안에서 곧바로 `GL.createOffscreenFramebuffer()`를 실행합니다. 두 번째 오류가 가리키는 `gl.getContextAttributes().antialias`는 이 함수 안에만 있는 코드입니다. `getContextAttributes()`는 컨텍스트를 잃은 상태에서만 `null`을 반환합니다.
+3. 따라서 두 번째 오류는 첫 번째 증상에서 파생된 2차 증상입니다. 그리고 WebKit이 `getContext("webgl2")` 호출에 **처음부터 잃은 상태의 컨텍스트**를 돌려주었다는 사실도 알 수 있습니다. 이 시점에는 메인 씬, 텍스처, `FabricSource` SubViewport, 원단 셰이더가 하나도 올라가지 않았으므로, 게임 콘텐츠의 GPU 사용량은 이 순간의 직접 원인이 될 수 없습니다.
+
+WebKit은 GPU 프로세스가 컨텍스트를 만들지 못하면 잃은 상태의 컨텍스트를 반환합니다. 앞선 실행에서 GPU 프로세스가 문제를 겪었다면, 브라우저를 완전히 종료하기 전까지 새로 고침할 때마다 같은 증상이 반복될 수 있습니다. 앞선 실행에서 컨텍스트를 잃게 만든 원인으로는 다음 두 가지를 유력하게 봅니다.
+
+- **WebKit Metal 백엔드의 provoking vertex 버그(가장 유력)**: WebKit 버그 [286297](https://bugs.webkit.org/show_bug.cgi?id=286297)과 [289601](https://bugs.webkit.org/show_bug.cgi?id=289601)(중복 처리됨)은 `flat` 한정자가 붙은 정수형 varying(`flat out uvec2` 등)을 쓰는 셰이더가 정점이 많은 도형을 그릴 때 컨텍스트를 잃는 문제입니다. WebGL 기본값인 last vertex 규칙을 Metal에서 흉내 내는 과정에서 발생하며, 289601은 A17 Pro와 같은 세대인 M3 계열 GPU에서도 재현되었습니다. Godot의 캔버스 셰이더는 `flat out uvec2 varying_F`, `flat out uvec4 varying_G`를 씁니다(wasm에 내장된 셰이더 문자열로 확인했습니다). Godot 이슈 [#105945](https://github.com/godotengine/godot/issues/105945)는 둥근 모서리와 안티에일리어싱을 켠 `StyleBoxFlat`이 많을수록 iPhone과 iPad에서 컨텍스트를 잃는다고 보고했는데, 이 버그와 증상이 일치합니다. Overlock은 `SewingSkin.draw_patch()`를 비롯해 거의 모든 UI 패널을 둥근 `StyleBoxFlat`으로 그립니다. WebKit 측은 iOS 18.5에서 수정되었다고 밝혔지만, 사용자 기기의 iOS 버전은 아직 확인하지 못했습니다.
+- **GPU 메모리 부담(보조 요인)**: iPhone 15 Pro Max는 `devicePixelRatio`가 3이라서, `allow_hidpi`가 기본값(true)이면 가로 화면 캔버스가 2796×1290이 됩니다. 이때 Emscripten 오프스크린 백 버퍼(색상과 깊이·스텐실), WebKit 드로잉 버퍼(`preserveDrawingBuffer=true`), 엔진의 루트 렌더 타깃을 합쳐 약 70MB를 씁니다. 배율을 2로 낮추면 같은 항목이 약 31MB로 줄어듭니다.
+
+처음 세운 가설 가운데 다음 항목은 근거가 없어 원인에서 제외했습니다.
+
+| 가설 | 확인 결과 |
+|---|---|
+| 텍스처 크기 한도 초과 | 임포트 대상 PNG 중 가장 큰 것은 `overlock_logo.png`(1774×887)입니다. 4096을 넘는 텍스처는 없습니다. `assets/gfx/src/`는 `.gdignore`로 임포트에서 빠집니다. |
+| 텍스처 총량 | 모든 PNG가 lossless(`compress/mode=0`)라 RGBA8 비압축으로 올라갑니다. 게임 전체 텍스처를 한꺼번에 올려도 약 91MiB이고, 메인 메뉴에서는 `menu_bg`(3.5MiB), 로고(6.0MiB), UI 스킨 정도만 씁니다. 컨텍스트가 만들어지는 시점에는 하나도 올라가지 않습니다. |
+| MSAA | 프로젝트 전역 `msaa_2d`는 꺼져 있습니다. `FabricSource`(512×512)의 2x MSAA는 약 2MB이고 게임플레이에서만 생성됩니다. |
+| `vram_texture_compression/for_mobile` | VRAM 압축 모드로 임포트한 텍스처가 하나도 없으므로 이 옵션은 결과에 영향을 주지 않습니다. 그래서 바꾸지 않았고 재임포트도 필요 없습니다. |
+
+### 8.3 조치
+
+1. **provoking vertex 규칙을 first vertex로 전환**: `html/head_include`에 `HTMLCanvasElement.prototype.getContext`를 감싸는 스크립트를 넣었습니다. WebGL 컨텍스트가 만들어지면 `WEBGL_provoking_vertex` 확장을 켜고 `FIRST_VERTEX_CONVENTION_WEBGL`을 지정합니다. WebKit 개발자가 버그 286297에서 권장한 우회 방법이며, 289601의 보고자도 이 방법으로 문제가 사라졌다고 확인했습니다. Godot 캔버스 셰이더의 `flat` varying은 모두 인스턴스 속성(`attrib_A`~`attrib_H`)에서 오기 때문에 한 도형의 모든 정점에서 값이 같습니다. 따라서 규칙을 바꿔도 화면은 달라지지 않습니다. 확장이 없는 브라우저에서는 아무것도 하지 않습니다.
+2. **devicePixelRatio 상한 2**: 같은 스크립트가 `window.devicePixelRatio`를 최대 2로 제한합니다. 엔진은 이 값으로 캔버스 픽셀 크기를 정하므로, iPhone Pro Max 가로 화면의 캔버스는 2796×1290에서 1864×860으로 줄어듭니다. 터치 좌표는 엔진이 캔버스 크기와 CSS 크기의 비율로 변환하기 때문에 영향을 받지 않습니다.
+3. **세로 화면 안내 오버레이**: 새 오토로드 `OrientationGuard`(`game/scripts/autoload/OrientationGuard.gd`)가 창의 높이가 너비보다 크면 "기기를 가로로 돌려 주세요" 안내를 16:9 게임 영역 위에 띄우고, 가로로 돌리면 자동으로 걷습니다. iOS 브라우저는 `screen.orientation.lock()`을 지원하지 않으므로 이 안내가 iPhone에서 쓸 수 있는 유일한 수단입니다. 게임을 일시정지하지 않고 시뮬레이션에도 관여하지 않습니다.
+4. **Android 가로 고정 시도**: 같은 오토로드가 웹 Android에서 첫 `touchend` 때 전체 화면을 요청한 뒤 `screen.orientation.lock("landscape")`를 한 번 시도합니다. Android Chrome은 전체 화면이거나 설치된 PWA일 때만 lock을 허용하므로 전체 화면을 먼저 요청합니다. 실패는 모두 무시합니다.
+5. **PWA 매니페스트**: 프리셋에서 `progressive_web_app/enabled=true`, `display=0`(Fullscreen), `orientation=1`(Landscape)로 바꿨습니다. 스레드 OFF 빌드는 교차 출처 격리가 필요 없으므로 `ensure_cross_origin_isolation_headers`는 false로 바꿨습니다. 이 값이 true로 남아 있으면 서비스 워커가 모든 응답에 COEP/COOP 헤더를 덧붙이고, WebGL 2가 없는 브라우저에서는 오류 안내 대신 새로 고침을 한 번 시도한 뒤 빈 화면에 머뭅니다. Android에서 홈 화면에 추가한 앱은 가로로 고정됩니다. iOS Safari는 매니페스트의 `orientation`을 따르지 않으므로 iPhone에서는 3번 오버레이가 계속 필요합니다.
+6. **배포 워크플로**: PWA를 켜면 `index.service.worker.js`, `index.manifest.json`, `index.offline.html`이 산출물에 추가됩니다. `.github/workflows/deploy-web.yml`의 Cloudflare purge 목록에 세 파일을 추가했습니다. 서비스 워커 파일이 CDN에 오래 남으면 브라우저가 새 빌드를 알아차리지 못하기 때문입니다.
+
+PWA 서비스 워커는 페이지를 캐시에서 먼저 제공합니다. 그래서 새 빌드를 배포한 뒤 이미 방문한 사용자는 한 번 더 방문하거나 탭을 모두 닫았다가 다시 열어야 새 버전을 받습니다. 이 동작이 문제가 되면 `progressive_web_app/enabled`만 false로 되돌리면 됩니다. 이미 설치된 서비스 워커는 남으므로, 되돌릴 때는 서비스 워커를 해제하는 스크립트를 한 번 배포해야 합니다.
+
+`display/window/dpi/allow_hidpi.web=false`로 HiDPI를 웹에서만 끄는 방법도 검토했습니다. `allow_hidpi`는 `GLOBAL_DEF`로 읽으므로 `.web` 기능 태그 오버라이드가 동작합니다. 하지만 이 방법은 폰에서 캔버스를 CSS 픽셀 크기(932×430)로 줄여 글자가 크게 흐려지고, 데스크톱 Retina에서도 선명도가 떨어집니다. 배율 상한 2는 데스크톱 Retina(배율 2)에 영향을 주지 않으므로 이 방법을 택했습니다. 1~2번 조치로도 증상이 남으면 다음 단계로 이 설정을 적용합니다.
+
+### 8.4 검증
+
+데스크톱에서 확인한 항목은 다음과 같습니다.
+
+- `gdparse`, `gdlint`, `gdformat --check`를 새 스크립트에 대해 통과했습니다.
+- `user://`를 격리한 스크래치 사본에서 `--headless --export-release Web`이 성공했습니다. 산출물 `index.manifest.json`에 `"display":"fullscreen"`, `"orientation":"landscape"`가 들어 있고, `index.html`에 매니페스트 링크와 보조 스크립트가 들어 있습니다.
+- 데스크톱 실행에서 `--resolution 390x844`와 `430x932`는 안내가 표시되고, `844x390`은 표시되지 않았습니다. 실행 중에 창 크기를 세로와 가로로 바꾸면 안내가 따라서 나타나고 사라졌습니다.
+- 웹 빌드를 Chromium(iPhone 에뮬레이션, 배율 3, ANGLE Metal)으로 열었을 때 `devicePixelRatio`가 2로 보고되었고, 캔버스는 1864×860이었습니다. `PROVOKING_VERTEX_WEBGL`이 first vertex로 설정되었고, 메인 메뉴의 `StyleBoxFlat` 패널이 이전과 같게 그려졌습니다.
+
+실기 재현과 확인 절차는 다음과 같습니다.
+
+1. 사용자 기기의 iOS 버전을 먼저 기록합니다(설정 > 일반 > 정보). iOS 18.5 미만이면 WebKit 버그 286297의 영향권에 있습니다.
+2. 기존 증상이 남아 있는지 보려면, iOS 앱 전환기에서 Chrome과 Safari를 완전히 종료한 뒤 라이브 주소에 다시 접속합니다. 완전히 종료한 뒤에는 증상이 사라진다면, 앞선 실행에서 GPU 프로세스가 깨진 상태가 이어졌다는 판단을 뒷받침합니다.
+3. 로컬 빌드는 Mac에서 `python3 tools/web_serve.py --host 0.0.0.0 --port 8060`으로 띄우고, 같은 Wi-Fi에 연결한 iPhone에서 `http://<Mac의 LAN IP>:8060/`으로 엽니다. Web 프리셋은 스레드 OFF라서 HTTPS나 COOP/COEP 헤더가 없어도 부팅합니다. 다만 서비스 워커는 보안 컨텍스트(HTTPS 또는 localhost)에서만 등록되므로, LAN HTTP 주소에서는 PWA 동작을 확인할 수 없습니다. PWA는 라이브 배포 뒤에 확인합니다.
+4. 콘솔은 Safari 원격 디버깅으로 봅니다. iPhone에서 설정 > 앱 > Safari > 고급 > 웹 속성(Web Inspector)을 켜고 USB로 Mac에 연결합니다. Mac Safari 설정 > 고급에서 "웹 개발자용 기능 보기"를 켠 뒤, 개발자용 메뉴 > (기기 이름) > 해당 페이지를 선택합니다. iOS용 Chrome 페이지는 앱이 검사를 허용한 경우에만 이 메뉴에 나타나므로, 콘솔은 같은 기기의 Safari로 재현해서 확인하는 편이 확실합니다. Chrome에서만 재현되면 Chrome 주소창에 `chrome://inspect`를 열어 둔 채 다른 탭에서 게임을 실행하면 콘솔 로그를 볼 수 있습니다.
+5. 콘솔에서 `devicePixelRatio`가 2인지, `document.getElementById('canvas').getContext('webgl2').getExtension('WEBGL_provoking_vertex')`가 null이 아닌지 확인합니다. 확장이 있으면 `gl.getParameter(ext.PROVOKING_VERTEX_WEBGL) === ext.FIRST_VERTEX_CONVENTION_WEBGL`이 true여야 합니다.
+6. 메인 메뉴, 트랙 선택, 게임플레이, 결과 화면을 한 바퀴 돌고, 게임플레이를 5분 이상 유지하면서 컨텍스트 손실 알림이 뜨지 않는지 확인합니다.
+7. 세로로 들면 안내가 뜨고 가로로 돌리면 사라지는지 확인합니다. Android Chrome에서는 첫 탭 뒤에 전체 화면으로 바뀌고 가로로 고정되는지 확인합니다.

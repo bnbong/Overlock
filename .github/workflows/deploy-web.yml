@@ -163,6 +163,9 @@ jobs:
               "https://overlock.bnbong.com/index.icon.png",
               "https://overlock.bnbong.com/index.apple-touch-icon.png",
               "https://overlock.bnbong.com/index.png",
+              "https://overlock.bnbong.com/index.service.worker.js",
+              "https://overlock.bnbong.com/index.manifest.json",
+              "https://overlock.bnbong.com/index.offline.html",
               "https://overlock.bnbong.com/preview.png",
               "https://overlock.bnbong.com/apple-touch-icon.png"
             ]}')"
