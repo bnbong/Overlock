@@ -33,6 +33,8 @@ const RESET_ABS: float = 300.0
 const RESET_FAIL_MULT: float = 3.5
 const RESET_DWELL: float = 0.12
 
+const TutorialDialogScene = preload("res://scenes/TutorialDialog.tscn")
+
 var _track: TrackData
 var _stats: RunStats
 var _state: State = State.COUNTDOWN
@@ -62,6 +64,10 @@ var _buf_pause: bool = false
 var _buf_to_menu: bool = false  # 일시정지 중 M(메인 메뉴 복귀) 버퍼. 일시정지 상태에서만 세팅한다.
 var _buf_finish_skip: bool = false  # FINISH_VIEW 중 아무 키 입력(스킵) 버퍼.
 
+# 최초 1회 튜토리얼 모달이 떠 있는 동안 true. 카운트다운·시뮬·입력 버퍼링을 모두 홀드한다
+# (트리 pause는 쓰지 않는다 — 플래그 홀드만). 닫히면 false가 되고 카운트다운이 시작된다.
+var _tutorial_open: bool = false
+
 @onready var _player: PlayerController = $SimHost/FabricSource/World/Player
 @onready var _track_renderer: TrackRenderer = $SimHost/FabricSource/World/TrackRenderer
 @onready var _finish_line: FinishLine = $SimHost/FabricSource/World/FinishLine
@@ -86,10 +92,32 @@ func _ready() -> void:
 	_init_player()
 	_hud.setup(_track)
 	_hud.set_pause_visible(false)
+	# 설치 후 첫 플레이(전역 1회)면 튜토리얼을 먼저 띄우고, 닫힌 뒤 카운트다운을 표시한다.
+	if not LeaderboardClient.tutorial_seen:
+		_open_tutorial()
+	else:
+		_hud.show_countdown(ceili(_countdown_time))
+
+
+## 최초 1회 튜토리얼 모달을 HUD(CanvasLayer) 위에 띄우고 카운트다운을 홀드한다.
+func _open_tutorial() -> void:
+	var dlg: TutorialDialog = TutorialDialogScene.instantiate()
+	_hud.add_child(dlg)
+	_tutorial_open = true
+	dlg.closed.connect(_on_tutorial_closed)
+
+
+## 튜토리얼 해제: 본 것으로 영속하고 카운트다운을 3부터 정상 시작한다.
+func _on_tutorial_closed() -> void:
+	_tutorial_open = false
+	LeaderboardClient.save_tutorial_seen()
 	_hud.show_countdown(ceili(_countdown_time))
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 튜토리얼 모달이 떠 있으면 게임 입력을 버퍼링하지 않는다(모달이 Esc를 먼저 소비하지만 이중 안전).
+	if _tutorial_open:
+		return
 	# 완주 줌아웃 중에는 아무 키 입력이 스킵으로 처리된다(R 재시작·Esc 일시정지 포함).
 	# 모션(마우스 이동) 등 비-press 이벤트는 무시한다.
 	if _state == State.FINISH_VIEW:
@@ -112,6 +140,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if _track == null:
+		return
+	# 최초 튜토리얼 모달이 떠 있는 동안은 카운트다운·시뮬을 진행하지 않는다.
+	if _tutorial_open:
 		return
 	# 완주 줌아웃은 일시정지·메타 입력과 무관하게 자체 타이머/스킵으로만 진행한다.
 	if _state == State.FINISH_VIEW:
@@ -262,7 +293,9 @@ func _check_item_pickups(probe_s: float) -> void:
 		var item: Dictionary = _items[i]
 		var item_s: float = float(item.get("s", 0.0))
 		var lat: float = float(item.get("lat", 0.0))
-		var world: Vector2 = _track.point_at_s(item_s) + _track.tangent_at_s(item_s).orthogonal() * lat
+		var world: Vector2 = (
+			_track.point_at_s(item_s) + _track.tangent_at_s(item_s).orthogonal() * lat
+		)
 		if ppos.distance_to(world) > Tuning.item_pickup_radius:
 			continue
 		_collected[i] = true

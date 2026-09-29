@@ -24,6 +24,15 @@ var _effect_box: VBoxContainer = null
 var _thimble_card: EffectTimerCard = null
 var _autopilot_card: EffectTimerCard = null
 
+# 모바일 터치 컨트롤(docs/mobile.md 1단계). 터치 기기(또는 --touch-controls 강제)에서만 생성한다.
+# _modal_count는 HUD 위에 뒤늦게 붙는 모달 수 — 떠 있는 동안 버튼을 숨기고 막는다.
+# _tutorial_count는 튜토리얼 코치마크 수 — 버튼을 가리켜 설명하므로 보이게 두고 입력만 막는다.
+var _touch: TouchControls = null
+var _pause_visible: bool = false
+var _modal_count: int = 0
+var _tutorial_count: int = 0
+var _in_finish_view: bool = false
+
 @onready var _stopwatch: Stopwatch = $Stopwatch
 @onready var _speed_gauge: SpeedGauge = $SpeedGauge
 @onready var _risk_meter: RiskMeter = $RiskMeter
@@ -37,6 +46,7 @@ var _autopilot_card: EffectTimerCard = null
 func _ready() -> void:
 	_apply_skin()
 	_build_effect_cards()
+	_build_touch_controls()
 
 
 ## 좌하단 RISK 패널(offset_top=-186) 바로 위에 효과 타이머 카드 VBox를 동적 생성한다(씬 미수정 —
@@ -94,12 +104,15 @@ func show_go() -> void:
 
 func set_pause_visible(value: bool) -> void:
 	_pause_overlay.visible = value
+	_pause_visible = value
+	_refresh_touch_block()
 
 
 ## 완주 줌아웃 연출 진입 시 인게임 HUD 위젯을 숨긴다(FinishView 오버레이가 화면을
 ## 차지, presentation.md §13). CanvasLayer.visible=false로 자식 위젯 일괄 숨김.
 func enter_finish_view() -> void:
 	visible = false
+	_in_finish_view = true
 
 
 func update_frame(
@@ -158,6 +171,126 @@ func _update_status(player: PlayerController, band: int) -> void:
 	if was_on_seam and now_off_seam:
 		_on_band_enter(band)
 	_prev_band = band
+
+
+# --- 모바일 터치 컨트롤 (docs/mobile.md 1단계) ---
+
+
+## 터치 기기면 온스크린 버튼(TouchControls)을 동적 생성하고(씬 미수정 컨벤션), 키보드 전용
+## 힌트를 터치에 맞게 정리하며, 일시정지 오버레이에 재개/재시작/메인 버튼을 붙인다.
+func _build_touch_controls() -> void:
+	if not TouchControls.should_show():
+		return
+	_touch = TouchControls.new()
+	add_child(_touch)
+	# 버튼보다 일시정지 오버레이가 위에 그려지도록 오버레이 바로 앞에 둔다.
+	move_child(_touch, _pause_overlay.get_index())
+	# 키 이름 힌트는 터치 화면에서 뜻이 없으니 정리한다(속도 게이지 라벨 역할은 유지).
+	($SteerHint as Label).visible = false
+	($SpeedHintUp as Label).text = "FASTER"
+	($SpeedHintDown as Label).text = "SLOWER"
+	_build_pause_touch_buttons()
+	# _ready 이후 HUD에 붙는 Control(튜토리얼 모달 등)은 모달로 보고 떠 있는 동안 버튼을 막는다.
+	child_entered_tree.connect(_on_child_entered)
+
+
+func _build_pause_touch_buttons() -> void:
+	($PauseOverlay/PauseHint as Label).visible = false
+	var row: HBoxContainer = HBoxContainer.new()
+	row.name = "TouchPauseButtons"
+	# 트리가 paused여도 버튼이 눌려야 한다(HUD는 PAUSABLE).
+	row.process_mode = Node.PROCESS_MODE_ALWAYS
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+	row.set_anchors_preset(Control.PRESET_CENTER)
+	row.offset_left = -228.0
+	row.offset_right = 228.0
+	row.offset_top = 6.0
+	row.offset_bottom = 86.0
+	_pause_overlay.add_child(row)
+	var defs: Array = [["계속", &"pause"], ["재시작", &"restart"], ["메인", &"to_menu"]]
+	for d in defs:
+		var btn: Button = Button.new()
+		btn.text = d[0]
+		btn.custom_minimum_size = Vector2(136.0, 76.0)
+		btn.focus_mode = Control.FOCUS_NONE
+		_style_touch_button(btn)
+		btn.pressed.connect(_tap_action.bind(d[1]))
+		row.add_child(btn)
+
+
+## 일시정지 오버레이의 터치 버튼 룩. 시트 버튼(UiSkin small/large)은 세로로 늘리면 모서리 단추
+## 장식이 반복돼 깨지므로, 손가락 크기(높이 76px)에 맞춰 재봉 팔레트 StyleBoxFlat을 쓴다.
+func _style_touch_button(btn: Button) -> void:
+	var looks: Dictionary = {
+		"normal": SewingSkin.FABRIC,
+		"hover": SewingSkin.FABRIC,
+		"pressed": SewingSkin.THREAD_PURPLE,
+		"hover_pressed": SewingSkin.THREAD_PURPLE,
+	}
+	for key in looks:
+		var sb: StyleBoxFlat = StyleBoxFlat.new()
+		sb.bg_color = looks[key]
+		sb.set_corner_radius_all(16)
+		sb.border_color = SewingSkin.THREAD_PURPLE
+		sb.set_border_width_all(3)
+		btn.add_theme_stylebox_override(key, sb)
+	btn.add_theme_font_size_override("font_size", 26)
+	btn.add_theme_color_override("font_color", SewingSkin.INK)
+	btn.add_theme_color_override("font_hover_color", SewingSkin.INK)
+	btn.add_theme_color_override("font_pressed_color", SewingSkin.CREAM)
+	btn.add_theme_color_override("font_hover_pressed_color", SewingSkin.CREAM)
+
+
+## 키 한 번 누름과 같은 눌림→뗌 액션 쌍을 주입한다(RaceDirector 무수정 — Esc/R/M 등가).
+func _tap_action(action: StringName) -> void:
+	for pressed in [true, false]:
+		var ev: InputEventAction = InputEventAction.new()
+		ev.action = action
+		ev.pressed = pressed
+		ev.strength = 1.0 if pressed else 0.0
+		Input.parse_input_event(ev)
+
+
+func _on_child_entered(node: Node) -> void:
+	if node == _touch or not (node is Control):
+		return
+	if node is TutorialDialog:
+		_tutorial_count += 1
+		node.tree_exiting.connect(_on_tutorial_exiting)
+	else:
+		_modal_count += 1
+		node.tree_exiting.connect(_on_modal_exiting)
+	_refresh_touch_block()
+
+
+func _on_modal_exiting() -> void:
+	_modal_count = maxi(_modal_count - 1, 0)
+	_refresh_touch_block()
+
+
+func _on_tutorial_exiting() -> void:
+	_tutorial_count = maxi(_tutorial_count - 1, 0)
+	_refresh_touch_block()
+
+
+## 일시정지·일반 모달은 버튼을 숨기고, 튜토리얼 코치마크만 떠 있으면 보이게 둔 채 입력만 막는다.
+func _refresh_touch_block() -> void:
+	if _touch == null:
+		return
+	var hide: bool = _pause_visible or _modal_count > 0
+	_touch.set_blocked(hide or _tutorial_count > 0, hide)
+
+
+## 완주 줌아웃 스킵(아무 키) 등가 처리. FINISH_VIEW 동안엔 HUD가 숨고, 배경 ColorRect(SkyRect 등,
+## mouse_filter STOP)가 GUI 단계에서 터치와 에뮬레이션 마우스를 소비해 RaceDirector의
+## _unhandled_input까지 오지 않는다. 그래서 _input(GUI보다 먼저)에서 터치 눌림을 보고
+## 눌림→뗌 액션 쌍을 주입해 "아무 키 입력"과 같은 스킵을 만든다.
+func _input(event: InputEvent) -> void:
+	if _touch == null or not _in_finish_view:
+		return
+	if event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed:
+		_tap_action(&"drift")
 
 
 # --- 오디오 훅 (가드: /root/AudioManager 미등록 시 무시) ---
