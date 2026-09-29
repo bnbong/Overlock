@@ -39,19 +39,21 @@ const MOVE_HOLD: float = 0.1
 const MOM_SWIPE_RATE: float = 1.0 / 0.35
 
 const ToastScene := preload("res://scenes/Toast.tscn")
+## 원단 이탈 페널티 알림에만 쓰는 엄마 꾸중 초상화(Toast 말풍선 스타일). 다른 토스트는 초상화 없음.
+const _MOM_SCOLDING_TEX := preload("res://assets/gfx/ui/mom_scolding.png")
 
 ## 양손 골무 기본 변형(컷 이전) 텍스처. 좌·우 base가 같은 에셋이라 단일 로드를 공유한다
 ## (HandView.mirror가 좌우 반전 — right/left_thimble_base export 기본값이 이 상수를 참조).
-const _BASE_THIMBLE_TEX := preload("res://assets/gfx/hand_thimble.png")
+const _BASE_THIMBLE_TEX := preload("res://assets/gfx/palm_contact/hand_thimble_flat.png")
 
 ## cut 누적 단계별 손 텍스처 교체 매핑(표현 전용, §9 함정 13). 배열 원소를 순서대로
 ## 소비한다: 1번째 cut→오른손, 2번째→왼손, 3번째→오른손(업그레이드), … 홀수=오른손,
 ## 짝수=왼손. 배열 길이(기본 3)를 넘는 cut은 무시한다(런당 최대 3단). 인스펙터에서
 ## 원소를 handcut4(약지) 등으로 바꿔치기할 수 있다(Gameplay.tscn 미수정 시 이 기본값 사용).
 @export var cut_hand_textures: Array[Texture2D] = [
-	preload("res://assets/gfx/handcut1.png"),
-	preload("res://assets/gfx/handcut2.png"),
-	preload("res://assets/gfx/handcut3.png"),
+	preload("res://assets/gfx/palm_contact/handcut1_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut2_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut3_flat.png"),
 ]
 
 ## 골무 착용 손 텍스처(표현 전용). 양손 모두 골무를 착용한다: 각 손이 표시하는 현재 컷 단계에
@@ -66,9 +68,9 @@ const _BASE_THIMBLE_TEX := preload("res://assets/gfx/hand_thimble.png")
 ## cut_hand_textures와 평행한 골무 변형 배열. 홀수 슬롯(index 0=handcut1, 2=handcut3)=우측 손,
 ## 짝수 슬롯(index 1=handcut2)=좌측 손. _advance_cut_stage가 컷 발생 손 쪽 변형을 갱신한다.
 @export var thimble_cut_textures: Array[Texture2D] = [
-	preload("res://assets/gfx/handcut1_thimble.png"),
-	preload("res://assets/gfx/handcut2_thimble.png"),
-	preload("res://assets/gfx/handcut3_thimble.png"),
+	preload("res://assets/gfx/palm_contact/handcut1_thimble_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut2_thimble_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut3_thimble_flat.png"),
 ]
 
 var _mat: ShaderMaterial = null
@@ -221,9 +223,11 @@ func _process(delta: float) -> void:
 	if _player.is_drifting and _skid != null:
 		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir))
 
-	# 4) 바늘 왕복 = f(speed).
+	# 4) 바늘 왕복 = f(speed). 정지·카운트다운·완주 판정은 위 이동 히스테리시스(running)를
+	#    그대로 넘겨, 고주사율에서 물리 틱 없는 프레임에 바늘이 멈칫하지 않게 한다.
 	if _needle != null:
 		_needle.set_speed(speed)
+		_needle.set_running(running)
 
 	# 5) 손: 속도 진동 + 조향 방향 누름 강조(반대 손은 이완). 드리프트 중이면 그 방향 손을
 	#    더 깊이 누른다(set_drift로 조향 프레스 김믹 증폭, 반대 손은 기존 수준 유지).
@@ -249,10 +253,13 @@ func _process(delta: float) -> void:
 		_advance_cut_stage()
 	# 7b) 맵 이탈 소프트 리셋 상승엣지(스턴 엣지와 별개). 부상이 아니므로 손 텍스처 단계는
 	#     절대 진행하지 않는다(_advance_cut_stage 호출 금지). 소폭 셰이크 + 토스트 + 오프심 SFX 재사용.
+	#     얼굴은 꿀밤 연출("> <" 표정 + 세로 바운스 + 머리 위 별)을 1회 재생한다(표현 전용).
 	if offfabric_active and not _prev_offfabric:
 		_injury_shake = maxf(_injury_shake, OFFFABRIC_SHAKE)
+		if _face != null:
+			_face.play_bonk()
 		if _toast != null:
-			_toast.push("원단 이탈! 재봉선 복귀")
+			_toast.push("이녀석, 제대로 해야지!", _MOM_SCOLDING_TEX)
 		_play_offfabric_audio()
 	# 7c) 드리프트 상승엣지: 가드형 오디오 훅만(무음 기본, 신규 에셋 없음). 셰이크는 리스크
 	#     연동으로 자동이라 여기서 추가하지 않는다(표현 전용, 시뮬 무관).

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://palm_regression/toast_check.gd" id="1_toast_check"]
+
+[node name="ToastRegression" type="Node"]
+script = ExtResource("1_toast_check")

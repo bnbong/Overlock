@@ -22,8 +22,8 @@
 [ext_resource type="Shader" path="res://shaders/fabric_mode7.gdshader" id="18_shdr"]
 [ext_resource type="Script" path="res://scripts/presentation/FinishView.gd" id="19_fv"]
 [ext_resource type="Texture2D" uid="uid://d15xqx2pa1sjc" path="res://assets/gfx/face_base.png" id="20_facetex"]
-[ext_resource type="Texture2D" uid="uid://de7yc1lj0bon" path="res://assets/gfx/hand.png" id="21_handtex"]
-[ext_resource type="Texture2D" uid="uid://dtjlr4p7k0crn" path="res://assets/gfx/presser_foot.png" id="22_foottex"]
+[ext_resource type="Texture2D" uid="uid://hoxye0m66a4l" path="res://assets/gfx/palm_contact/hand_flat.png" id="21_handtex"]
+[ext_resource type="Texture2D" uid="uid://b8omis10k6uhc" path="res://assets/gfx/palm_contact/presser_foot_large.png" id="22_foottex"]
 [ext_resource type="Texture2D" uid="uid://ca21sxevoaycy" path="res://assets/gfx/needle.png" id="23_ndltex"]
 [ext_resource type="Texture2D" uid="uid://cea2vkh0tkphq" path="res://assets/gfx/backdrop_room.png" id="24_bgtex"]
 [ext_resource type="Texture2D" uid="uid://ccc6niucjfsyg" path="res://assets/gfx/face_normal.png" id="26_facenrm"]
@@ -110,8 +110,8 @@ texture = ExtResource("20_facetex")
 face_normal = ExtResource("26_facenrm")
 face_focus = ExtResource("27_facefoc")
 face_injured = ExtResource("28_faceinj")
-face_draw_scale = 0.72
-face_offset_y = -24.0
+face_draw_scale = 0.84
+face_offset_y = -40.0
 
 [node name="FabricLayer" type="CanvasLayer" parent="."]
 process_mode = 1
@@ -140,15 +140,13 @@ script = ExtResource("30_bb")
 process_mode = 1
 
 [node name="LeftHand" type="Node2D" parent="ForegroundLayer"]
-position = Vector2(175, 276)
-scale = Vector2(1.2, 1.2)
+position = Vector2(256, 392)
 script = ExtResource("15_hand")
 mirror = true
 texture = ExtResource("21_handtex")
 
 [node name="RightHand" type="Node2D" parent="ForegroundLayer"]
-position = Vector2(1105, 276)
-scale = Vector2(1.2, 1.2)
+position = Vector2(1024, 392)
 script = ExtResource("15_hand")
 texture = ExtResource("21_handtex")
 
