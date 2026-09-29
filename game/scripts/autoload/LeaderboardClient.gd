@@ -27,7 +27,7 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "1.1.0"  # §13.3 game_version. 아이템·드리프트·트랙 15종·등급 정렬 릴리즈.
+const GAME_VERSION: String = "1.2.0"  # §13.3 game_version. 튜토리얼·모바일 터치 컨트롤 릴리즈(시뮬 무변경).
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
