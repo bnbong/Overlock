@@ -39,19 +39,25 @@ const MOVE_HOLD: float = 0.1
 const MOM_SWIPE_RATE: float = 1.0 / 0.35
 
 const ToastScene := preload("res://scenes/Toast.tscn")
+## 원단 이탈 페널티 알림에만 쓰는 엄마 꾸중 초상화(Toast 말풍선 스타일). 다른 토스트는 초상화 없음.
+const _MOM_SCOLDING_TEX := preload("res://assets/gfx/ui/mom_scolding.png")
+## 부상 대사 말풍선 초상화(눈물 맺힌 기본 캐릭터). 말풍선 전용이며 배경 얼굴·눈 에셋과 무관하다.
+const _PLAYER_HURT_TEX := preload("res://assets/gfx/ui/player_hurt_teary.png")
+## 실제 cut 한 번마다 하나를 같은 확률로 골라 말풍선에 띄운다(연속 같은 문구 허용).
+const CUT_LINES: Array[String] = ["아얏!", "아파!", "아이고!"]
 
 ## 양손 골무 기본 변형(컷 이전) 텍스처. 좌·우 base가 같은 에셋이라 단일 로드를 공유한다
 ## (HandView.mirror가 좌우 반전 — right/left_thimble_base export 기본값이 이 상수를 참조).
-const _BASE_THIMBLE_TEX := preload("res://assets/gfx/hand_thimble.png")
+const _BASE_THIMBLE_TEX := preload("res://assets/gfx/palm_contact/hand_thimble_flat.png")
 
 ## cut 누적 단계별 손 텍스처 교체 매핑(표현 전용, §9 함정 13). 배열 원소를 순서대로
 ## 소비한다: 1번째 cut→오른손, 2번째→왼손, 3번째→오른손(업그레이드), … 홀수=오른손,
 ## 짝수=왼손. 배열 길이(기본 3)를 넘는 cut은 무시한다(런당 최대 3단). 인스펙터에서
 ## 원소를 handcut4(약지) 등으로 바꿔치기할 수 있다(Gameplay.tscn 미수정 시 이 기본값 사용).
 @export var cut_hand_textures: Array[Texture2D] = [
-	preload("res://assets/gfx/handcut1.png"),
-	preload("res://assets/gfx/handcut2.png"),
-	preload("res://assets/gfx/handcut3.png"),
+	preload("res://assets/gfx/palm_contact/handcut1_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut2_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut3_flat.png"),
 ]
 
 ## 골무 착용 손 텍스처(표현 전용). 양손 모두 골무를 착용한다: 각 손이 표시하는 현재 컷 단계에
@@ -66,9 +72,9 @@ const _BASE_THIMBLE_TEX := preload("res://assets/gfx/hand_thimble.png")
 ## cut_hand_textures와 평행한 골무 변형 배열. 홀수 슬롯(index 0=handcut1, 2=handcut3)=우측 손,
 ## 짝수 슬롯(index 1=handcut2)=좌측 손. _advance_cut_stage가 컷 발생 손 쪽 변형을 갱신한다.
 @export var thimble_cut_textures: Array[Texture2D] = [
-	preload("res://assets/gfx/handcut1_thimble.png"),
-	preload("res://assets/gfx/handcut2_thimble.png"),
-	preload("res://assets/gfx/handcut3_thimble.png"),
+	preload("res://assets/gfx/palm_contact/handcut1_thimble_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut2_thimble_flat.png"),
+	preload("res://assets/gfx/palm_contact/handcut3_thimble_flat.png"),
 ]
 
 var _mat: ShaderMaterial = null
@@ -94,6 +100,19 @@ var _cut_stage: int = 0
 # 각 손에 컷이 발생할 때 _advance_cut_stage가 해당 손 변형을 갱신한다(export 참조라 선언부 초기화 불가).
 var _right_thimble_variant: Texture2D = null
 var _left_thimble_variant: Texture2D = null
+# 누적 cut 수(스턴 상승엣지마다 +1, 밴드 단계 상한과 무관). 다음 cut 손 선택(next_cut_is_right)에 쓴다.
+var _cut_count: int = 0
+# 부상 사전 연출(pending) 표현 상태. _slip_clock은 렌더 시계(초)로, 매 프레임 delta만큼 가되 시뮬
+# 진행(cut_pending_progress × windup)에서 물리 1틱 앞까지만 허용해 시뮬과 어긋나지 않게 한다.
+var _prev_pending: bool = false
+var _slip_clock: float = 0.0
+var _slip_hand: HandView = null
+# 부상 대사 선택 전용 RNG(표현 전용). 전역 randi/randf 난수열(아이템·트랙·셰이크)과 분리한다.
+var _line_rng: RandomNumberGenerator = null
+# 다음 cut 대사 인덱스 지정(회귀 검사용 훅, 1회 소비). -1이면 _line_rng로 고른다.
+var _forced_line: int = -1
+# 완주 줌아웃 진입 엣지(표현 전용). 진입 프레임에 남은 알림을 정리하고 이후 부상 대사는 띄우지 않는다.
+var _prev_finish: bool = false
 
 @onready var _viewport: SubViewport = get_node_or_null("../SimHost/FabricSource")
 @onready var _warp: ColorRect = get_node_or_null("../FabricLayer/FabricWarp")
@@ -124,6 +143,8 @@ func _ready() -> void:
 	# 양손 골무 변형은 export 값이라 선언부가 아닌 여기서 초기화한다(컷 이전 = 기본 변형).
 	_right_thimble_variant = right_thimble_base
 	_left_thimble_variant = left_thimble_base
+	_line_rng = RandomNumberGenerator.new()
+	_line_rng.randomize()
 	_setup_projection()
 	_setup_fabric()
 	_place_needle()
@@ -195,6 +216,9 @@ func _process(delta: float) -> void:
 	# actual_steer: 노루발이 실제로 따라가는 지연 조향값(-1..1, 음수=좌). 얼굴 고개
 	# 꺾기·손 누름 연출의 구동값. 뷰가 프레임 독립적으로 추가 보간한다.
 	var steer: float = _player.actual_steer
+	# 부상 사전 연출(pending)과 실제 cut(스턴 상승엣지). cut 프레임에는 pending이 이미 해제돼 있다.
+	var pending: bool = _player.is_cut_pending()
+	var cut_edge: bool = stun_active and not _prev_stun_active
 
 	# 1) 셰이더 heading uniform 갱신.
 	if _mat != null:
@@ -221,9 +245,11 @@ func _process(delta: float) -> void:
 	if _player.is_drifting and _skid != null:
 		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir))
 
-	# 4) 바늘 왕복 = f(speed).
+	# 4) 바늘 왕복 = f(speed). 정지·카운트다운·완주 판정은 위 이동 히스테리시스(running)를
+	#    그대로 넘겨, 고주사율에서 물리 틱 없는 프레임에 바늘이 멈칫하지 않게 한다.
 	if _needle != null:
 		_needle.set_speed(speed)
+		_needle.set_running(running)
 
 	# 5) 손: 속도 진동 + 조향 방향 누름 강조(반대 손은 이완). 드리프트 중이면 그 방향 손을
 	#    더 깊이 누른다(set_drift로 조향 프레스 김믹 증폭, 반대 손은 기존 수준 유지).
@@ -235,24 +261,46 @@ func _process(delta: float) -> void:
 		_right_hand.set_speed(speed)
 		_right_hand.set_steer(steer)
 		_right_hand.set_drift(_player.is_drifting, _player.drift_dir)
+	# 5b) 부상 사전 연출: 다음 cut 손만 미끄러지고, cut에서 움찔 복귀, cut 없이 해제되면 제자리로.
+	#     밴드 단계 진행(_advance_cut_stage)보다 먼저 호출해 이번 cut의 손을 고른다.
+	_update_slip(delta, pending, cut_edge)
 
-	# 6) 얼굴: 표정(부상>고위험>속도 집중) + 조향 고개 꺾기.
+	# 6) 얼굴: 표정(부상>놀람>고위험>속도 집중) + 조향 고개 꺾기. set_expression이 먼저 부상을
+	#    반영해야 cut 프레임에 놀람→부상이 기존 크로스페이드로 이어진다(set_surprised 참조).
 	if _face != null:
 		_face.set_expression(risk, stun_active, speed_index)
+		_face.set_surprised(pending)
 		_face.set_steer(steer)
 
-	# 7) 스크린 셰이크 = f(risk, 부상 상승엣지).
-	if stun_active and not _prev_stun_active:
+	# 6b) 완주 줌아웃 진입: 떠 있던 알림(부상 대사·엄마 꾸중·아이템)은 짧게 걷어 결과 오버레이와
+	#     "아무 키나 누르세요" 안내를 가리지 않게 한다. 완주 틱에 확정된 pending 부상도 이 뒤로는
+	#     집계·셰이크·밴드만 반영하고 대사는 띄우지 않는다(줌아웃 화면에서는 손·얼굴이 보이지 않는다).
+	var finished: bool = _finish_view != null and _finish_view.visible
+	if finished and not _prev_finish and _toast != null:
+		_toast.dismiss()
+	_prev_finish = finished
+
+	# 7) 스크린 셰이크 = f(risk, 부상 상승엣지). 사전 연출 시작에는 셰이크·SFX·밴드 단계를 건드리지
+	#    않고, 실제 cut(스턴 상승엣지)에서만 각각 한 번 실행한다.
+	if cut_edge:
 		_injury_shake = INJURY_SHAKE
 		_play_injury_audio()
 		# 스턴 상승엣지 = cut 1회(정확히 1회). 누적 단계에 맞추어 손 텍스처를 즉시 교체.
 		_advance_cut_stage()
+		# 부상 대사 말풍선: 밴드 단계 상한과 무관하게 cut마다 1회, 현재 알림을 선점해 즉시 띄운다.
+		# 같은 틱에 원단 이탈 리셋이 겹치면 아래 7b의 엄마 꾸중은 push로 큐에 들어가 이 대사 뒤에 뜬다.
+		# 완주 줌아웃 중(완주 틱에 확정된 부상)에는 띄우지 않는다(6b 참조).
+		if _toast != null and not finished:
+			_toast.push_immediate(_pick_cut_line(), _PLAYER_HURT_TEX)
 	# 7b) 맵 이탈 소프트 리셋 상승엣지(스턴 엣지와 별개). 부상이 아니므로 손 텍스처 단계는
 	#     절대 진행하지 않는다(_advance_cut_stage 호출 금지). 소폭 셰이크 + 토스트 + 오프심 SFX 재사용.
+	#     얼굴은 꿀밤 연출("> <" 표정 + 세로 바운스 + 머리 위 별)을 1회 재생한다(표현 전용).
 	if offfabric_active and not _prev_offfabric:
 		_injury_shake = maxf(_injury_shake, OFFFABRIC_SHAKE)
+		if _face != null:
+			_face.play_bonk()
 		if _toast != null:
-			_toast.push("원단 이탈! 재봉선 복귀")
+			_toast.push("이녀석, 제대로 해야지!", _MOM_SCOLDING_TEX)
 		_play_offfabric_audio()
 	# 7c) 드리프트 상승엣지: 가드형 오디오 훅만(무음 기본, 신규 에셋 없음). 셰이크는 리스크
 	#     연동으로 자동이라 여기서 추가하지 않는다(표현 전용, 시뮬 무관).
@@ -288,9 +336,76 @@ func _update_shake(delta: float, risk: float) -> void:
 		_foreground_layer.offset = offset
 
 
+## 부상 사전 연출 구동(표현 전용, 시뮬은 읽기만). pending 중에는 다음 cut 손에만 진행값을 주입한다.
+## 진행값은 렌더 시계 _slip_clock/windup이며, 시계는 delta로 가되 [시뮬 경과, 시뮬 경과 + 물리 1틱]
+## 안으로 자른다(시뮬 경과 = cut_pending_progress × windup). 그래서 60Hz보다 빠른 화면에서도 틱 사이가
+## 부드럽고, 낮은 FPS에서도 시뮬보다 1틱 이상 앞서거나 뒤처지지 않으며 값이 되돌아가지 않는다.
+## pending이 끝난 프레임에 스턴 상승엣지가 함께 오면 실제 cut이라 움찔 복귀, 아니면(골무·엄마 찬스·
+## 이탈 리셋·리셋) cut 없이 해제된 것이라 부드럽게 제자리로 돌린다. pending 없이 cut만 온 경우
+## (windup 0 설정 등)에도 cut 손이 제자리에서 짧게 움찔한다.
+func _update_slip(delta: float, pending: bool, cut_edge: bool) -> void:
+	var windup: float = Tuning.cut_windup_duration
+	if pending and windup > 0.0:
+		var hand: HandView = _right_hand if next_cut_is_right() else _left_hand
+		if not _prev_pending or hand != _slip_hand:
+			_slip_clock = 0.0
+		_slip_hand = hand
+		var tick: float = 1.0 / float(maxi(Engine.physics_ticks_per_second, 1))
+		var sim_t: float = _player.cut_pending_progress() * windup
+		_slip_clock = clampf(_slip_clock + maxf(delta, 0.0), sim_t, minf(sim_t + tick, windup))
+		if hand != null:
+			hand.set_slip(_slip_clock / windup)
+	elif _prev_pending or cut_edge:
+		var h: HandView = _slip_hand
+		if h == null:
+			h = _right_hand if next_cut_is_right() else _left_hand
+		if h != null:
+			if cut_edge:
+				# cut은 windup을 끝까지 마친 뒤 실행되므로, 낮은 FPS에서 마지막 pending 틱과 cut 틱이 한
+				# 프레임에 몰려도 접촉 위치(u=1)에서 움찔하게 한다(pending을 본 경우에만).
+				if _prev_pending:
+					h.set_slip(1.0)
+				h.play_slip_recoil()
+			else:
+				h.release_slip()
+		_slip_hand = null
+		_slip_clock = 0.0
+	_prev_pending = pending
+
+
+## 다음(아직 일어나지 않은) cut이 화면 오른손인가. 누적 cut 수 기준으로 1·3·5…번째=오른손,
+## 2·4·6…번째=왼손을 계속 번갈아 쓴다. 1~3번째는 밴드 단계(_advance_cut_stage)의 손과 같고,
+## 밴드 배열을 다 쓴 4번째 이후에도 같은 홀짝 규칙을 이어 가 배열 인덱스를 쓰지 않는다
+## (텍스처는 바뀌지 않고 미끄러짐·움찔만 번갈아 나온다).
+func next_cut_is_right() -> bool:
+	return _cut_count % 2 == 0
+
+
+## 이번 cut의 대사 하나를 고른다(표현 전용 RNG, 전역 난수열 불변). 훅으로 지정된 인덱스가 있으면
+## 그 문구를 한 번 쓰고 지운다.
+func _pick_cut_line() -> String:
+	var idx: int = _forced_line
+	_forced_line = -1
+	if idx < 0 or idx >= CUT_LINES.size():
+		idx = _line_rng.randi_range(0, CUT_LINES.size() - 1)
+	return CUT_LINES[idx]
+
+
+## 다음 cut 대사를 CUT_LINES 인덱스로 지정한다(회귀 검사용 훅, 다음 cut 1회만). -1이면 지정 해제.
+func set_next_cut_line_index(i: int) -> void:
+	_forced_line = i
+
+
+## 누적 cut 수(회귀 검사용 읽기 전용).
+func cut_count() -> int:
+	return _cut_count
+
+
 ## cut 누적 단계를 한 칸 진행하고 해당 손 텍스처를 교체한다(스턴 상승엣지에서 1회 호출).
 ## 홀수 단계(1,3,…)=오른손, 짝수 단계(2,4,…)=왼손. 배열 길이를 넘는 cut은 무시한다.
+## 누적 cut 수(_cut_count)는 상한 없이 매번 센다(다음 cut 손 선택용).
 func _advance_cut_stage() -> void:
+	_cut_count += 1
 	if _cut_stage >= cut_hand_textures.size():
 		return  # 런당 최대 단계 도달 → 이후 cut은 손을 더 바꾸지 않는다.
 	var idx: int = _cut_stage
@@ -314,7 +429,16 @@ func _advance_cut_stage() -> void:
 ## 자동 초기화되지만, 재로드 없이 복원해야 하는 경로를 위해 명시 API로도 노출한다.
 func reset_hands() -> void:
 	_cut_stage = 0
+	_cut_count = 0
 	_prev_stun_active = false
+	_prev_pending = false
+	_slip_clock = 0.0
+	_slip_hand = null
+	if _face != null:
+		_face.set_surprised(false)
+	for h in [_left_hand, _right_hand]:
+		if h != null:
+			h.release_slip(true)
 	_right_thimble_variant = right_thimble_base
 	_left_thimble_variant = left_thimble_base
 	if _left_hand != null:
@@ -329,13 +453,16 @@ func reset_hands() -> void:
 ## 스와이프 목표 0으로 잡혀 자동 복귀. 골무 상승엣지→토스트+SFX(실드 게이지는 HUD가 구동).
 ## 엄마 스와이프는 목표(오토파일럿 활성=1, 아니면 0)로 프레임 보간해 얼굴·양손에 주입한다.
 func _update_items(delta: float, autopilot_active: bool, thimble_active: bool) -> void:
+	# 완주 줌아웃 중에는 획득 토스트를 띄우지 않는다: 완주 틱에 획득이 겹치면 6b의 dismiss 뒤에 push되어
+	# 결과 오버레이 위에 남기 때문이다(_prev_finish는 6b에서 이번 프레임 값으로 갱신됨). SFX 훅은 유지.
+	var show_toast: bool = _toast != null and not _prev_finish
 	if autopilot_active and not _prev_autopilot:
-		if _toast != null:
+		if show_toast:
 			# 효과 설명 포함(지속 시간은 Tuning 값에서 동적 조립, 소수점 한 자리).
 			_toast.push("엄마 찬스! %.1f초 동안 자동 주행" % Tuning.autopilot_duration)
 		_play_moms_chance_audio()
 	if thimble_active and not _prev_thimble:
-		if _toast != null:
+		if show_toast:
 			_toast.push("골무! %.1f초 동안 부상 면역" % Tuning.thimble_duration)
 		_play_thimble_audio()
 	# 골무 손 텍스처(양손): 활성 중엔 각 손의 현재 컷 단계 _thimble 변형으로 스왑, 종료 시 복원.

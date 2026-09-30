@@ -24,8 +24,9 @@ extends Control
 ## 슬롯이 비어 있으면 순차적으로 하위 레거시 동작으로 복귀한다(회귀 금지).
 ## 조향 고개 꺾기는 모든 모드 공통(노드 트랜스폼).
 
-## 표정 상태(스왑용). 부상 > 집중 > 평상 우선순위로 결정.
-enum FaceState { NORMAL, FOCUS, INJURED }
+## 표정 상태(스왑용). 부상 > 놀람 > 집중(고위험·속도) > 평상 우선순위로 결정.
+## SURPRISED는 부상 사전 연출(pending) 동안만 켜진다(set_surprised).
+enum FaceState { NORMAL, FOCUS, INJURED, SURPRISED }
 
 const SKIN_COLOR: Color = Color(0.86, 0.68, 0.56, 1.0)
 const SKIN_SHADOW: Color = Color(0.74, 0.56, 0.46, 1.0)
@@ -58,6 +59,42 @@ const SWEAT_FALL_RATE: float = 1.8
 ## 전이 구간에서만 알파가 자연스럽게 빠진다.
 const SWEAT_FADE_KNEE: float = 0.25
 
+## --- 꿀밤 연출(원단 이탈 소프트 리셋 = 페널티 부여 순간, 표현 전용) ---
+## PresentationController가 offfabric 상승엣지에서 play_bonk()를 1회 호출한다. 부상(stun)과
+## 무관한 표현 오버라이드라 cut 단계·손 텍스처는 절대 건드리지 않는다.
+## "> <" 표정(INJURED 눈 오버레이) 유지 시간(초). 조작 잠금(Tuning.reset_lockout=1.2s)보다
+## 조금 짧게 끝내 잠금이 풀리기 전에 원래 표정으로 크로스페이드 복귀한다.
+const BONK_EXPR_DUR: float = 0.9
+## 얼굴 세로 바운스: 닫힌 형식 y(t)=AMP·(1-u)²·sin(π·HALF_CYCLES·u), u=t/DUR (양수=아래).
+## 맞는 순간 아래로 눌렸다(첫 하강 ~13px) 위아래로 감쇠 진동하며 DUR에 정확히 0으로 멈춘다.
+const BONK_BOUNCE_DUR: float = 0.5
+const BONK_BOUNCE_AMP: float = 16.0
+const BONK_BOUNCE_HALF_CYCLES: float = 5.0
+## 위쪽(음수) 반동 축소 비율과 절대 상한(px). 얼굴 하단 절단면은 최대 고개꺾기에서 수평선
+## 아래 여유가 ~6px뿐이라, 위로 튀는 반동은 이 상한 안에서만 허용한다(주로 아래로 바운스).
+const BONK_UP_RATIO: float = 0.35
+const BONK_MAX_UP: float = 3.0
+## 별 이펙트: 타격 지점(face_rect 비율, 이마 위 앞머리·머리띠 부근)에서 별이 튀어나와
+## 팝 스케일 오버슈트 후 회전하며 작아져 사라진다. 별마다 STAGGER만큼 늦게 출발한다.
+const BONK_HIT_FRAC: Vector2 = Vector2(0.555, 0.24)
+const BONK_STAR_LIFE: float = 0.6
+const BONK_STAR_STAGGER: float = 0.035
+## 별별 도착 오프셋(캔버스 px, face_draw_scale을 곱해 화면 px), 반지름(캔버스 px), 수명 동안 회전(rad).
+## 도착점은 바늘대(x=640)·좌상단 미니맵·우상단 TIME 태그와 눈을 피해 이마 위 앞머리 폭 안에 둔다.
+const BONK_STAR_OFFSETS: Array[Vector2] = [
+	Vector2(-183.0, -56.0), Vector2(108.0, -71.0), Vector2(245.0, -12.0), Vector2(-273.0, 15.0)
+]
+const BONK_STAR_RADII: Array[float] = [42.0, 38.0, 32.0, 34.0]
+const BONK_STAR_SPIN: Array[float] = [-3.2, 2.8, 3.4, -2.6]
+## 타격 순간 임팩트 선(짧은 방사선) 지속(초)과 길이(캔버스 px). 과하지 않게 아주 짧게만 번쩍인다.
+const BONK_IMPACT_DUR: float = 0.14
+const BONK_IMPACT_LEN: float = 46.0
+const BONK_STAR_FILL: Color = Color(1.0, 0.86, 0.24, 1.0)
+const BONK_STAR_HI: Color = Color(1.0, 0.97, 0.72, 1.0)
+const BONK_STAR_LINE: Color = Color(0.30, 0.17, 0.12, 1.0)
+## 연출 전체 길이(초) = max(표정, 바운스, 마지막 별 수명). 이 시간이 지나면 비활성.
+const BONK_TOTAL_DUR: float = 0.9
+
 ## 눈 앵커 중점(캔버스 텍셀 640,248)의 오버레이 텍스처 대비 비율. eyes_scale 피벗.
 ## 눈동자 좌 (454,248)·우 (826,248)의 중점 = (640,248), 텍스처 1280×720 기준.
 const EYE_ANCHOR_FRAC: Vector2 = Vector2(0.5, 248.0 / 720.0)
@@ -78,6 +115,19 @@ const EYE_SWEAT_FRAC: Vector2 = Vector2(0.715, 0.35)
 ## 보여 과했다. 취향 확정이므로 워커가 임의로 되돌리지 말 것.
 const MIRROR_SWEAT_X_FRAC: float = 0.38
 
+## --- 놀란 눈(eyes_surprised.png, 1672x941) 정렬 보정 ---
+## 새 눈은 기존 눈(1280x720)과 같은 픽셀 위치로 생성되지 않았다. 먼저 기존 eye_rect에 정규화해 그린
+## 뒤(텍스처 비율 좌표가 같은 사각형을 채움), 두 동공 중점과 동공 간격을 기존 eyes_normal에 맞춘다.
+## 측정(알파>0.5·보라 홍채 픽셀 무게중심, 1280x720 정규화 좌표):
+##   eyes_normal    좌 (453.4, 245.0)  우 (827.0, 246.4)  중점 (640.2, 245.7)  간격 373.6
+##   eyes_surprised 좌 (479.4, 285.5)  우 (848.4, 285.7)  중점 (663.9, 285.6)  간격 369.0
+## 놀란 눈 동공 중점(SURPRISED_PUPIL_FRAC)이 기존 동공 중점(EYE_PUPIL_MID_FRAC)과 같은 화면 점에 오도록
+## 옮기고, 간격 비 373.6/369.0으로 그 점을 고정점 삼아 확대한다. 확대 없이 옮기기만 하면 이동량은
+## eye_rect.size × (-0.0185, -0.0554)다(인계 추정값 (-0.017, -0.04)보다 위로 더 올라간다).
+const EYE_PUPIL_MID_FRAC: Vector2 = Vector2(640.2 / 1280.0, 245.7 / 720.0)
+const SURPRISED_PUPIL_FRAC: Vector2 = Vector2(663.9 / 1280.0, 285.6 / 720.0)
+const SURPRISED_SCALE: float = 373.6 / 369.0
+
 ## --- 눈 오버레이 스왑 모드(현행 기본) — 스크립트 preload 배선 ---
 ## Gameplay.tscn을 수정하지 않고 새 모드를 기본 활성화하기 위해 preload 기본값으로
 ## 배선한다(씬은 아래 face_normal/face_focus/face_injured만 지정 → 레거시 슬롯).
@@ -86,6 +136,8 @@ const MIRROR_SWEAT_X_FRAC: float = 0.38
 @export var eyes_normal: Texture2D = preload("res://assets/gfx/eyes_normal.png")
 @export var eyes_focus: Texture2D = preload("res://assets/gfx/eyes_focus.png")
 @export var eyes_injured: Texture2D = preload("res://assets/gfx/eyes_injured.png")
+## 부상 사전 연출 중 놀란 눈(eye_rect 정규화 + 전용 정렬 보정, _state_eye_rect 참조).
+@export var eyes_surprised: Texture2D = preload("res://assets/gfx/eyes_surprised.png")
 ## 집중 땀방울 스프라이트(절차적 땀 대체). null이면 절차적 _draw_drop 폴백.
 @export var sweat_texture: Texture2D = preload("res://assets/gfx/sweat.png")
 ## 땀방울 스프라이트 크기 배율(캔버스 기준 추가 배율). face_draw_scale과 곱해진다.
@@ -124,8 +176,12 @@ const MIRROR_SWEAT_X_FRAC: float = 0.38
 
 ## 얼굴 배치(구도 결함 수정 2). 텍스처를 이 스케일로 축소해 상단부에 그린다.
 ## face_draw_scale=1.0, face_offset_y=0 이면 전체 화면(구 배치)과 동일.
-@export var face_draw_scale: float = 0.72
-@export var face_offset_y: float = -24.0
+## 0.84/-40(구 0.72/-24): 텍스처 하단 평평한 절단면(턱 v≈457, 머리끝 v≈467)이 고개꺾기
+## 최대(|steer|=1, 좌우 끝이 ±~40 캔버스px 들림)에서도 수평선(0.42×720) 아래 ~6px 이상에
+## 머물도록 확대했다. 이보다 아래로 내리면 상단 절단면(행 0) 쐐기가 커지고 둘째 땀방울이
+## 수평선에 더 가려진다(두 값은 절단 경계 여유와 맞바꿈이라 함께 조정할 것).
+@export var face_draw_scale: float = 0.84
+@export var face_offset_y: float = -40.0
 
 ## 표정 오버레이 앵커(face_rect 대비 비율). 앞머리 사이 피부 창(눈·땀) 위치.
 @export var expr_eye_dx_frac: float = 0.145  # 중앙 대비 좌우 눈 간격
@@ -142,12 +198,17 @@ var _tension: float = 0.0  # 0..1 (부상>고위험>속도 집중 통합 강도)
 ## 그대로 _tension이 구동하고, 이 값은 땀 스프라이트 표시에만 쓴다. _process에서 매 프레임 갱신.
 var _sweat: float = 0.0
 var _stunned: bool = false
+## 부상 사전 연출(pending) 중인가(PresentationController가 set_surprised로 주입).
+var _surprised: bool = false
 var _steer: float = 0.0
 var _steer_target: float = 0.0
 ## 엄마 찬스 전환 상태(PresentationController 주입). _mom_swipe>0이면 _draw가 슬라이드 교차를
 ## 그린다(0=플레이어 얼굴, 1=엄마 얼굴). _mom_active는 전환 게이트(표현 전용).
 var _mom_active: bool = false
 var _mom_swipe: float = 0.0
+
+## 꿀밤 연출 경과 시간(초). 음수면 비활성. play_bonk()가 0으로 (재)시작하고 _process가 진행한다.
+var _bonk_t: float = -1.0
 
 var _state: int = FaceState.NORMAL  # 현재 표정 상태(스왑용)
 var _fade_from: int = FaceState.NORMAL  # 크로스페이드 시작 상태
@@ -165,7 +226,8 @@ func _ready() -> void:
 func set_expression(risk: float, stunned: bool, speed_index: int) -> void:
 	var focus: float = clampf(float(speed_index - 1) / 4.0, 0.0, 1.0)
 	var tension: float = clampf(maxf(risk, focus), 0.0, 1.0)
-	var new_state: int = _compute_state(tension, stunned)
+	# 꿀밤 표정은 부상과 같은 "> <" 표시로 기존 우선순위 위에 얹는 오버라이드다(_stunned 자체는 불변).
+	var new_state: int = _compute_state(tension, stunned or _bonk_expr_on())
 	if is_equal_approx(tension, _tension) and stunned == _stunned:
 		return  # 아무것도 안 바뀜(상태도 tension·stunned에서 유도되므로 동일).
 	_tension = tension
@@ -178,9 +240,91 @@ func set_expression(risk: float, stunned: bool, speed_index: int) -> void:
 	queue_redraw()
 
 
+## 꿀밤 연출 시작(원단 이탈 소프트 리셋 상승엣지에서 1회). 진행 중 다시 호출되면 처음부터
+## 재시작한다. "> <" 표정은 맞는 순간 즉시 스냅(크로스페이드 없음)하고, 복귀만 기존
+## FACE_FADE_DUR 크로스페이드를 쓴다. 엄마 찬스 전환 중엔 플레이어 얼굴이 가려져 생략한다.
+func play_bonk() -> void:
+	if _mom_active:
+		return
+	_bonk_t = 0.0
+	var new_state: int = _compute_state(_tension, true)
+	if new_state != _state:
+		_fade_from = _state
+		_state = new_state
+	_fade_t = 1.0
+	queue_redraw()
+
+
+## 꿀밤 연출(표정·바운스·별) 진행 중인가(읽기 전용, 회귀 검사용).
+func is_bonk_active() -> bool:
+	return _bonk_t >= 0.0
+
+
+## 현재 꿀밤 바운스 세로 오프셋(px, 양수=아래). 비활성이면 0.
+func bonk_offset_y() -> float:
+	return bonk_offset_at(_bonk_t) if _bonk_t >= 0.0 else 0.0
+
+
+## 경과 시간 t의 바운스 오프셋(닫힌 형식, 프레임 독립). 위쪽 반동은 BONK_UP_RATIO로 줄이고
+## BONK_MAX_UP으로 한 번 더 막아 하단 절단 경계가 수평선 위로 드러나지 않게 한다.
+static func bonk_offset_at(t: float) -> float:
+	if t < 0.0 or t >= BONK_BOUNCE_DUR:
+		return 0.0
+	var u: float = t / BONK_BOUNCE_DUR
+	var env: float = (1.0 - u) * (1.0 - u)
+	var y: float = BONK_BOUNCE_AMP * env * sin(PI * BONK_BOUNCE_HALF_CYCLES * u)
+	if y < 0.0:
+		y = maxf(y * BONK_UP_RATIO, -BONK_MAX_UP)
+	return y
+
+
+## 꿀밤 "> <" 표정 구간인가(부상 표시와 같은 규칙으로 땀을 억제한다).
+func _bonk_expr_on() -> bool:
+	return _bonk_t >= 0.0 and _bonk_t < BONK_EXPR_DUR
+
+
+## 부상 또는 꿀밤으로 "> <" 표정을 보여야 하는가(그리기 게이트 공용).
+func _injured_shown() -> bool:
+	return _stunned or _bonk_expr_on()
+
+
+## 현재 tension·부상·꿀밤에서 표정 상태를 다시 유도한다. 바뀌면 크로스페이드를 시작한다
+## (꿀밤 표정 종료 시 원래 상태로 자연스럽게 복귀).
+func _refresh_state() -> void:
+	var new_state: int = _compute_state(_tension, _injured_shown())
+	if new_state != _state:
+		_fade_from = _state
+		_state = new_state
+		_fade_t = 0.0
+	queue_redraw()
+
+
+## PresentationController가 매 프레임 부상 사전 연출(pending) 여부를 주입한다(set_expression 다음).
+## 놀람 진입은 사전 연출이 0.2초뿐이라 크로스페이드 없이 즉시 스냅하고, 해제(cut 없이 pending 해제)는
+## 기존 FACE_FADE_DUR 크로스페이드로 원래 상태에 돌아간다. 실제 cut 프레임에는 set_expression이 먼저
+## INJURED로 전환(기존 크로스페이드)하므로 여기서는 상태가 바뀌지 않는다. 부상·꿀밤("> <")이 우선이다.
+func set_surprised(on: bool) -> void:
+	if on == _surprised:
+		return
+	_surprised = on
+	var new_state: int = _compute_state(_tension, _injured_shown())
+	if new_state != _state:
+		_fade_from = _state
+		_state = new_state
+		_fade_t = 1.0 if new_state == FaceState.SURPRISED else 0.0
+	queue_redraw()
+
+
+## 놀람 표정 표시 여부(회귀 검사용 읽기 전용).
+func is_surprised() -> bool:
+	return _surprised
+
+
 func _compute_state(tension: float, stunned: bool) -> int:
 	if stunned:
 		return FaceState.INJURED
+	if _surprised:
+		return FaceState.SURPRISED
 	if tension >= FOCUS_THRESHOLD:
 		return FaceState.FOCUS
 	return FaceState.NORMAL
@@ -214,8 +358,18 @@ func _process(delta: float) -> void:
 		_fade_t = minf(_fade_t + delta / FACE_FADE_DUR, 1.0)
 		need_redraw = true
 	# 땀 강도 추종: 상승은 즉시(위험/속도 발한 즉응·회귀 방지), 하강만 부드럽게(페이드 아웃).
-	# 부상 중엔 목표 0(땀 억제)이며, 그리기 게이트가 _stunned를 별도로 막아 즉시 사라진다.
-	var sweat_target: float = 0.0 if _stunned else _tension
+	# 꿀밤 진행: 경과 시간만 누적하고(바운스·별은 닫힌 형식) 표정 구간이 끝나는 프레임에
+	# 원래 상태로 크로스페이드 복귀한다. 진행 중엔 매 프레임 다시 그린다.
+	if _bonk_t >= 0.0:
+		var was_expr: bool = _bonk_expr_on()
+		_bonk_t += delta
+		if _bonk_t >= BONK_TOTAL_DUR:
+			_bonk_t = -1.0
+		if was_expr and not _bonk_expr_on():
+			_refresh_state()
+		need_redraw = true
+	# 부상·꿀밤 중엔 목표 0(땀 억제)이며, 그리기 게이트가 별도로 막아 즉시 사라진다.
+	var sweat_target: float = 0.0 if _injured_shown() else _tension
 	var prev_sweat: float = _sweat
 	if sweat_target >= _sweat:
 		_sweat = sweat_target
@@ -262,7 +416,9 @@ func _draw() -> void:
 	)
 	var angle: float = _steer * MAX_HEAD_TILT
 	var lean: Vector2 = Vector2(_steer * HEAD_LEAN_PX, 0.0)
-	draw_set_transform(lean + pivot - pivot.rotated(angle), angle, Vector2.ONE)
+	# 꿀밤 바운스는 같은 변환에 세로 이동으로 더해 눈·땀·별이 얼굴과 함께 움직인다.
+	var bob: Vector2 = Vector2(0.0, bonk_offset_y())
+	draw_set_transform(lean + bob + pivot - pivot.rotated(angle), angle, Vector2.ONE)
 	if _overlay_active():
 		_draw_overlay(rect)
 	elif _swap_active():
@@ -273,6 +429,55 @@ func _draw() -> void:
 		_draw_state_overlay(rect)
 	else:
 		_draw_fallback(rect)
+	if _bonk_t >= 0.0:
+		_draw_bonk_stars(rect)
+
+
+## 꿀밤 별: 타격 지점에서 별마다 STAGGER 간격으로 출발해 ease-out으로 튀어나가며, 팝 스케일
+## 오버슈트(0→1.3→1) 뒤 회전하며 작아져 사라진다. 모두 _bonk_t의 닫힌 형식이라 프레임 독립.
+func _draw_bonk_stars(rect: Rect2) -> void:
+	var hit: Vector2 = rect.position + BONK_HIT_FRAC * rect.size
+	# 임팩트 선: 타격 지점에서 바깥으로 뻗으며 옅어지는 짧은 방사선 6개.
+	if _bonk_t < BONK_IMPACT_DUR:
+		var k: float = _bonk_t / BONK_IMPACT_DUR
+		var col: Color = Color(1.0, 0.95, 0.62, 1.0 - k * k)
+		var ray_len: float = BONK_IMPACT_LEN * face_draw_scale
+		for j in range(6):
+			var dir: Vector2 = Vector2.UP.rotated(-1.2 + 0.48 * float(j))
+			var a: Vector2 = hit + dir * ray_len * (0.35 + 0.5 * k)
+			var b: Vector2 = hit + dir * ray_len * (0.8 + 0.6 * k)
+			draw_line(a, b, col, 5.0 * face_draw_scale, true)
+	for i in range(BONK_STAR_OFFSETS.size()):
+		var u: float = (_bonk_t - BONK_STAR_STAGGER * float(i)) / BONK_STAR_LIFE
+		if u <= 0.0 or u >= 1.0:
+			continue
+		var travel: float = 1.0 - pow(1.0 - minf(u / 0.45, 1.0), 3.0)
+		var pos: Vector2 = hit + BONK_STAR_OFFSETS[i] * face_draw_scale * travel
+		var pop: float = 0.0
+		if u < 0.12:
+			pop = 1.3 * (u / 0.12)
+		elif u < 0.3:
+			pop = lerpf(1.3, 1.0, (u - 0.12) / 0.18)
+		else:
+			pop = lerpf(1.0, 0.0, pow((u - 0.3) / 0.7, 1.6))
+		var r: float = BONK_STAR_RADII[i] * face_draw_scale * pop
+		if r < 0.5:
+			continue
+		_draw_star(pos, r, BONK_STAR_SPIN[i] * u)
+
+
+## 노란 5각 별(어두운 외곽선 + 안쪽 하이라이트). 절차적 도형이라 신규 에셋이 필요 없다.
+func _draw_star(center: Vector2, r: float, rot: float) -> void:
+	var pts: PackedVector2Array = PackedVector2Array()
+	for k in range(10):
+		var a: float = rot - PI * 0.5 + PI * float(k) / 5.0
+		var rr: float = r if k % 2 == 0 else r * 0.48
+		pts.append(center + Vector2(cos(a), sin(a)) * rr)
+	draw_colored_polygon(pts, BONK_STAR_FILL)
+	var outline: PackedVector2Array = pts.duplicate()
+	outline.append(pts[0])
+	draw_polyline(outline, BONK_STAR_LINE, maxf(r * 0.14, 1.5), true)
+	draw_circle(center + Vector2(-r * 0.16, -r * 0.18), r * 0.16, BONK_STAR_HI)
 
 
 ## 엄마 찬스 슬라이드 교차: 플레이어 얼굴은 왼쪽으로(player_dx), 엄마 얼굴은 오른쪽에서(mom_dx)
@@ -297,15 +502,10 @@ func _draw_mom_transition(rect: Rect2) -> void:
 func _draw_player_static(rect: Rect2) -> void:
 	if _overlay_active():
 		draw_texture_rect(base_clean, rect, false)
-		var eye_rect: Rect2 = rect
-		eye_rect.position.y += eyes_offset_y * face_draw_scale
-		if not is_equal_approx(eyes_scale, 1.0):
-			var pivot: Vector2 = eye_rect.position + EYE_ANCHOR_FRAC * eye_rect.size
-			var new_size: Vector2 = eye_rect.size * eyes_scale
-			eye_rect = Rect2(pivot - EYE_ANCHOR_FRAC * new_size, new_size)
+		var eye_rect: Rect2 = eye_rect_for(rect)
 		var ov: Texture2D = _eye_overlay(_state)
 		if ov != null:
-			draw_texture_rect(ov, eye_rect, false)
+			draw_texture_rect(ov, _state_eye_rect(_state, eye_rect), false)
 	elif _swap_active():
 		var tex: Texture2D = _state_tex(_state)
 		if tex != null:
@@ -323,28 +523,58 @@ func _draw_player_static(rect: Rect2) -> void:
 func _draw_overlay(rect: Rect2) -> void:
 	if base_clean != null:
 		draw_texture_rect(base_clean, rect, false)
-	# 눈 오버레이는 eyes_offset_y(캔버스 px)만큼 세로로 미세 이동해 그린다(베이스는 고정).
+	var eye_rect: Rect2 = eye_rect_for(rect)
+	# 크로스페이드 중에는 두 표정이 각자 맞는 rect로 그려진다(놀란 눈만 전용 정렬 보정).
+	var to_ov: Texture2D = _eye_overlay(_state)
+	var to_rect: Rect2 = _state_eye_rect(_state, eye_rect)
+	if _fade_t < 1.0:
+		var from_ov: Texture2D = _eye_overlay(_fade_from)
+		var from_rect: Rect2 = _state_eye_rect(_fade_from, eye_rect)
+		if from_ov != null:
+			draw_texture_rect(from_ov, from_rect, false, Color(1.0, 1.0, 1.0, 1.0 - _fade_t))
+		if to_ov != null:
+			draw_texture_rect(to_ov, to_rect, false, Color(1.0, 1.0, 1.0, _fade_t))
+	elif to_ov != null:
+		draw_texture_rect(to_ov, to_rect, false)
+	# 집중 땀방울(부상 제외). 눈 오버레이 rect 기준이라 눈을 따라 이동한다. 땀 강도(_sweat)에
+	# 비례해 커지고 고집중에선 둘째 방울 추가. _sweat은 하강만 부드러워 감속 시 페이드 아웃한다.
+	# 놀란 눈(SURPRISED)이 보이는 동안(놀람에서 빠져나가는 크로스페이드 포함)에도 숨긴다: 커진 눈
+	# 흰자·속눈썹이 관자놀이 땀방울 자리(EYE_SWEAT_FRAC)와 겹친다. 놀람은 즉시 스냅이라 땀도 표정과
+	# 함께 사라지고, 해제 크로스페이드가 끝나면 기존 규칙대로 다시 보인다.
+	var surprised_shown: bool = (
+		_state == FaceState.SURPRISED or (_fade_t < 1.0 and _fade_from == FaceState.SURPRISED)
+	)
+	if not _injured_shown() and not surprised_shown and _sweat > 0.01:
+		_draw_sweat_sprite(eye_rect)
+
+
+## 기존 눈 오버레이 공통 rect. eyes_offset_y(캔버스 px)만큼 세로로 미세 이동하고, eyes_scale로
+## 앵커 중점(640,248)을 고정점 삼아 눈 오버레이만 확대/축소한다(베이스 불변, 1.0이면 항등).
+## 땀방울과 놀란 눈 보정의 기준이다. 회귀 검사가 읽는다.
+func eye_rect_for(rect: Rect2) -> Rect2:
 	var eye_rect: Rect2 = rect
 	eye_rect.position.y += eyes_offset_y * face_draw_scale
-	# eyes_scale: 앵커 중점(640,248)을 고정점으로 눈 오버레이만 확대/축소(베이스 불변).
-	# 1.0이면 항등(원본 PNG 크기). PNG 재가공 없는 런타임 취향 조정 손잡이.
 	if not is_equal_approx(eyes_scale, 1.0):
 		var pivot: Vector2 = eye_rect.position + EYE_ANCHOR_FRAC * eye_rect.size
 		var new_size: Vector2 = eye_rect.size * eyes_scale
 		eye_rect = Rect2(pivot - EYE_ANCHOR_FRAC * new_size, new_size)
-	var to_ov: Texture2D = _eye_overlay(_state)
-	if _fade_t < 1.0:
-		var from_ov: Texture2D = _eye_overlay(_fade_from)
-		if from_ov != null:
-			draw_texture_rect(from_ov, eye_rect, false, Color(1.0, 1.0, 1.0, 1.0 - _fade_t))
-		if to_ov != null:
-			draw_texture_rect(to_ov, eye_rect, false, Color(1.0, 1.0, 1.0, _fade_t))
-	elif to_ov != null:
-		draw_texture_rect(to_ov, eye_rect, false)
-	# 집중 땀방울(부상 제외). 눈 오버레이 rect 기준이라 눈을 따라 이동한다. 땀 강도(_sweat)에
-	# 비례해 커지고 고집중에선 둘째 방울 추가. _sweat은 하강만 부드러워 감속 시 페이드 아웃한다.
-	if not _stunned and _sweat > 0.01:
-		_draw_sweat_sprite(eye_rect)
+	return eye_rect
+
+
+## 상태별 눈 오버레이 rect. 놀란 눈만 eye_rect에 정규화한 뒤 동공 중점·간격 보정을 적용하고,
+## 나머지 상태(놀란 눈 슬롯이 비어 eyes_normal로 폴백한 경우 포함)는 eye_rect 그대로다.
+func _state_eye_rect(state: int, eye_rect: Rect2) -> Rect2:
+	if state != FaceState.SURPRISED or eyes_surprised == null:
+		return eye_rect
+	return surprised_eye_rect(eye_rect)
+
+
+## 놀란 눈 rect: 텍스처의 동공 중점(SURPRISED_PUPIL_FRAC)이 기존 눈 동공 중점(EYE_PUPIL_MID_FRAC)의
+## 화면 점에 오고, 크기는 SURPRISED_SCALE배다. 회귀 검사가 읽는다.
+static func surprised_eye_rect(eye_rect: Rect2) -> Rect2:
+	var anchor: Vector2 = eye_rect.position + EYE_PUPIL_MID_FRAC * eye_rect.size
+	var size: Vector2 = eye_rect.size * SURPRISED_SCALE
+	return Rect2(anchor - SURPRISED_PUPIL_FRAC * size, size)
 
 
 ## 상태 → 눈 오버레이(폴백: 상태 슬롯 → eyes_normal).
@@ -353,6 +583,8 @@ func _eye_overlay(state: int) -> Texture2D:
 	match state:
 		FaceState.INJURED:
 			slot = eyes_injured
+		FaceState.SURPRISED:
+			slot = eyes_surprised
 		FaceState.FOCUS:
 			slot = eyes_focus
 		_:
@@ -458,7 +690,7 @@ func _draw_state_overlay(rect: Rect2) -> void:
 	var eye_dx: float = rect.size.x * expr_eye_dx_frac
 	var left: Vector2 = Vector2(cx - eye_dx, eye_y)
 	var right: Vector2 = Vector2(cx + eye_dx, eye_y)
-	if _stunned:
+	if _injured_shown():
 		_draw_x_eye(left)
 		_draw_x_eye(right)
 		return
@@ -599,7 +831,7 @@ func _draw_head(rect: Rect2) -> void:
 
 
 func _draw_eye(center: Vector2) -> void:
-	if _stunned:
+	if _injured_shown():
 		# 부상 시 질끈 감은 눈(">< " 느낌의 선).
 		draw_line(center + Vector2(-26.0, -8.0), center + Vector2(26.0, 8.0), PUPIL_COLOR, 4.0)
 		draw_line(center + Vector2(-26.0, 8.0), center + Vector2(26.0, -8.0), PUPIL_COLOR, 4.0)

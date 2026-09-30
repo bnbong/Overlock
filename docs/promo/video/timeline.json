@@ -1,0 +1,2031 @@
+{
+ "_doc": "Resolved from tools/promo/video/timeline.json by render.py. t = seconds in the video, f = frame index at 60 fps. Beat b sits at t = b * period; the music clip starts at song_start seconds of the mp3.",
+ "music": {
+  "file": "docs/promo/video/music/KevinMacLeod-NewerWave.mp3",
+  "song_start_sec": 45.855549,
+  "period_sec": 0.545459,
+  "bpm": 109.9991,
+  "grid_fit_residual_ms": 0.5,
+  "length_beats": 80,
+  "frames": 2618,
+  "duration_sec": 43.633333
+ },
+ "beats": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "f": 0,
+   "downbeat": true
+  },
+  {
+   "b": 1,
+   "t": 0.5455,
+   "f": 33,
+   "downbeat": false
+  },
+  {
+   "b": 2,
+   "t": 1.0909,
+   "f": 65,
+   "downbeat": false
+  },
+  {
+   "b": 3,
+   "t": 1.6364,
+   "f": 98,
+   "downbeat": false
+  },
+  {
+   "b": 4,
+   "t": 2.1818,
+   "f": 131,
+   "downbeat": true
+  },
+  {
+   "b": 5,
+   "t": 2.7273,
+   "f": 164,
+   "downbeat": false
+  },
+  {
+   "b": 6,
+   "t": 3.2728,
+   "f": 196,
+   "downbeat": false
+  },
+  {
+   "b": 7,
+   "t": 3.8182,
+   "f": 229,
+   "downbeat": false
+  },
+  {
+   "b": 8,
+   "t": 4.3637,
+   "f": 262,
+   "downbeat": true
+  },
+  {
+   "b": 9,
+   "t": 4.9091,
+   "f": 295,
+   "downbeat": false
+  },
+  {
+   "b": 10,
+   "t": 5.4546,
+   "f": 327,
+   "downbeat": false
+  },
+  {
+   "b": 11,
+   "t": 6.0,
+   "f": 360,
+   "downbeat": false
+  },
+  {
+   "b": 12,
+   "t": 6.5455,
+   "f": 393,
+   "downbeat": true
+  },
+  {
+   "b": 13,
+   "t": 7.091,
+   "f": 425,
+   "downbeat": false
+  },
+  {
+   "b": 14,
+   "t": 7.6364,
+   "f": 458,
+   "downbeat": false
+  },
+  {
+   "b": 15,
+   "t": 8.1819,
+   "f": 491,
+   "downbeat": false
+  },
+  {
+   "b": 16,
+   "t": 8.7273,
+   "f": 524,
+   "downbeat": true
+  },
+  {
+   "b": 17,
+   "t": 9.2728,
+   "f": 556,
+   "downbeat": false
+  },
+  {
+   "b": 18,
+   "t": 9.8183,
+   "f": 589,
+   "downbeat": false
+  },
+  {
+   "b": 19,
+   "t": 10.3637,
+   "f": 622,
+   "downbeat": false
+  },
+  {
+   "b": 20,
+   "t": 10.9092,
+   "f": 655,
+   "downbeat": true
+  },
+  {
+   "b": 21,
+   "t": 11.4546,
+   "f": 687,
+   "downbeat": false
+  },
+  {
+   "b": 22,
+   "t": 12.0001,
+   "f": 720,
+   "downbeat": false
+  },
+  {
+   "b": 23,
+   "t": 12.5456,
+   "f": 753,
+   "downbeat": false
+  },
+  {
+   "b": 24,
+   "t": 13.091,
+   "f": 785,
+   "downbeat": true
+  },
+  {
+   "b": 25,
+   "t": 13.6365,
+   "f": 818,
+   "downbeat": false
+  },
+  {
+   "b": 26,
+   "t": 14.1819,
+   "f": 851,
+   "downbeat": false
+  },
+  {
+   "b": 27,
+   "t": 14.7274,
+   "f": 884,
+   "downbeat": false
+  },
+  {
+   "b": 28,
+   "t": 15.2729,
+   "f": 916,
+   "downbeat": true
+  },
+  {
+   "b": 29,
+   "t": 15.8183,
+   "f": 949,
+   "downbeat": false
+  },
+  {
+   "b": 30,
+   "t": 16.3638,
+   "f": 982,
+   "downbeat": false
+  },
+  {
+   "b": 31,
+   "t": 16.9092,
+   "f": 1015,
+   "downbeat": false
+  },
+  {
+   "b": 32,
+   "t": 17.4547,
+   "f": 1047,
+   "downbeat": true
+  },
+  {
+   "b": 33,
+   "t": 18.0001,
+   "f": 1080,
+   "downbeat": false
+  },
+  {
+   "b": 34,
+   "t": 18.5456,
+   "f": 1113,
+   "downbeat": false
+  },
+  {
+   "b": 35,
+   "t": 19.0911,
+   "f": 1145,
+   "downbeat": false
+  },
+  {
+   "b": 36,
+   "t": 19.6365,
+   "f": 1178,
+   "downbeat": true
+  },
+  {
+   "b": 37,
+   "t": 20.182,
+   "f": 1211,
+   "downbeat": false
+  },
+  {
+   "b": 38,
+   "t": 20.7274,
+   "f": 1244,
+   "downbeat": false
+  },
+  {
+   "b": 39,
+   "t": 21.2729,
+   "f": 1276,
+   "downbeat": false
+  },
+  {
+   "b": 40,
+   "t": 21.8184,
+   "f": 1309,
+   "downbeat": true
+  },
+  {
+   "b": 41,
+   "t": 22.3638,
+   "f": 1342,
+   "downbeat": false
+  },
+  {
+   "b": 42,
+   "t": 22.9093,
+   "f": 1375,
+   "downbeat": false
+  },
+  {
+   "b": 43,
+   "t": 23.4547,
+   "f": 1407,
+   "downbeat": false
+  },
+  {
+   "b": 44,
+   "t": 24.0002,
+   "f": 1440,
+   "downbeat": true
+  },
+  {
+   "b": 45,
+   "t": 24.5457,
+   "f": 1473,
+   "downbeat": false
+  },
+  {
+   "b": 46,
+   "t": 25.0911,
+   "f": 1505,
+   "downbeat": false
+  },
+  {
+   "b": 47,
+   "t": 25.6366,
+   "f": 1538,
+   "downbeat": false
+  },
+  {
+   "b": 48,
+   "t": 26.182,
+   "f": 1571,
+   "downbeat": true
+  },
+  {
+   "b": 49,
+   "t": 26.7275,
+   "f": 1604,
+   "downbeat": false
+  },
+  {
+   "b": 50,
+   "t": 27.2729,
+   "f": 1636,
+   "downbeat": false
+  },
+  {
+   "b": 51,
+   "t": 27.8184,
+   "f": 1669,
+   "downbeat": false
+  },
+  {
+   "b": 52,
+   "t": 28.3639,
+   "f": 1702,
+   "downbeat": true
+  },
+  {
+   "b": 53,
+   "t": 28.9093,
+   "f": 1735,
+   "downbeat": false
+  },
+  {
+   "b": 54,
+   "t": 29.4548,
+   "f": 1767,
+   "downbeat": false
+  },
+  {
+   "b": 55,
+   "t": 30.0002,
+   "f": 1800,
+   "downbeat": false
+  },
+  {
+   "b": 56,
+   "t": 30.5457,
+   "f": 1833,
+   "downbeat": true
+  },
+  {
+   "b": 57,
+   "t": 31.0912,
+   "f": 1865,
+   "downbeat": false
+  },
+  {
+   "b": 58,
+   "t": 31.6366,
+   "f": 1898,
+   "downbeat": false
+  },
+  {
+   "b": 59,
+   "t": 32.1821,
+   "f": 1931,
+   "downbeat": false
+  },
+  {
+   "b": 60,
+   "t": 32.7275,
+   "f": 1964,
+   "downbeat": true
+  },
+  {
+   "b": 61,
+   "t": 33.273,
+   "f": 1996,
+   "downbeat": false
+  },
+  {
+   "b": 62,
+   "t": 33.8185,
+   "f": 2029,
+   "downbeat": false
+  },
+  {
+   "b": 63,
+   "t": 34.3639,
+   "f": 2062,
+   "downbeat": false
+  },
+  {
+   "b": 64,
+   "t": 34.9094,
+   "f": 2095,
+   "downbeat": true
+  },
+  {
+   "b": 65,
+   "t": 35.4548,
+   "f": 2127,
+   "downbeat": false
+  },
+  {
+   "b": 66,
+   "t": 36.0003,
+   "f": 2160,
+   "downbeat": false
+  },
+  {
+   "b": 67,
+   "t": 36.5458,
+   "f": 2193,
+   "downbeat": false
+  },
+  {
+   "b": 68,
+   "t": 37.0912,
+   "f": 2225,
+   "downbeat": true
+  },
+  {
+   "b": 69,
+   "t": 37.6367,
+   "f": 2258,
+   "downbeat": false
+  },
+  {
+   "b": 70,
+   "t": 38.1821,
+   "f": 2291,
+   "downbeat": false
+  },
+  {
+   "b": 71,
+   "t": 38.7276,
+   "f": 2324,
+   "downbeat": false
+  },
+  {
+   "b": 72,
+   "t": 39.273,
+   "f": 2356,
+   "downbeat": true
+  },
+  {
+   "b": 73,
+   "t": 39.8185,
+   "f": 2389,
+   "downbeat": false
+  },
+  {
+   "b": 74,
+   "t": 40.364,
+   "f": 2422,
+   "downbeat": false
+  },
+  {
+   "b": 75,
+   "t": 40.9094,
+   "f": 2455,
+   "downbeat": false
+  },
+  {
+   "b": 76,
+   "t": 41.4549,
+   "f": 2487,
+   "downbeat": true
+  },
+  {
+   "b": 77,
+   "t": 42.0003,
+   "f": 2520,
+   "downbeat": false
+  },
+  {
+   "b": 78,
+   "t": 42.5458,
+   "f": 2553,
+   "downbeat": false
+  },
+  {
+   "b": 79,
+   "t": 43.0913,
+   "f": 2585,
+   "downbeat": false
+  },
+  {
+   "b": 80,
+   "t": 43.6367,
+   "f": 2618,
+   "downbeat": true
+  }
+ ],
+ "shots": [
+  {
+   "id": "intro_stitch",
+   "start_b": 0,
+   "end_b": 4,
+   "t0": 0.0,
+   "t1": 2.1818,
+   "f0": 0,
+   "f1": 131,
+   "background": "plum"
+  },
+  {
+   "id": "intro_logo",
+   "start_b": 4,
+   "end_b": 8,
+   "t0": 2.1818,
+   "t1": 4.3637,
+   "f0": 131,
+   "f1": 262,
+   "background": "plum"
+  },
+  {
+   "id": "intro_cards",
+   "start_b": 8,
+   "end_b": 12,
+   "t0": 4.3637,
+   "t1": 6.5455,
+   "f0": 262,
+   "f1": 393,
+   "background": "plum"
+  },
+  {
+   "id": "countdown",
+   "start_b": 12,
+   "end_b": 16,
+   "t0": 6.5455,
+   "t1": 8.7273,
+   "f0": 393,
+   "f1": 524,
+   "clip": "03_countdown_go.mp4",
+   "src_frame_first": 0,
+   "src_frame_last": 179,
+   "retime_keys": [
+    {
+     "b": 12,
+     "f": 393,
+     "src_sec": 0.0,
+     "src_frame": 0
+    },
+    {
+     "b": 13,
+     "f": 425,
+     "src_sec": 1.0,
+     "src_frame": 60
+    },
+    {
+     "b": 14,
+     "f": 458,
+     "src_sec": 2.0,
+     "src_frame": 120
+    },
+    {
+     "b": 16,
+     "f": 524,
+     "src_sec": 3.0,
+     "src_frame": 180
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     330
+    ],
+    "mode": "step",
+    "keys": [
+     [
+      12,
+      1.0
+     ],
+     [
+      13,
+      1.07
+     ],
+     [
+      14,
+      1.14
+     ],
+     [
+      15,
+      1.2
+     ]
+    ]
+   }
+  },
+  {
+   "id": "go",
+   "start_b": 16,
+   "end_b": 18,
+   "t0": 8.7273,
+   "t1": 9.8183,
+   "f0": 524,
+   "f1": 589,
+   "clip": "03_countdown_go.mp4",
+   "src_frame_first": 180,
+   "src_frame_last": 244,
+   "retime_keys": [
+    {
+     "b": 16,
+     "f": 524,
+     "src_sec": 3.0,
+     "src_frame": 180
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     420
+    ],
+    "keys": [
+     [
+      16,
+      1.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "speedup",
+   "start_b": 18,
+   "end_b": 22,
+   "t0": 9.8183,
+   "t1": 12.0001,
+   "f0": 589,
+   "f1": 720,
+   "clip": "04_straight_speedup.mp4",
+   "src_frame_first": 61,
+   "src_frame_last": 210,
+   "retime_keys": [
+    {
+     "b": 18,
+     "f": 589,
+     "src_sec": 1.017,
+     "src_frame": 61
+    },
+    {
+     "b": 19,
+     "f": 622,
+     "src_sec": 1.667,
+     "src_frame": 100
+    },
+    {
+     "b": 20,
+     "f": 655,
+     "src_sec": 2.317,
+     "src_frame": 139
+    },
+    {
+     "b": 21,
+     "f": 687,
+     "src_sec": 2.967,
+     "src_frame": 178
+    }
+   ]
+  },
+  {
+   "id": "curve_a",
+   "start_b": 22,
+   "end_b": 24,
+   "t0": 12.0001,
+   "t1": 13.091,
+   "f0": 720,
+   "f1": 785,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 60,
+   "src_frame_last": 124,
+   "retime_keys": [
+    {
+     "b": 22,
+     "f": 720,
+     "src_sec": 1.0,
+     "src_frame": 60
+    }
+   ]
+  },
+  {
+   "id": "curve_b",
+   "start_b": 24,
+   "end_b": 26,
+   "t0": 13.091,
+   "t1": 14.1819,
+   "f0": 785,
+   "f1": 851,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 240,
+   "src_frame_last": 305,
+   "retime_keys": [
+    {
+     "b": 24,
+     "f": 785,
+     "src_sec": 4.0,
+     "src_frame": 240
+    }
+   ]
+  },
+  {
+   "id": "curve_c",
+   "start_b": 26,
+   "end_b": 28,
+   "t0": 14.1819,
+   "t1": 15.2729,
+   "f0": 851,
+   "f1": 916,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 396,
+   "src_frame_last": 460,
+   "retime_keys": [
+    {
+     "b": 26,
+     "f": 851,
+     "src_sec": 6.6,
+     "src_frame": 396
+    }
+   ]
+  },
+  {
+   "id": "curve_d",
+   "start_b": 28,
+   "end_b": 30,
+   "t0": 15.2729,
+   "t1": 16.3638,
+   "f0": 916,
+   "f1": 982,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 540,
+   "src_frame_last": 605,
+   "retime_keys": [
+    {
+     "b": 28,
+     "f": 916,
+     "src_sec": 9.0,
+     "src_frame": 540
+    }
+   ]
+  },
+  {
+   "id": "curve_e",
+   "start_b": 30,
+   "end_b": 32,
+   "t0": 16.3638,
+   "t1": 17.4547,
+   "f0": 982,
+   "f1": 1047,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 690,
+   "src_frame_last": 754,
+   "retime_keys": [
+    {
+     "b": 30,
+     "f": 982,
+     "src_sec": 11.5,
+     "src_frame": 690
+    }
+   ]
+  },
+  {
+   "id": "drift_a",
+   "start_b": 32,
+   "end_b": 36,
+   "t0": 17.4547,
+   "t1": 19.6365,
+   "f0": 1047,
+   "f1": 1178,
+   "clip": "06_drift.mp4",
+   "src_frame_first": 27,
+   "src_frame_last": 157,
+   "retime_keys": [
+    {
+     "b": 33,
+     "f": 1080,
+     "src_sec": 1.0,
+     "src_frame": 60
+    }
+   ]
+  },
+  {
+   "id": "drift_b",
+   "start_b": 36,
+   "end_b": 40,
+   "t0": 19.6365,
+   "t1": 21.8184,
+   "f0": 1178,
+   "f1": 1309,
+   "clip": "06_drift.mp4",
+   "src_frame_first": 215,
+   "src_frame_last": 345,
+   "retime_keys": [
+    {
+     "b": 37,
+     "f": 1211,
+     "src_sec": 4.133,
+     "src_frame": 248
+    }
+   ]
+  },
+  {
+   "id": "mom",
+   "start_b": 40,
+   "end_b": 44,
+   "t0": 21.8184,
+   "t1": 24.0002,
+   "f0": 1309,
+   "f1": 1440,
+   "clip": "08_mom_chance.mp4",
+   "src_frame_first": 27,
+   "src_frame_last": 157,
+   "retime_keys": [
+    {
+     "b": 41,
+     "f": 1342,
+     "src_sec": 1.0,
+     "src_frame": 60
+    }
+   ]
+  },
+  {
+   "id": "thimble",
+   "start_b": 44,
+   "end_b": 48,
+   "t0": 24.0002,
+   "t1": 26.182,
+   "f0": 1440,
+   "f1": 1571,
+   "clip": "07_thimble.mp4",
+   "src_frame_first": 105,
+   "src_frame_last": 235,
+   "retime_keys": [
+    {
+     "b": 44,
+     "f": 1440,
+     "src_sec": 1.75,
+     "src_frame": 105
+    }
+   ]
+  },
+  {
+   "id": "injury",
+   "start_b": 48,
+   "end_b": 52,
+   "t0": 26.182,
+   "t1": 28.3639,
+   "f0": 1571,
+   "f1": 1702,
+   "clip": "09_injury_B.mp4",
+   "src_frame_first": 22,
+   "src_frame_last": 152,
+   "retime_keys": [
+    {
+     "b": 50,
+     "f": 1636,
+     "src_sec": 1.45,
+     "src_frame": 87
+    }
+   ],
+   "zoom": {
+    "center": [
+     1120,
+     800
+    ],
+    "mode": "step",
+    "keys": [
+     [
+      48,
+      1.0
+     ],
+     [
+      50,
+      1.14
+     ]
+    ]
+   }
+  },
+  {
+   "id": "bonk",
+   "start_b": 52,
+   "end_b": 60,
+   "t0": 28.3639,
+   "t1": 32.7275,
+   "f0": 1702,
+   "f1": 1964,
+   "clip": "10_bonk_scold.mp4",
+   "src_frame_first": 55,
+   "src_frame_last": 316,
+   "retime_keys": [
+    {
+     "b": 54,
+     "f": 1767,
+     "src_sec": 2.0,
+     "src_frame": 120
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     560
+    ],
+    "mode": "linear",
+    "keys": [
+     [
+      52,
+      1.0
+     ],
+     [
+      60,
+      1.07
+     ]
+    ]
+   }
+  },
+  {
+   "id": "refocus",
+   "start_b": 60,
+   "end_b": 63,
+   "t0": 32.7275,
+   "t1": 34.3639,
+   "f0": 1964,
+   "f1": 2062,
+   "clip": "05_curves_clean.mp4",
+   "src_frame_first": 732,
+   "src_frame_last": 829,
+   "retime_keys": [
+    {
+     "b": 60,
+     "f": 1964,
+     "src_sec": 12.2,
+     "src_frame": 732
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     330
+    ],
+    "mode": "linear",
+    "keys": [
+     [
+      60,
+      1.1
+     ],
+     [
+      63,
+      1.16
+     ]
+    ]
+   }
+  },
+  {
+   "id": "stutter_1",
+   "start_b": 63,
+   "end_b": 63.25,
+   "t0": 34.3639,
+   "t1": 34.5003,
+   "f0": 2062,
+   "f1": 2070,
+   "clip": "08_mom_chance.mp4",
+   "src_frame_first": 138,
+   "src_frame_last": 145,
+   "retime_keys": [
+    {
+     "b": 63,
+     "f": 2062,
+     "src_sec": 2.3,
+     "src_frame": 138
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     240
+    ],
+    "keys": [
+     [
+      63,
+      1.1
+     ]
+    ]
+   }
+  },
+  {
+   "id": "stutter_2",
+   "start_b": 63.25,
+   "end_b": 63.5,
+   "t0": 34.5003,
+   "t1": 34.6366,
+   "f0": 2070,
+   "f1": 2078,
+   "clip": "09_injury_A.mp4",
+   "src_frame_first": 113,
+   "src_frame_last": 120,
+   "retime_keys": [
+    {
+     "b": 63.25,
+     "f": 2070,
+     "src_sec": 1.883,
+     "src_frame": 113
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     700
+    ],
+    "keys": [
+     [
+      63,
+      1.14
+     ]
+    ]
+   }
+  },
+  {
+   "id": "stutter_3",
+   "start_b": 63.5,
+   "end_b": 63.75,
+   "t0": 34.6366,
+   "t1": 34.773,
+   "f0": 2078,
+   "f1": 2086,
+   "clip": "10_bonk_scold.mp4",
+   "src_frame_first": 147,
+   "src_frame_last": 154,
+   "retime_keys": [
+    {
+     "b": 63.5,
+     "f": 2078,
+     "src_sec": 2.45,
+     "src_frame": 147
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     760
+    ],
+    "keys": [
+     [
+      63,
+      1.18
+     ]
+    ]
+   }
+  },
+  {
+   "id": "stutter_4",
+   "start_b": 63.75,
+   "end_b": 64,
+   "t0": 34.773,
+   "t1": 34.9094,
+   "f0": 2086,
+   "f1": 2095,
+   "clip": "06_drift.mp4",
+   "src_frame_first": 84,
+   "src_frame_last": 92,
+   "retime_keys": [
+    {
+     "b": 63.75,
+     "f": 2086,
+     "src_sec": 1.4,
+     "src_frame": 84
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     240
+    ],
+    "keys": [
+     [
+      63,
+      1.22
+     ]
+    ]
+   }
+  },
+  {
+   "id": "reveal_heart",
+   "start_b": 64,
+   "end_b": 68,
+   "t0": 34.9094,
+   "t1": 37.0912,
+   "f0": 2095,
+   "f1": 2225,
+   "clip": "11_finish_reveal.mp4",
+   "src_frame_first": 69,
+   "src_frame_last": 199,
+   "retime_keys": [
+    {
+     "b": 64,
+     "f": 2095,
+     "src_sec": 1.15,
+     "src_frame": 69
+    },
+    {
+     "b": 66,
+     "f": 2160,
+     "src_sec": 2.25,
+     "src_frame": 135
+    }
+   ]
+  },
+  {
+   "id": "reveal_star",
+   "start_b": 68,
+   "end_b": 70,
+   "t0": 37.0912,
+   "t1": 38.1821,
+   "f0": 2225,
+   "f1": 2291,
+   "clip": "11b_finish_reveal_star.mp4",
+   "src_frame_first": 102,
+   "src_frame_last": 167,
+   "retime_keys": [
+    {
+     "b": 69,
+     "f": 2258,
+     "src_sec": 2.25,
+     "src_frame": 135
+    }
+   ]
+  },
+  {
+   "id": "result",
+   "start_b": 70,
+   "end_b": 72,
+   "t0": 38.1821,
+   "t1": 39.273,
+   "f0": 2291,
+   "f1": 2356,
+   "clip": "12_result.mp4",
+   "src_frame_first": 36,
+   "src_frame_last": 100,
+   "retime_keys": [
+    {
+     "b": 70,
+     "f": 2291,
+     "src_sec": 0.6,
+     "src_frame": 36
+    }
+   ],
+   "zoom": {
+    "center": [
+     960,
+     520
+    ],
+    "mode": "linear",
+    "keys": [
+     [
+      70,
+      1.1
+     ],
+     [
+      72,
+      1.14
+     ]
+    ]
+   }
+  },
+  {
+   "id": "final",
+   "start_b": 72,
+   "end_b": 80,
+   "t0": 39.273,
+   "t1": 43.6367,
+   "f0": 2356,
+   "f1": 2618,
+   "background": "plum"
+  }
+ ],
+ "overlays": [
+  {
+   "type": "stitch_path",
+   "start": 0,
+   "end": 4,
+   "path": "wave",
+   "count": 16,
+   "every": 0.25,
+   "color": "red",
+   "needle": true,
+   "guide": true,
+   "t0": 0.0,
+   "t1": 2.1818,
+   "f0": 0,
+   "f1": 131
+  },
+  {
+   "type": "words",
+   "start": 1,
+   "end": 4,
+   "y": 770,
+   "size": 112,
+   "gap": 40,
+   "words": [
+    [
+     "원단 위",
+     1
+    ],
+    [
+     "손떨리는",
+     2
+    ],
+    [
+     "경주",
+     3,
+     "tag"
+    ]
+   ],
+   "t0": 0.5455,
+   "t1": 2.1818,
+   "f0": 33,
+   "f1": 131
+  },
+  {
+   "type": "glow",
+   "start": 4,
+   "end": 8,
+   "cx": 960,
+   "cy": 430,
+   "r": 760,
+   "t0": 2.1818,
+   "t1": 4.3637,
+   "f0": 131,
+   "f1": 262
+  },
+  {
+   "type": "logo",
+   "start": 4,
+   "end": 8,
+   "cx": 960,
+   "cy": 430,
+   "width": 1100,
+   "t0": 2.1818,
+   "t1": 4.3637,
+   "f0": 131,
+   "f1": 262
+  },
+  {
+   "type": "text",
+   "start": 6,
+   "end": 8,
+   "text": "~재봉틀 레이싱~",
+   "x": 960,
+   "y": 850,
+   "size": 84,
+   "weight": "Bold",
+   "align": "center",
+   "color": "cream",
+   "underline": {
+    "every": 0.25,
+    "count": 8,
+    "color": "red"
+   },
+   "t0": 3.2728,
+   "t1": 4.3637,
+   "f0": 196,
+   "f1": 262
+  },
+  {
+   "type": "card_clip",
+   "id": "card_menu",
+   "start": 8,
+   "end": 12,
+   "at": 8,
+   "clip": "01_title",
+   "map": [
+    [
+     8,
+     2.0
+    ]
+   ],
+   "crop": [
+    240,
+    40,
+    1440,
+    810
+   ],
+   "cx": 1290,
+   "cy": 520,
+   "w": 860,
+   "rot": -3.0,
+   "dim_at": 10,
+   "t0": 4.3637,
+   "t1": 6.5455,
+   "f0": 262,
+   "f1": 393,
+   "t_at": 4.3637,
+   "f_at": 262
+  },
+  {
+   "type": "card_clip",
+   "id": "card_select",
+   "start": 10,
+   "end": 12,
+   "at": 10,
+   "clip": "02_trackselect",
+   "map": [
+    [
+     11,
+     1.083
+    ]
+   ],
+   "crop": [
+    240,
+    40,
+    1440,
+    810
+   ],
+   "cx": 1320,
+   "cy": 580,
+   "w": 860,
+   "rot": 2.5,
+   "t0": 5.4546,
+   "t1": 6.5455,
+   "f0": 327,
+   "f1": 393,
+   "t_at": 5.4546,
+   "f_at": 327
+  },
+  {
+   "type": "text",
+   "start": 8,
+   "end": 12,
+   "text": "재봉틀 노루발로",
+   "x": 150,
+   "y": 400,
+   "size": 62,
+   "weight": "Bold",
+   "align": "left",
+   "color": "cream",
+   "t0": 4.3637,
+   "t1": 6.5455,
+   "f0": 262,
+   "f1": 393
+  },
+  {
+   "type": "text",
+   "start": 9,
+   "end": 12,
+   "text": "재봉선을 따라 달리는",
+   "x": 150,
+   "y": 486,
+   "size": 62,
+   "weight": "Bold",
+   "align": "left",
+   "color": "cream",
+   "t0": 4.9091,
+   "t1": 6.5455,
+   "f0": 295,
+   "f1": 393
+  },
+  {
+   "type": "text",
+   "start": 10,
+   "end": 12,
+   "text": "타임어택",
+   "x": 150,
+   "y": 650,
+   "size": 136,
+   "weight": "Black",
+   "align": "left",
+   "color": "cream",
+   "underline": {
+    "every": 0.25,
+    "count": 8,
+    "color": "red"
+   },
+   "t0": 5.4546,
+   "t1": 6.5455,
+   "f0": 327,
+   "f1": 393
+  },
+  {
+   "type": "vignette",
+   "start": 12,
+   "end": 16,
+   "from": 0.15,
+   "to": 0.55,
+   "t0": 6.5455,
+   "t1": 8.7273,
+   "f0": 393,
+   "f1": 524
+  },
+  {
+   "type": "ring",
+   "at": 12,
+   "cx": 960,
+   "cy": 520,
+   "r0": 90,
+   "r1": 260,
+   "color": "cream",
+   "t_at": 6.5455,
+   "f_at": 393
+  },
+  {
+   "type": "ring",
+   "at": 13,
+   "cx": 960,
+   "cy": 530,
+   "r0": 90,
+   "r1": 300,
+   "color": "cream",
+   "t_at": 7.091,
+   "f_at": 425
+  },
+  {
+   "type": "ring",
+   "at": 14,
+   "cx": 960,
+   "cy": 540,
+   "r0": 90,
+   "r1": 340,
+   "color": "red",
+   "t_at": 7.6364,
+   "f_at": 458
+  },
+  {
+   "type": "ring",
+   "at": 15,
+   "cx": 960,
+   "cy": 545,
+   "r0": 120,
+   "r1": 420,
+   "color": "red",
+   "t_at": 8.1819,
+   "f_at": 491
+  },
+  {
+   "type": "flash",
+   "at": 16,
+   "color": "cream",
+   "alpha": 0.6,
+   "frames": 12,
+   "t_at": 8.7273,
+   "f_at": 524
+  },
+  {
+   "type": "burst",
+   "at": 16,
+   "cx": 960,
+   "cy": 500,
+   "color": "cream",
+   "t_at": 8.7273,
+   "f_at": 524
+  },
+  {
+   "type": "caption",
+   "start": 18,
+   "end": 22,
+   "x": 250,
+   "y": 800,
+   "lines": [
+    {
+     "at": 18,
+     "text": "속도를 올려!",
+     "size": 60,
+     "accent": [
+      "올려!"
+     ],
+     "t": 9.8183,
+     "f": 589
+    }
+   ],
+   "t0": 9.8183,
+   "t1": 12.0001,
+   "f0": 589,
+   "f1": 720
+  },
+  {
+   "type": "keycap",
+   "start": 18,
+   "end": 22,
+   "cx": 790,
+   "cy": 858,
+   "w": 112,
+   "h": 112,
+   "label": "W",
+   "press": [
+    18,
+    19,
+    20,
+    21
+   ],
+   "t0": 9.8183,
+   "t1": 12.0001,
+   "f0": 589,
+   "f1": 720
+  },
+  {
+   "type": "caption",
+   "start": 22,
+   "end": 26,
+   "x": 250,
+   "y": 800,
+   "lines": [
+    {
+     "at": 22,
+     "text": "방향을 틀어!",
+     "size": 60,
+     "accent": [
+      "틀어!"
+     ],
+     "t": 12.0001,
+     "f": 720
+    }
+   ],
+   "t0": 12.0001,
+   "t1": 14.1819,
+   "f0": 720,
+   "f1": 851
+  },
+  {
+   "type": "keycap",
+   "start": 22,
+   "end": 26,
+   "cx": 790,
+   "cy": 858,
+   "w": 112,
+   "h": 112,
+   "label": "<",
+   "press": [
+    22,
+    24
+   ],
+   "t0": 12.0001,
+   "t1": 14.1819,
+   "f0": 720,
+   "f1": 851
+  },
+  {
+   "type": "keycap",
+   "start": 22,
+   "end": 26,
+   "cx": 920,
+   "cy": 858,
+   "w": 112,
+   "h": 112,
+   "label": ">",
+   "press": [
+    23,
+    25
+   ],
+   "t0": 12.0001,
+   "t1": 14.1819,
+   "f0": 720,
+   "f1": 851
+  },
+  {
+   "type": "caption",
+   "start": 26,
+   "end": 30,
+   "x": 250,
+   "y": 730,
+   "lines": [
+    {
+     "at": 26,
+     "text": "빠르게,",
+     "size": 76,
+     "t": 14.1819,
+     "f": 851
+    },
+    {
+     "at": 27,
+     "text": "정확하게!",
+     "size": 76,
+     "accent": [
+      "정확하게!"
+     ],
+     "t": 14.7274,
+     "f": 884
+    }
+   ],
+   "t0": 14.1819,
+   "t1": 16.3638,
+   "f0": 851,
+   "f1": 982
+  },
+  {
+   "type": "skid",
+   "start": 33,
+   "end": 36,
+   "cx": 960,
+   "cy": 840,
+   "t0": 18.0001,
+   "t1": 19.6365,
+   "f0": 1080,
+   "f1": 1178
+  },
+  {
+   "type": "stamp",
+   "start": 33,
+   "end": 36,
+   "text": "DRIFT",
+   "cx": 900,
+   "cy": 840,
+   "size": 180,
+   "fill": "cream",
+   "stroke": "plum",
+   "skew": -0.18,
+   "t0": 18.0001,
+   "t1": 19.6365,
+   "f0": 1080,
+   "f1": 1178
+  },
+  {
+   "type": "keycap",
+   "start": 33,
+   "end": 36,
+   "cx": 1390,
+   "cy": 828,
+   "w": 210,
+   "h": 104,
+   "label": "Shift",
+   "hold": [
+    33,
+    34.65
+   ],
+   "t0": 18.0001,
+   "t1": 19.6365,
+   "f0": 1080,
+   "f1": 1178
+  },
+  {
+   "type": "caption",
+   "start": 37,
+   "end": 40,
+   "x": 250,
+   "y": 800,
+   "lines": [
+    {
+     "at": 37,
+     "text": "꼭짓점은 드리프트로!",
+     "size": 60,
+     "accent": [
+      "드리프트로!"
+     ],
+     "t": 20.182,
+     "f": 1211
+    }
+   ],
+   "t0": 20.182,
+   "t1": 21.8184,
+   "f0": 1211,
+   "f1": 1309
+  },
+  {
+   "type": "caption",
+   "start": 41,
+   "end": 44,
+   "x": 330,
+   "y": 690,
+   "icon": "game/assets/gfx/item_moms_chance.png",
+   "lines": [
+    {
+     "at": 41,
+     "text": "엄마 찬스!",
+     "size": 72,
+     "style": "purple",
+     "t": 22.3638,
+     "f": 1342
+    },
+    {
+     "at": 42,
+     "text": "잠깐 동안 자동 주행",
+     "size": 50,
+     "t": 22.9093,
+     "f": 1375
+    }
+   ],
+   "t0": 22.3638,
+   "t1": 24.0002,
+   "f0": 1342,
+   "f1": 1440
+  },
+  {
+   "type": "caption",
+   "start": 44,
+   "end": 48,
+   "x": 330,
+   "y": 690,
+   "icon": "game/assets/gfx/item_thimble.png",
+   "lines": [
+    {
+     "at": 44,
+     "text": "골무!",
+     "size": 72,
+     "style": "purple",
+     "t": 24.0002,
+     "f": 1440
+    },
+    {
+     "at": 45,
+     "text": "잠깐 동안 부상 면역",
+     "size": 50,
+     "t": 24.5457,
+     "f": 1473
+    }
+   ],
+   "t0": 24.0002,
+   "t1": 26.182,
+   "f0": 1440,
+   "f1": 1571
+  },
+  {
+   "type": "caption",
+   "start": 48,
+   "end": 52,
+   "x": 110,
+   "y": 405,
+   "lines": [
+    {
+     "at": 48,
+     "text": "너무 급하게 꺾으면…",
+     "size": 60,
+     "t": 26.182,
+     "f": 1571
+    }
+   ],
+   "t0": 26.182,
+   "t1": 28.3639,
+   "f0": 1571,
+   "f1": 1702
+  },
+  {
+   "type": "caption",
+   "start": 52,
+   "end": 60,
+   "x": 110,
+   "y": 405,
+   "lines": [
+    {
+     "at": 52,
+     "text": "재봉선을 벗어나면",
+     "size": 58,
+     "t": 28.3639,
+     "f": 1702
+    },
+    {
+     "at": 54,
+     "text": "엄마의 꿀밤!",
+     "size": 72,
+     "accent": [
+      "꿀밤!"
+     ],
+     "t": 29.4548,
+     "f": 1767
+    }
+   ],
+   "t0": 28.3639,
+   "t1": 32.7275,
+   "f0": 1702,
+   "f1": 1964
+  },
+  {
+   "type": "stamp",
+   "start": 60,
+   "end": 63,
+   "text": "다시, 제대로!",
+   "cx": 960,
+   "cy": 860,
+   "size": 120,
+   "fill": "cream",
+   "stroke": "plum",
+   "rot": -3,
+   "t0": 32.7275,
+   "t1": 34.3639,
+   "f0": 1964,
+   "f1": 2062
+  },
+  {
+   "type": "flash",
+   "at": 64,
+   "color": "cream",
+   "alpha": 0.5,
+   "frames": 12,
+   "t_at": 34.9094,
+   "f_at": 2095
+  },
+  {
+   "type": "caption",
+   "start": 64,
+   "end": 70,
+   "x": 1400,
+   "y": 560,
+   "lines": [
+    {
+     "at": 64,
+     "text": "한 땀 한 땀",
+     "size": 44,
+     "style": "purple",
+     "t": 34.9094,
+     "f": 2095
+    },
+    {
+     "at": 65,
+     "text": "그림이 되는 레이스",
+     "size": 44,
+     "style": "purple",
+     "t": 35.4548,
+     "f": 2127
+    },
+    {
+     "at": 66,
+     "text": "정직하게 박을수록",
+     "size": 44,
+     "t": 36.0003,
+     "f": 2160
+    },
+    {
+     "at": 67,
+     "text": "높은 등급!",
+     "size": 60,
+     "accent": [
+      "등급!"
+     ],
+     "t": 36.5458,
+     "f": 2193
+    }
+   ],
+   "t0": 34.9094,
+   "t1": 38.1821,
+   "f0": 2095,
+   "f1": 2291
+  },
+  {
+   "type": "starburst",
+   "at": 66,
+   "cx": 100,
+   "cy": 272,
+   "t_at": 36.0003,
+   "f_at": 2160
+  },
+  {
+   "type": "starburst",
+   "at": 69,
+   "cx": 100,
+   "cy": 272,
+   "t_at": 37.6367,
+   "f_at": 2258
+  },
+  {
+   "type": "chip",
+   "start": 70,
+   "end": 72,
+   "at": 70,
+   "text": "트랙 에디터",
+   "cx": 790,
+   "cy": 988,
+   "t0": 38.1821,
+   "t1": 39.273,
+   "f0": 2291,
+   "f1": 2356,
+   "t_at": 38.1821,
+   "f_at": 2291
+  },
+  {
+   "type": "chip",
+   "start": 71,
+   "end": 72,
+   "at": 71,
+   "text": "온라인 리더보드",
+   "cx": 1150,
+   "cy": 988,
+   "t0": 38.7276,
+   "t1": 39.273,
+   "f0": 2324,
+   "f1": 2356,
+   "t_at": 38.7276,
+   "f_at": 2324
+  },
+  {
+   "type": "stitch_path",
+   "start": 72,
+   "end": 80,
+   "path": "rect",
+   "inset": 44,
+   "count": 72,
+   "every": 0.0417,
+   "color": "cream",
+   "alpha": 0.5,
+   "t0": 39.273,
+   "t1": 43.6367,
+   "f0": 2356,
+   "f1": 2618
+  },
+  {
+   "type": "glow",
+   "start": 72,
+   "end": 80,
+   "cx": 960,
+   "cy": 360,
+   "r": 800,
+   "t0": 39.273,
+   "t1": 43.6367,
+   "f0": 2356,
+   "f1": 2618
+  },
+  {
+   "type": "logo",
+   "start": 72,
+   "end": 80,
+   "cx": 960,
+   "cy": 345,
+   "width": 960,
+   "t0": 39.273,
+   "t1": 43.6367,
+   "f0": 2356,
+   "f1": 2618
+  },
+  {
+   "type": "text",
+   "start": 73,
+   "end": 80,
+   "text": "~재봉틀 레이싱~",
+   "x": 960,
+   "y": 668,
+   "size": 66,
+   "weight": "Bold",
+   "align": "center",
+   "color": "cream",
+   "t0": 39.8185,
+   "t1": 43.6367,
+   "f0": 2389,
+   "f1": 2618
+  },
+  {
+   "type": "text",
+   "start": 74,
+   "end": 80,
+   "text": "웹 브라우저에서 바로 플레이",
+   "x": 960,
+   "y": 746,
+   "size": 40,
+   "weight": "Medium",
+   "align": "center",
+   "color": "cream",
+   "alpha": 0.9,
+   "t0": 40.364,
+   "t1": 43.6367,
+   "f0": 2422,
+   "f1": 2618
+  },
+  {
+   "type": "url",
+   "start": 75,
+   "end": 80,
+   "text": "overlock.bnbong.com",
+   "cx": 960,
+   "cy": 840,
+   "size": 60,
+   "t0": 40.9094,
+   "t1": 43.6367,
+   "f0": 2455,
+   "f1": 2618
+  },
+  {
+   "type": "attribution",
+   "start": 72,
+   "end": 80,
+   "y": 942,
+   "size": 28,
+   "lines": [
+    "Newer Wave Kevin MacLeod (incompetech.com)",
+    "Licensed under Creative Commons: By Attribution 4.0",
+    "https://creativecommons.org/licenses/by/4.0/"
+   ],
+   "t0": 39.273,
+   "t1": 43.6367,
+   "f0": 2356,
+   "f1": 2618
+  },
+  {
+   "type": "needle",
+   "at": 4,
+   "t_at": 2.1818,
+   "f_at": 131
+  },
+  {
+   "type": "needle",
+   "at": 12,
+   "t_at": 6.5455,
+   "f_at": 393
+  },
+  {
+   "type": "needle",
+   "at": 16,
+   "t_at": 8.7273,
+   "f_at": 524
+  },
+  {
+   "type": "needle",
+   "at": 32,
+   "t_at": 17.4547,
+   "f_at": 1047
+  },
+  {
+   "type": "needle",
+   "at": 48,
+   "t_at": 26.182,
+   "f_at": 1571
+  },
+  {
+   "type": "needle",
+   "at": 64,
+   "t_at": 34.9094,
+   "f_at": 2095
+  },
+  {
+   "type": "needle",
+   "at": 72,
+   "t_at": 39.273,
+   "f_at": 2356
+  },
+  {
+   "type": "fade_black",
+   "start": 79.25,
+   "end": 80,
+   "t0": 43.2276,
+   "t1": 43.6367,
+   "f0": 2594,
+   "f1": 2618
+  }
+ ]
+}

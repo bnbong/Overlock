@@ -231,6 +231,9 @@ func _tick_running(delta: float) -> void:
 		_advance_autopilot(delta)
 	var input: InputFrame = _sample_input()
 	_player.simulate(input, delta)
+	# 이번 틱 부상 발생 여부는 simulate 직후 바로 소비한다. 아래 이탈 리셋 분기가 조기 return해도
+	# 그 틱의 부상이 누락되거나 다음 틱으로 밀려 집계되지 않게 한다(부상 1회당 정확히 1회).
+	var just_cut: bool = _player.consume_just_cut()
 	var probe: Dictionary = _track.query(_player.position, _hint)
 	_hint = int(probe["idx"])
 	var err: float = float(probe["error"])
@@ -245,11 +248,13 @@ func _tick_running(delta: float) -> void:
 	if err > maxf(RESET_ABS, _track.fail * RESET_FAIL_MULT):
 		_offfabric_dwell += delta
 		if _offfabric_dwell >= RESET_DWELL:
+			if just_cut:
+				_stats.add_cut()
 			_soft_reset_off_fabric()
 			return
 	else:
 		_offfabric_dwell = 0.0
-	_stats.accumulate(delta, _player.speed_index, band, err, _player.consume_just_cut())
+	_stats.accumulate(delta, _player.speed_index, band, err, just_cut)
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
 	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
 		_finish()
@@ -364,6 +369,13 @@ func _classify(err: float) -> int:
 
 
 func _finish() -> void:
+	# 완주 후에는 시뮬이 더 돌지 않으므로 부상 사전 연출(pending)이 남아 있으면 지금 부상을 확정하고
+	# 결과 확정 전에 정확히 1회 집계한다(예전 즉시 부상과 같은 결과 — 완주 직전 창에서 면제 없음).
+	# 이번 틱에 이미 부상이 실행됐다면 pending이 아니므로 아무것도 하지 않는다(이중 집계 없음).
+	if _player.is_cut_pending():
+		_player.resolve_cut_pending_now()
+		if _player.consume_just_cut():
+			_stats.add_cut()
 	# 기록·통계는 지금 즉시 확정한다(타이밍 불변). 씬 전환만 FINISH_VIEW로 지연한다.
 	var result: Dictionary = _stats.finalize(
 		_elapsed, _track.safe, GameState.track_id, GameState.difficulty

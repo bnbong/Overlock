@@ -1,0 +1,46 @@
+{
+  "tool": "built-in image_gen",
+  "base_pose": "docs/concepts/ingame-palm-contact-v1.png",
+  "prompts": [
+    {
+      "name": "hand_flat.png",
+      "prompt": "Use case: precise-object-edit. Production transparent PNG sprite for existing Overlock anime sewing game. Use reference 1 concept art ONLY for the hand pose; reference 2 original hand.png for skin tone, drawing style and cream sleeve with purple ruffled cuff.\nOutput ONLY ONE isolated hand sprite, the hand on the RIGHT SIDE OF THE SCREEN in reference 1. Transparent RGBA background, no checkerboard painted into image, no tabletop, cloth, face, UI, text, needle, or other hand. Landscape 4:3 canvas preferably 1280x960.\nRedraw original raised hand to rest FLAT palm-down on an implied horizontal surface, viewed with low grazing perspective toward character. Back of hand and nails visible. Wrist lowered to same surface as palm heel and fingers, forearm extends horizontally out toward RIGHT image edge, never diagonally upward. Cream sleeve and purple cuff attached. Relaxed flat fingers foreshortened, fingers extend toward lower left, thumb is on upper-left inner side. EXACTLY five digits total including thumb, with clear gaps. The heel of palm and pads all rest at same plane; no clawing, no hovering, no raised wrist.\nComposition: hand plus sleeve fills width with 4% transparent margin; sleeve ends near x96%, wrist near x74% y43%, thumb tip near x15% y48%, four fingers reach lower-left and bottom around y80%, upper silhouette no higher than y25%. No drop shadow outside silhouette: contact shadows will be drawn by engine. Keep full hand silhouette unclipped. Crisp warm cel-shaded anime linework matching original sprite. No jewelry, injuries, bandages or thimble. This will be mirrored in engine to make other hand; do not include pair."
+    },
+    {
+      "name": "hand_mom_flat.png",
+      "prompt": "Use case: precise-object-edit. Edit reference 1 production game hand sprite. Replace ONLY skin details and sleeve with the mother character in reference 2: slightly mature hand with subtle knuckle creases, original mother's warm skin tone, burgundy ribbed knit long sleeve and cuff. Remove purple ruffles/cream sleeve. Hand outline, all fingers, wrist pose and landmark positions MUST remain identical to reference 1. Do NOT adopt the diagonal raised pose of reference 2. CRITICAL: preserve reference 1 exact flat palm-down pose, silhouette, composition, scale, canvas size, pixel alignment, finger lengths and every other unedited detail. Exactly five digits. Do not rotate or reposition. Output single isolated hand PNG with REAL transparent alpha, no background, no checkerboard, no fabric, no text, no cast shadow. Keep entire canvas and transparent margins identical."
+    },
+    {
+      "name": "handcut1_flat.png",
+      "prompt": "Use case: precise-object-edit. Edit reference 1 production game hand sprite. Add one small beige adhesive bandage wrapped around INDEX finger, second digit from upper left (the long finger immediately below thumb). Place bandage proximal to nail, leaving nail fully visible. No other changes or bandages. CRITICAL: preserve reference 1 exact flat palm-down pose, silhouette, composition, scale, canvas size, pixel alignment, finger lengths and every other unedited detail. Exactly five digits. Do not rotate or reposition. Output single isolated hand PNG with REAL transparent alpha, no background, no checkerboard, no fabric, no text, no cast shadow. Keep entire canvas and transparent margins identical."
+    },
+    {
+      "name": "handcut2_flat.png",
+      "prompt": "Use case: precise-object-edit. Edit reference 1 production game hand sprite. Add one small beige adhesive bandage wrapped around MIDDLE finger (third digit from upper left, the longest central finger), proximal to nail, leaving nail fully visible. No other changes or bandages. CRITICAL: preserve reference 1 exact flat palm-down pose, silhouette, composition, scale, canvas size, pixel alignment, finger lengths and every other unedited detail. Exactly five digits. Do not rotate or reposition. Output single isolated hand PNG with REAL transparent alpha, no background, no checkerboard, no fabric, no text, no cast shadow. Keep entire canvas and transparent margins identical."
+    },
+    {
+      "name": "handcut3_flat.png",
+      "prompt": "Use case: precise-object-edit. On the input flat palm-down hand sprite add ONLY two small beige adhesive bandages crossing as an X on the center back of the hand. Preserve existing index finger bandage. Preserve exact hand silhouette, posture, sleeve, skin, canvas size, framing, scale, pixel alignment and five fingers. No rotation, no resizing, no other edits. Transparent RGBA PNG with real alpha. No background, fabric, text or checkerboard."
+    },
+    {
+      "name": "hand_thimble_flat.png",
+      "prompt": "Use case: precise-object-edit. Reference 1 is edit target flat palm-down sprite. Reference 2 is ONLY gold thimble design reference, NEVER copy its raised pose. Add a snug golden metal sewing thimble with small dimples over tip/nail of INDEX finger of reference 1 (second digit from upper-left, long finger immediately beneath thumb). Thimble follows existing finger axis. Preserve every other pixel, silhouette, pose, canvas size, wrist, cuff and other fingers. Exactly five digits, only one thimble. Transparent RGBA PNG, no background, no text, no checkerboard, no cloth. No repositioning, rotation, zoom or margins change."
+    },
+    {
+      "name": "handcut1_thimble_flat.png",
+      "prompt": "Use case: precise-object-edit. Edit this EXACT 1448x1086 transparent RGBA hand sprite, preserving its canvas dimensions EXACTLY 1448 wide and 1086 high. Add ONLY a small beige bandage wrapped around index finger immediately ABOVE the existing gold thimble. The gold thimble must remain unchanged and entirely visible. Everything else stays the same, all other pixels outside tiny bandage area unchanged: hand silhouette, finger landmarks, skin shading, cream sleeve, purple cuff, transparent empty pixels, framing, pose and scale. One hand only, five digits, palm down flat, transparent background. No new backdrop or resizing or rotation. Preserve original exact 1448x1086 canvas, do not output 1447x1087. This is the index-bandage plus gold thimble state of a video game sprite."
+    },
+    {
+      "name": "handcut2_thimble_flat.png",
+      "prompt": "Use case: precise-object-edit. First reference is the EDIT TARGET, a flat palm-down hand with bandages. Second reference is the SAME HAND with gold index-finger thimble, the exact thimble appearance/position to reproduce. Add the gold thimble from reference 2 onto the same index finger tip/nail of reference 1. Keep ALL EXISTING BANDAGES of reference 1 intact (one middle finger bandage), including parts immediately above gold thimble. Change ONLY the index fingertip by adding that snug gold cap. Preserve original reference 1 pose, canvas 1448x1086, pixel alignment, exact silhouette except thimble, shading, cream sleeve with purple cuff, and every other digit. Five digits only, one gold thimble only, no bandage deletion. Transparent RGBA PNG with real alpha and identical framing. No text, checkerboard, table, cloth, cast shadow or background."
+    },
+    {
+      "name": "handcut3_thimble_flat.png",
+      "prompt": "Use case: precise-object-edit. First reference is the EDIT TARGET, a flat palm-down hand with bandages. Second reference is the SAME HAND with gold index-finger thimble, the exact thimble appearance/position to reproduce. Add the gold thimble from reference 2 onto the same index finger tip/nail of reference 1. Keep ALL EXISTING BANDAGES of reference 1 intact (index bandage AND two X-crossed bandages on back of hand), including parts immediately above gold thimble. Change ONLY the index fingertip by adding that snug gold cap. Preserve original reference 1 pose, canvas 1448x1086, pixel alignment, exact silhouette except thimble, shading, cream sleeve with purple cuff, and every other digit. Five digits only, one gold thimble only, no bandage deletion. Transparent RGBA PNG with real alpha and identical framing. No text, checkerboard, table, cloth, cast shadow or background."
+    },
+    {
+      "name": "presser_foot_large.png",
+      "prompt": "Use case: precise-object-edit. Produce ONE isolated game sprite of the SILVER PRESSER FOOT ONLY, same recognizable foot as reference 1, more crisp detailed cel shaded metallic anime rendering matching reference 2. High resolution portrait or near square canvas, full silhouette with 8 percent transparent margin. Straight frontal symmetric view at low grazing tabletop angle, broad two flat toes resting on same baseline, open central U-shaped slot between toes extending from front edge toward rear. Dark joint bearings left and right, central mounting upright above rear bridge. It must remain a compact presser foot, not whole sewing machine. NO needle, NO long overhead vertical needle bar, these are independent animated layers. The U-shaped slot must be genuinely transparent, as is all background. No cloth, table, red seam, text, cast shadow, decorative backdrop, checkerboard. Real transparent RGBA PNG. Single static part, no multiple views. Do not draw anything through center opening."
+    }
+  ]
+}

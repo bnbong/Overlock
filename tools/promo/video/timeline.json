@@ -1,0 +1,141 @@
+{
+  "_doc": "Overlock promo edit. Every time value is a beat index b of the music clip (b=0 is the first downbeat of the clip, 4 beats per bar, fractional values allowed for 16ths). Seconds and frames are derived from music/beatmap.json by render.py. Clip source times ('map' keys) are seconds inside the footage clip.",
+  "music": {
+    "file": "docs/promo/video/music/KevinMacLeod-NewerWave.mp3",
+    "beatmap": "docs/promo/video/music/beatmap.json",
+    "first_beat_index": 84,
+    "length_beats": 80,
+    "fade_in_ms": 50,
+    "fade_out_beats": [76, 80]
+  },
+  "fps": 60,
+  "size": [1920, 1080],
+  "punch": {"down": 0.045, "beat": 0.014, "tau": 0.11},
+  "shots": [
+    {"id": "intro_stitch", "start": 0, "end": 4, "bg": "plum"},
+    {"id": "intro_logo", "start": 4, "end": 8, "bg": "plum"},
+    {"id": "intro_cards", "start": 8, "end": 12, "bg": "plum"},
+    {"id": "countdown", "start": 12, "end": 16, "clip": "03_countdown_go",
+     "map": [[12, 0.0], [13, 1.0], [14, 2.0], [16, 3.0]],
+     "zoom": {"center": [960, 330], "mode": "step", "keys": [[12, 1.0], [13, 1.07], [14, 1.14], [15, 1.2]]}},
+    {"id": "go", "start": 16, "end": 18, "clip": "03_countdown_go", "map": [[16, 3.0]],
+     "zoom": {"center": [960, 420], "keys": [[16, 1.0]]}, "punch": {"down": 0.1}},
+    {"id": "speedup", "start": 18, "end": 22, "clip": "04_straight_speedup",
+     "map": [[18, 1.017], [19, 1.667], [20, 2.317], [21, 2.967]]},
+    {"id": "curve_a", "start": 22, "end": 24, "clip": "05_curves_clean", "map": [[22, 1.0]]},
+    {"id": "curve_b", "start": 24, "end": 26, "clip": "05_curves_clean", "map": [[24, 4.0]]},
+    {"id": "curve_c", "start": 26, "end": 28, "clip": "05_curves_clean", "map": [[26, 6.6]]},
+    {"id": "curve_d", "start": 28, "end": 30, "clip": "05_curves_clean", "map": [[28, 9.0]]},
+    {"id": "curve_e", "start": 30, "end": 32, "clip": "05_curves_clean", "map": [[30, 11.5]]},
+    {"id": "drift_a", "start": 32, "end": 36, "clip": "06_drift", "map": [[33, 1.0]]},
+    {"id": "drift_b", "start": 36, "end": 40, "clip": "06_drift", "map": [[37, 4.133]]},
+    {"id": "mom", "start": 40, "end": 44, "clip": "08_mom_chance", "map": [[41, 1.0]]},
+    {"id": "thimble", "start": 44, "end": 48, "clip": "07_thimble", "map": [[44, 1.75]]},
+    {"id": "injury", "start": 48, "end": 52, "clip": "09_injury_B", "map": [[50, 1.45]],
+     "zoom": {"center": [1120, 800], "mode": "step", "keys": [[48, 1.0], [50, 1.14]]}},
+    {"id": "bonk", "start": 52, "end": 60, "clip": "10_bonk_scold", "map": [[54, 2.0]],
+     "zoom": {"center": [960, 560], "mode": "linear", "keys": [[52, 1.0], [60, 1.07]]}},
+    {"id": "refocus", "start": 60, "end": 63, "clip": "05_curves_clean", "map": [[60, 12.2]],
+     "zoom": {"center": [960, 330], "mode": "linear", "keys": [[60, 1.1], [63, 1.16]]}},
+    {"id": "stutter_1", "start": 63, "end": 63.25, "clip": "08_mom_chance", "map": [[63, 2.3]],
+     "zoom": {"center": [960, 240], "keys": [[63, 1.1]]}, "punch": {"down": 0, "beat": 0}},
+    {"id": "stutter_2", "start": 63.25, "end": 63.5, "clip": "09_injury_A", "map": [[63.25, 1.883]],
+     "zoom": {"center": [960, 700], "keys": [[63, 1.14]]}, "punch": {"down": 0, "beat": 0}},
+    {"id": "stutter_3", "start": 63.5, "end": 63.75, "clip": "10_bonk_scold", "map": [[63.5, 2.45]],
+     "zoom": {"center": [960, 760], "keys": [[63, 1.18]]}, "punch": {"down": 0, "beat": 0}},
+    {"id": "stutter_4", "start": 63.75, "end": 64, "clip": "06_drift", "map": [[63.75, 1.4]],
+     "zoom": {"center": [960, 240], "keys": [[63, 1.22]]}, "punch": {"down": 0, "beat": 0}},
+    {"id": "reveal_heart", "start": 64, "end": 68, "clip": "11_finish_reveal", "map": [[64, 1.15], [66, 2.25]],
+     "mask_bottom": true, "punch": {"down": 0.03, "beat": 0.008}},
+    {"id": "reveal_star", "start": 68, "end": 70, "clip": "11b_finish_reveal_star", "map": [[69, 2.25]],
+     "mask_bottom": true, "punch": {"down": 0.03, "beat": 0.008}},
+    {"id": "result", "start": 70, "end": 72, "clip": "12_result", "map": [[70, 0.6]],
+     "zoom": {"center": [960, 520], "mode": "linear", "keys": [[70, 1.1], [72, 1.14]]}, "punch": {"down": 0.02, "beat": 0.008}},
+    {"id": "final", "start": 72, "end": 80, "bg": "plum"}
+  ],
+  "overlays": [
+    {"type": "stitch_path", "start": 0, "end": 4, "path": "wave", "count": 16, "every": 0.25, "color": "red", "needle": true, "guide": true},
+    {"type": "words", "start": 1, "end": 4, "y": 770, "size": 112, "gap": 40,
+     "words": [["원단 위", 1], ["손떨리는", 2], ["경주", 3, "tag"]]},
+
+    {"type": "glow", "start": 4, "end": 8, "cx": 960, "cy": 430, "r": 760},
+    {"type": "logo", "start": 4, "end": 8, "cx": 960, "cy": 430, "width": 1100},
+    {"type": "text", "start": 6, "end": 8, "text": "~재봉틀 레이싱~", "x": 960, "y": 850, "size": 84, "weight": "Bold", "align": "center", "color": "cream", "underline": {"every": 0.25, "count": 8, "color": "red"}},
+
+    {"type": "card_clip", "id": "card_menu", "start": 8, "end": 12, "at": 8, "clip": "01_title", "map": [[8, 2.0]], "crop": [240, 40, 1440, 810], "cx": 1290, "cy": 520, "w": 860, "rot": -3.0, "dim_at": 10},
+    {"type": "card_clip", "id": "card_select", "start": 10, "end": 12, "at": 10, "clip": "02_trackselect", "map": [[11, 1.083]], "crop": [240, 40, 1440, 810], "cx": 1320, "cy": 580, "w": 860, "rot": 2.5},
+    {"type": "text", "start": 8, "end": 12, "text": "재봉틀 노루발로", "x": 150, "y": 400, "size": 62, "weight": "Bold", "align": "left", "color": "cream"},
+    {"type": "text", "start": 9, "end": 12, "text": "재봉선을 따라 달리는", "x": 150, "y": 486, "size": 62, "weight": "Bold", "align": "left", "color": "cream"},
+    {"type": "text", "start": 10, "end": 12, "text": "타임어택", "x": 150, "y": 650, "size": 136, "weight": "Black", "align": "left", "color": "cream", "underline": {"every": 0.25, "count": 8, "color": "red"}},
+
+    {"type": "vignette", "start": 12, "end": 16, "from": 0.15, "to": 0.55},
+    {"type": "ring", "at": 12, "cx": 960, "cy": 520, "r0": 90, "r1": 260, "color": "cream"},
+    {"type": "ring", "at": 13, "cx": 960, "cy": 530, "r0": 90, "r1": 300, "color": "cream"},
+    {"type": "ring", "at": 14, "cx": 960, "cy": 540, "r0": 90, "r1": 340, "color": "red"},
+    {"type": "ring", "at": 15, "cx": 960, "cy": 545, "r0": 120, "r1": 420, "color": "red"},
+
+    {"type": "flash", "at": 16, "color": "cream", "alpha": 0.6, "frames": 12},
+    {"type": "burst", "at": 16, "cx": 960, "cy": 500, "color": "cream"},
+
+    {"type": "caption", "start": 18, "end": 22, "x": 250, "y": 800, "lines": [{"at": 18, "text": "속도를 올려!", "size": 60, "accent": ["올려!"]}]},
+    {"type": "keycap", "start": 18, "end": 22, "cx": 790, "cy": 858, "w": 112, "h": 112, "label": "W", "press": [18, 19, 20, 21]},
+
+    {"type": "caption", "start": 22, "end": 26, "x": 250, "y": 800, "lines": [{"at": 22, "text": "방향을 틀어!", "size": 60, "accent": ["틀어!"]}]},
+    {"type": "keycap", "start": 22, "end": 26, "cx": 790, "cy": 858, "w": 112, "h": 112, "label": "<", "press": [22, 24]},
+    {"type": "keycap", "start": 22, "end": 26, "cx": 920, "cy": 858, "w": 112, "h": 112, "label": ">", "press": [23, 25]},
+
+    {"type": "caption", "start": 26, "end": 30, "x": 250, "y": 730, "lines": [
+      {"at": 26, "text": "빠르게,", "size": 76},
+      {"at": 27, "text": "정확하게!", "size": 76, "accent": ["정확하게!"]}]},
+
+    {"type": "skid", "start": 33, "end": 36, "cx": 960, "cy": 840},
+    {"type": "stamp", "start": 33, "end": 36, "text": "DRIFT", "cx": 900, "cy": 840, "size": 180, "fill": "cream", "stroke": "plum", "skew": -0.18},
+    {"type": "keycap", "start": 33, "end": 36, "cx": 1390, "cy": 828, "w": 210, "h": 104, "label": "Shift", "hold": [33, 34.65]},
+    {"type": "caption", "start": 37, "end": 40, "x": 250, "y": 800, "lines": [{"at": 37, "text": "꼭짓점은 드리프트로!", "size": 60, "accent": ["드리프트로!"]}]},
+
+    {"type": "caption", "start": 41, "end": 44, "x": 330, "y": 690, "icon": "game/assets/gfx/item_moms_chance.png", "lines": [
+      {"at": 41, "text": "엄마 찬스!", "size": 72, "style": "purple"},
+      {"at": 42, "text": "잠깐 동안 자동 주행", "size": 50}]},
+    {"type": "caption", "start": 44, "end": 48, "x": 330, "y": 690, "icon": "game/assets/gfx/item_thimble.png", "lines": [
+      {"at": 44, "text": "골무!", "size": 72, "style": "purple"},
+      {"at": 45, "text": "잠깐 동안 부상 면역", "size": 50}]},
+
+    {"type": "caption", "start": 48, "end": 52, "x": 110, "y": 405, "lines": [{"at": 48, "text": "너무 급하게 꺾으면…", "size": 60}]},
+
+    {"type": "caption", "start": 52, "end": 60, "x": 110, "y": 405, "lines": [
+      {"at": 52, "text": "재봉선을 벗어나면", "size": 58},
+      {"at": 54, "text": "엄마의 꿀밤!", "size": 72, "accent": ["꿀밤!"]}]},
+
+    {"type": "stamp", "start": 60, "end": 63, "text": "다시, 제대로!", "cx": 960, "cy": 860, "size": 120, "fill": "cream", "stroke": "plum", "rot": -3},
+
+    {"type": "flash", "at": 64, "color": "cream", "alpha": 0.5, "frames": 12},
+    {"type": "caption", "start": 64, "end": 70, "x": 1400, "y": 560, "lines": [
+      {"at": 64, "text": "한 땀 한 땀", "size": 44, "style": "purple"},
+      {"at": 65, "text": "그림이 되는 레이스", "size": 44, "style": "purple"},
+      {"at": 66, "text": "정직하게 박을수록", "size": 44},
+      {"at": 67, "text": "높은 등급!", "size": 60, "accent": ["등급!"]}]},
+    {"type": "starburst", "at": 66, "cx": 100, "cy": 272},
+    {"type": "starburst", "at": 69, "cx": 100, "cy": 272},
+
+    {"type": "chip", "start": 70, "end": 72, "at": 70, "text": "트랙 에디터", "cx": 790, "cy": 988},
+    {"type": "chip", "start": 71, "end": 72, "at": 71, "text": "온라인 리더보드", "cx": 1150, "cy": 988},
+
+    {"type": "stitch_path", "start": 72, "end": 80, "path": "rect", "inset": 44, "count": 72, "every": 0.0417, "color": "cream", "alpha": 0.5},
+    {"type": "glow", "start": 72, "end": 80, "cx": 960, "cy": 360, "r": 800},
+    {"type": "logo", "start": 72, "end": 80, "cx": 960, "cy": 345, "width": 960},
+    {"type": "text", "start": 73, "end": 80, "text": "~재봉틀 레이싱~", "x": 960, "y": 668, "size": 66, "weight": "Bold", "align": "center", "color": "cream"},
+    {"type": "text", "start": 74, "end": 80, "text": "웹 브라우저에서 바로 플레이", "x": 960, "y": 746, "size": 40, "weight": "Medium", "align": "center", "color": "cream", "alpha": 0.9},
+    {"type": "url", "start": 75, "end": 80, "text": "overlock.bnbong.com", "cx": 960, "cy": 840, "size": 60},
+    {"type": "attribution", "start": 72, "end": 80, "y": 942, "size": 28,
+     "lines": ["Newer Wave Kevin MacLeod (incompetech.com)", "Licensed under Creative Commons: By Attribution 4.0", "https://creativecommons.org/licenses/by/4.0/"]},
+
+    {"type": "needle", "at": 4},
+    {"type": "needle", "at": 12},
+    {"type": "needle", "at": 16},
+    {"type": "needle", "at": 32},
+    {"type": "needle", "at": 48},
+    {"type": "needle", "at": 64},
+    {"type": "needle", "at": 72},
+    {"type": "fade_black", "start": 79.25, "end": 80}
+  ]
+}

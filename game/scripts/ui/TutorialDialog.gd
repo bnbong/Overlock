@@ -55,8 +55,10 @@ const BOX_RADIUS: float = 10.0
 const SCREEN_MARGIN: float = 8.0
 ## 라벨 박스끼리/대상과의 최소 간격(겹침 판정 여유).
 const CLEARANCE: float = 6.0
-## 바늘 콜아웃 대상: NeedleView 원점(바늘 끝 행) 기준 노루발+바로 앞 재봉선 구간.
-const NEEDLE_AREA: Rect2 = Rect2(-80.0, -110.0, 160.0, 160.0)
+## 바늘 콜아웃 대상: NeedleView 원점(관통점) 기준 확대 노루발 전체 + 바로 앞 재봉선 구간.
+## NeedleView.FOOT_RECT의 불투명 영역(x -82..83, y -147..27)과 상승한 바늘 끝(-NEEDLE_TRAVEL)·
+## 클램프(상단 약 -218)를 감싸고, 그 위로 이어지는 바늘대는 포함하지 않는다.
+const NEEDLE_AREA: Rect2 = Rect2(-91.0, -220.0, 182.0, 265.0)
 ## "시작하기" 버튼을 바늘 대상 아래에 둘 때의 간격.
 const BUTTON_GAP: float = 16.0
 

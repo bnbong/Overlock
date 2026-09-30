@@ -57,9 +57,16 @@ func accumulate(dt: float, sidx: int, band: int, err: float, just_cut: bool) -> 
 			penalty_time += OFF_SEAM_PENALTY_PER_S * dt
 			combo = 0
 	if just_cut:
-		cuts += 1
-		penalty_time += CUT_PENALTY
-		combo = 0
+		add_cut()
+
+
+## 부상(cut) 1회를 집계한다. accumulate의 just_cut 경로와, 이탈 리셋으로 accumulate를 건너뛰는
+## 틱에 부상이 겹친 경우와 완주 틱에 남은 부상 pending을 확정할 때 RaceDirector가 직접 호출한다
+## (어느 경로든 부상 1회당 정확히 1회).
+func add_cut() -> void:
+	cuts += 1
+	penalty_time += CUT_PENALTY
+	combo = 0
 
 
 ## 맵 이탈 소프트 리셋 1회를 집계한다(RaceDirector가 리셋 시 호출). 페널티는 penalty_time에

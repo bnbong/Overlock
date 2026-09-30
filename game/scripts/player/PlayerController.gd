@@ -6,6 +6,12 @@ extends Node2D
 ## simulate(input, delta)를 정해진 순서로 호출한다. 노드 본체의 rotation은
 ## 항상 0으로 두고 heading은 자식 NeedleVisual에만 반영한다(카메라 회전 방지).
 
+# 골무 활성 중 risk 상한(부상 봉인). _update_risk와 골무 획득 시 pending 해제 경로가 같은 값을 쓴다.
+const THIMBLE_RISK_CAP: float = 0.95
+# pending 소진 판정 허용치. 0.20 - 12*(1/60)이 부동소수 오차로 0보다 아주 약간 커져 한 틱 늦게
+# 부상하는 것을 막는다(틱 길이보다 충분히 작아 실제 타이밍에는 영향 없음).
+const CUT_PENDING_EPSILON: float = 1e-6
+
 var heading: float = 0.0
 var speed: float = 80.0
 var speed_index: int = 1  # 1..5
@@ -31,6 +37,12 @@ var autopilot_timer: float = 0.0
 var autopilot_target_pos: Vector2 = Vector2.ZERO
 var autopilot_target_heading: float = 0.0
 
+# 부상 사전 연출(windup) pending 상태. risk가 1.0에 도달한 틱에 Tuning.cut_windup_duration으로
+# 세팅되고 매 물리 틱 delta만큼 감소해, 0에 닿는 틱에 기존 _trigger_cut()이 한 번 실행된다.
+# >0이면 pending 중이며 이 동안 risk는 1.0으로 고정된다. 표현 계층(손 미끄러짐·놀란 눈)이 읽는
+# 읽기 전용 계약 — 물리 틱(simulate)과 해제 경로(골무·엄마찬스·이탈 리셋·reset_state)에서만 바뀐다.
+var cut_pending_timer: float = 0.0
+
 var _just_cut: bool = false
 
 @onready var _needle_visual: Polygon2D = $NeedleVisual
@@ -52,9 +64,23 @@ func reset_state(start_pos: Vector2, start_heading: float) -> void:
 	autopilot_timer = 0.0
 	autopilot_target_pos = Vector2.ZERO
 	autopilot_target_heading = 0.0
+	cut_pending_timer = 0.0
 	_just_cut = false
 	if _needle_visual != null:
 		_needle_visual.rotation = heading
+
+
+## 부상 사전 연출(pending) 중인가(표현 계층 소비용 읽기 전용).
+func is_cut_pending() -> bool:
+	return cut_pending_timer > 0.0
+
+
+## 부상 사전 연출 경과 비율. pending이 아니면 0.0, pending 중에는 시작 틱 0에서 부상 직전 틱까지
+## 단조 증가한다(1.0을 넘지 않음). 부상이 실행되는 틱에는 pending이 해제되어 다시 0.0이 된다.
+func cut_pending_progress() -> float:
+	if cut_pending_timer <= 0.0 or Tuning.cut_windup_duration <= 0.0:
+		return 0.0
+	return clampf(1.0 - cut_pending_timer / Tuning.cut_windup_duration, 0.0, 1.0)
 
 
 ## RaceDirector가 매 물리 틱에 호출하는 시뮬레이션 진입점.
@@ -66,7 +92,8 @@ func simulate(input: InputFrame, delta: float) -> void:
 		if thimble_timer < 0.0:
 			thimble_timer = 0.0
 	# 엄마찬스(오토파일럿) 활성 중에는 정상 시뮬 경로를 통째로 우회한다. 타깃은 RaceDirector가
-	# 이번 틱 simulate 전에 주입해 둔 값이다(온-레일 결정론 구간).
+	# 이번 틱 simulate 전에 주입해 둔 값이다(온-레일 결정론 구간). 부상 pending은 grant_autopilot이
+	# 이미 해제하므로 이 경로에서 멈춘 채 남지 않는다.
 	if autopilot_timer > 0.0:
 		_autopilot_update(delta)
 		return
@@ -183,6 +210,11 @@ func _update_risk(delta: float) -> void:
 	#  - 조향 지연 (steer_gap + static_bias): 반전은 유지보다 gap 적분이 ~4배 → 자연히 훨씬 위험.
 	#    static_bias는 고속 "풀조향 유지"의 상시 위험을 더해 경고 UI(0.5~)가 실제로 뜨게 한다.
 	#  - 속도 계수는 pow(_, risk_speed_exp)로 저속을 강하게 억제 → 1~2단은 사실상 무해.
+	# 부상 사전 연출(pending) 중에는 위험 누적·회복을 건너뛰고 risk를 1.0으로 고정한 채 카운트다운만
+	# 진행한다(회복·재누적으로 연출이 취소·중복되지 않게). 조향·속도·이동은 앞 단계에서 평소대로 처리.
+	if cut_pending_timer > 0.0:
+		_advance_cut_pending(delta)
+		return
 	var steer_gap: float = absf(target_steer - actual_steer)
 	var speed_factor: float = inverse_lerp(Tuning.min_speed, Tuning.max_speed, speed)
 	var speed_gate: float = pow(speed_factor, Tuning.risk_speed_exp)
@@ -200,12 +232,53 @@ func _update_risk(delta: float) -> void:
 	else:
 		risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
 	# 골무(thimble) 활성 중에는 risk를 정상 누적하되 0.95로 상한을 둔다 — 절대 1.0에 도달하지
-	# 못해 부상이 봉인된다. 창 만료 후에는 상한이 풀려 누적분이 즉시 컷으로 이어질 수 있다.
+	# 못해 부상이 봉인된다. 창 만료 후에는 상한이 풀려 누적분이 즉시 부상 pending으로 이어질 수 있다.
 	if thimble_timer > 0.0:
-		risk = clampf(risk, 0.0, 0.95)
-	# 컷 게이트: 스턴 중이 아니고 골무가 비활성일 때만 부상이 발동한다.
-	if risk >= 1.0 and stun_timer <= 0.0 and thimble_timer <= 0.0:
+		risk = clampf(risk, 0.0, THIMBLE_RISK_CAP)
+	# 컷 게이트(스턴·골무·pending 중복)는 _request_cut 한 곳에서 판정한다.
+	if risk >= 1.0:
+		_request_cut()
+
+
+## 부상 요청의 공통 진입점. 컷 게이트(pending 중 아님·스턴 중 아님·골무 비활성)를 한 곳에서 확인하고,
+## 통과하면 사전 연출 pending을 시작한다(risk 1.0 고정). windup 길이가 0 이하이면 예전처럼 즉시 부상.
+func _request_cut() -> void:
+	if cut_pending_timer > 0.0 or stun_timer > 0.0 or thimble_timer > 0.0:
+		return
+	if Tuning.cut_windup_duration <= 0.0:
 		_trigger_cut()
+		return
+	cut_pending_timer = Tuning.cut_windup_duration
+	risk = 1.0
+
+
+## pending 카운트다운을 한 틱 진행한다. 남은 시간이 (부동소수 오차 허용치 이하로) 소진되는 틱에
+## pending을 해제하고 기존 부상 패널티를 한 번 실행한다. 60Hz에서 시작 틱 뒤 정확히 12틱째.
+func _advance_cut_pending(delta: float) -> void:
+	cut_pending_timer -= delta
+	if cut_pending_timer <= CUT_PENDING_EPSILON:
+		cut_pending_timer = 0.0
+		_trigger_cut()
+	else:
+		risk = 1.0
+
+
+## 부상 pending을 취소한다(부상 미발생). 골무·엄마찬스 획득과 이탈 리셋에서만 호출해, 예약된
+## 부상이 보호 중이나 보호 종료 직후에 뒤늦게 터지지 않게 한다. 완주는 취소가 아니라
+## resolve_cut_pending_now()로 부상을 확정한다.
+func cancel_cut_pending() -> void:
+	cut_pending_timer = 0.0
+
+
+## 진행 중인 부상 pending을 남은 시간과 무관하게 지금 확정한다(RaceDirector가 완주 틱에 호출).
+## 예전에는 RISK 1.0 도달 틱에 바로 부상했으므로, 완주 직전 창에서 부상을 면제하지 않도록 기존
+## _trigger_cut() 하나로 패널티를 실행한다. pending이 아니면 아무것도 하지 않는다(이중 부상 방지).
+## 부상 여부는 호출자가 consume_just_cut()으로 소비해 집계한다.
+func resolve_cut_pending_now() -> void:
+	if cut_pending_timer <= 0.0:
+		return
+	cut_pending_timer = 0.0
+	_trigger_cut()
 
 
 func _trigger_cut() -> void:
@@ -227,6 +300,8 @@ func off_fabric_reset(reset_pos: Vector2, reset_heading: float) -> void:
 	target_steer = 0.0
 	actual_steer = 0.0
 	risk = 0.0
+	# 이탈 리셋은 별도 기믹이라 새 부상을 만들지 않는다: 진행 중인 부상 pending은 부상 없이 해제한다.
+	cancel_cut_pending()
 	offfabric_timer = Tuning.reset_lockout
 	is_drifting = false
 	drift_dir = 0.0
@@ -234,14 +309,21 @@ func off_fabric_reset(reset_pos: Vector2, reset_heading: float) -> void:
 		_needle_visual.rotation = heading  # needle 시각 회전을 새 heading에 동기
 
 
-## 골무 획득: 부상 봉인 창을 refresh한다(RaceDirector가 픽업 시 호출).
+## 골무 획득: 부상 봉인 창을 refresh한다(RaceDirector가 픽업 시 호출). 부상 pending 중이었다면
+## 예약된 부상을 해제하고 risk를 골무 상한(0.95)으로 내린다 — 골무 활성 중 규칙과 같은 상태가 되어,
+## 만료 후에는 risk가 다시 1.0에 도달해야만 새 pending이 시작된다.
 func grant_thimble() -> void:
 	thimble_timer = Tuning.thimble_duration
+	if cut_pending_timer > 0.0:
+		cancel_cut_pending()
+		risk = minf(risk, THIMBLE_RISK_CAP)
 
 
-## 엄마찬스 획득: 오토파일럿(자동주행) 창을 refresh한다(RaceDirector가 픽업 시 호출).
+## 엄마찬스 획득: 오토파일럿(자동주행) 창을 refresh한다(RaceDirector가 픽업 시 호출). 부상 pending
+## 중이었다면 예약된 부상을 해제한다. risk는 1.0에서 _autopilot_update의 회복으로 내려간다(기존 규칙).
 func grant_autopilot() -> void:
 	autopilot_timer = Tuning.autopilot_duration
+	cancel_cut_pending()
 
 
 func _finger_proximity(steer_mag: float) -> float:

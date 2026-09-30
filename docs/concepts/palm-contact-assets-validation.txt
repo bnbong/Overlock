@@ -1,0 +1,21 @@
+에셋 준비 완료: 2026-09-29
+생성 도구: 내장 image_gen
+생성 프롬프트: palm-contact-assets-prompts.json
+
+검사 결과
+- PNG 10개를 Godot 4.6.1 Image.load_from_file()로 읽었습니다.
+- 손 9개는 모두 1448x1086이며 실제 알파 투명도를 갖습니다.
+- 노루발은 1254x1254이며 실제 알파 투명도를 갖습니다.
+- 모든 이미지의 좌측 상단 픽셀 알파는 0입니다.
+- 노루발 중앙 x=width/2, y=height*0.82의 슬롯 픽셀 알파는 0입니다.
+- 엄지를 포함한 손가락 5개, 엄마의 버건디 소매, 부상별 밴드, 검지 골무를 시각적으로 확인했습니다.
+- 첫 번째 부상+골무 이미지의 초기 출력은 1447x1087이어서 폐기하고 image_gen으로 다시 생성했습니다. 프로젝트에는 수정된 1448x1086 출력이 들어 있습니다.
+- 최종 검사 출력은 'Validated PNG files: 10'이며 assertion 실패는 없었습니다.
+
+검사 명령
+'/Users/bnbong/Downloads/Godot.app/Contents/MacOS/Godot' --headless --path /tmp/overlock-palm-validation --script /tmp/overlock-palm-validation/check_assets.gd --log-file /tmp/overlock-palm-validation/check.log --quit-after 2
+
+검증 한계
+- 샌드박스 때문에 Godot 시작 시 별도 검사 프로젝트의 user data 디렉터리 생성 및 macOS 인증서 조회에 오류가 표시되었습니다. 이미지 로드와 알파 검사는 끝까지 수행됐습니다. 원래 게임의 사용자 기록은 수정하지 않았습니다.
+- 실제 인게임 리소스 연결, 손 상태 교체 시 시각적 일관성, 바늘 애니메이션, 모바일 실행은 이후 Claude 구현 단계에서 검증합니다.
+- 생성 변형은 완전히 동일한 픽셀을 공유하지 않습니다. 캔버스를 맞췄다고 모든 관절 위치가 수학적으로 동일하다고 보장하지는 않습니다. 구현 시 공통 표시 사각형을 사용하고 실제 전환 화면으로 확인합니다.
