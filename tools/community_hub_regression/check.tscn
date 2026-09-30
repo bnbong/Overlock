@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://community_hub_regression/check.gd" id="1_community_hub_check"]
+
+[node name="CommunityHubRegression" type="Node"]
+script = ExtResource("1_community_hub_check")

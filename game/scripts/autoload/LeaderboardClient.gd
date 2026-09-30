@@ -27,7 +27,7 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "2.0.0"  # §13.3 game_version. 손 밀착·바늘 연출 개편, 부상 사전 연출·페널티 대사.
+const GAME_VERSION: String = "2.1.0"  # §13.3 game_version. 커스텀 트랙 공유 허브, 모바일 조향 버튼 확대.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -114,6 +114,12 @@ func _ready() -> void:
 ## 실질 base URL(웹 origin 폴백 포함)이 비어 있지 않으면 온라인 기능 활성(true).
 func is_online_enabled() -> bool:
 	return not _effective_base_url().is_empty()
+
+
+## 실제 요청에 쓰는 base URL(트레일링 슬래시 제거, 웹 origin 폴백 반영). 공유 허브 클라이언트
+## (CommunityTrackClient)가 같은 서버 설정을 재사용할 때 쓴다.
+func api_base_url() -> String:
+	return _base()
 
 
 ## 닉네임이 1~16자로 설정돼 있으면 true(제출 가능 조건).

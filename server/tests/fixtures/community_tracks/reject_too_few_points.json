@@ -1,0 +1,35 @@
+{
+  "name": "reject_too_few_points",
+  "description": "베이크 후에도 점이 4개뿐인 경로(최소 8개)",
+  "expect": "reject",
+  "reject_reasons": [
+    "min_points"
+  ],
+  "expected_length": 0.0,
+  "length_tolerance": 1.0,
+  "expected_baked_points": 4,
+  "track": {
+    "track_id": "",
+    "name": "fixture",
+    "difficulty": "normal",
+    "fabric": "cotton",
+    "width": {
+      "perfect": 18,
+      "safe": 42,
+      "fail": 90
+    },
+    "path": [
+      {
+        "type": "polyline",
+        "points": [
+          [0.0, 0.0],
+          [2.0, 0.0],
+          [4.0, 0.0],
+          [6.0, 0.0]
+        ],
+        "closed": false
+      }
+    ],
+    "modifiers": []
+  }
+}

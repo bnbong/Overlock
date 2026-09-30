@@ -30,6 +30,7 @@ RecordStore="*res://scripts/autoload/RecordStore.gd"
 GameState="*res://scripts/autoload/GameState.gd"
 AudioManager="*res://scripts/autoload/AudioManager.gd"
 LeaderboardClient="*res://scripts/autoload/LeaderboardClient.gd"
+CommunityTrackClient="*res://scripts/autoload/CommunityTrackClient.gd"
 OrientationGuard="*res://scripts/autoload/OrientationGuard.gd"
 
 [display]
