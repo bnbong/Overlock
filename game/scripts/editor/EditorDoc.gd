@@ -10,6 +10,9 @@ extends RefCounted
 ##   items(Array[{s, type, lat}], 시작부터 호길이 s · 중심선 옆 거리 lat)
 ##   local_id(String, 저장된 custom_ id, 저장 전이면 "")
 ##   doc_key(int, 같은 트랙 계보 식별. 불러오기·사본 열기마다 새 값. 저장 id·저장 기준을 계보별로 맞춘다)
+##   gap(int, 구간 지우기로 생긴 틈. -1이면 없음. g ≥ 0이면 path[g-1](틈 앞 끝점)과 path[g](틈 뒤 끝점)
+##       사이 선분은 실제 경로가 아니다. 아이템 s는 이 선분 길이를 포함한 호길이다. 저장 형식에는 쓰지
+##       않으며, 틈이 있으면 저장·테스트·검증을 막는다. EditorEraseTool 참고)
 ## 화면 상태(zoom/pan·선택 도구·선택 아이템)는 문서에 넣지 않는다(undo·dirty 대상이 아니다).
 
 # 난이도 → 폭 프리셋(§4.5). id는 JSON/레코드 키에 쓰는 소문자.
@@ -46,6 +49,7 @@ static func make(doc_key: int) -> Dictionary:
 		"items": [],
 		"local_id": "",
 		"doc_key": doc_key,
+		"gap": -1,
 	}
 
 
@@ -111,14 +115,27 @@ static func to_track_dict(doc: Dictionary) -> Dictionary:
 static func serial(doc: Dictionary) -> String:
 	var d: Dictionary = to_track_dict(doc)
 	d.erase("track_id")
+	if has_gap(doc):
+		d["gap"] = gap_index(doc)  # 틈 상태는 저장할 수 없으므로 항상 저장본과 다르다(dirty)
 	return JSON.stringify(d, "", true)
+
+
+## 틈 위치(틈 뒤 조각의 첫 점 index). 없거나 범위를 벗어나면 -1(예전 스냅샷에는 키가 없다).
+static func gap_index(doc: Dictionary) -> int:
+	var g: int = int(doc.get("gap", -1))
+	var n: int = (doc["path"] as PackedVector2Array).size()
+	return g if g >= 2 and g <= n - 2 else -1
+
+
+static func has_gap(doc: Dictionary) -> bool:
+	return gap_index(doc) >= 0
 
 
 ## 기하 검증 결과가 유효한지 가르는 키(경로 + 판정 폭). 이름·원단 변경은 바꾸지 않는다.
 static func geom_key(doc: Dictionary) -> String:
 	var w: Dictionary = doc["width"]
-	return "%d|%.3f|%.3f|%.3f" % [
-		hash(doc["path"]), float(w["perfect"]), float(w["safe"]), float(w["fail"])
+	return "%d|%.3f|%.3f|%.3f|%d" % [
+		hash(doc["path"]), float(w["perfect"]), float(w["safe"]), float(w["fail"]), gap_index(doc)
 	]
 
 

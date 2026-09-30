@@ -17,6 +17,7 @@ const K_RIGHT: int = KEY_RIGHT
 const K_UP: int = KEY_W
 const K_DOWN: int = KEY_S
 const K_DRIFT: int = KEY_SHIFT
+const K_USE: int = KEY_SPACE
 const R: GDScript = preload("res://promo_driver/PromoRead.gd")
 const CAP_MAX_WAIT: int = 20
 const BONK_RELEASE_DEG: float = 40.0
@@ -405,6 +406,10 @@ func _detect_toast(gp: Node) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# v2.2.1 아이템 슬롯: 담긴 아이템을 곧바로 Space(use_item)로 써서 예전 즉시 발동 흐름을 유지한다.
+	var gpu: Node = _gp()
+	var use_ok: bool = gpu != null and gpu.has_method("item_slots") and _state() == 1
+	_key(K_USE, use_ok and not _held.get(K_USE, false) and not gpu.item_slots().is_empty())
 	var gp: Node = _gp()
 	if gp == null or _state() != 1 or get_tree().paused:
 		if auto_steer:

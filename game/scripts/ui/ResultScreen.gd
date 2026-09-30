@@ -8,6 +8,9 @@ extends Control
 ## 표시는 완주 직후 반드시 알아야 하는 것만 남긴다: 트랙명 / 재봉 평점(등급) / 최종 시간
 ## (+페널티) / 신기록 / 등급 산출 요소 한 줄(정확도·퍼펙트·부상) / 리더보드 제출. 난이도·
 ## Finish Time(= Final − Penalty)·Off-Seam·속도 통계는 결과 dict에 그대로 있고 화면에서만 뺐다.
+##
+## 터치 기기(MenuTouch.active)에서는 제출·재도전·메뉴 버튼을 손가락 크기로, 설명 글자를 읽을 수 있게
+## 키우고, 긴 트랙 이름·요약 줄은 줄을 바꿔 정보 열 폭을 지킨다. 데스크톱 배치는 그대로다.
 
 const TRACK_NAMES: Dictionary = {"cotton_01": "Cotton Warm-up"}
 const ToastScene = preload("res://scenes/Toast.tscn")
@@ -23,6 +26,7 @@ const CARD_MARGIN: float = 20.0  # 카드가 화면 가장자리에 남기는 �
 const CARD_MIN: Vector2 = Vector2(540.0, 470.0)
 const SCENARIO_MAX_W: float = 560.0  # 일러스트 폭 상한(카드가 과하게 넓어지지 않게).
 const SCENARIO_MIN_H: float = 200.0  # 일러스트 높이 하한(정보 열이 짧아도 이만큼은 확보).
+const _TOUCH_INFO_W: float = 460.0  # 터치 배치의 정보 열 폭(줄 바꿈 기준).
 
 var _toast: Toast
 
@@ -56,6 +60,7 @@ func _ready() -> void:
 	add_child(_toast)
 	_setup_submit(result)
 	_apply_skin()
+	_apply_touch_layout()
 	_retry_button.pressed.connect(_on_retry_pressed)
 	_menu_button.pressed.connect(_on_menu_pressed)
 	_retry_button.grab_focus()
@@ -73,6 +78,30 @@ func _apply_skin() -> void:
 	UiSkin.skin_panel(_panel_bg, "beige")
 	for b in [_submit_button, _retry_button, _menu_button]:
 		UiSkin.skin_button(b, "large")
+
+
+## 터치 기기: 버튼 높이·글자를 키우고, 트랙 이름(최대 두 줄)과 요약·상태 줄은 줄을 바꾼다.
+## 정보 열은 고정 폭(_TOUCH_INFO_W)으로 두어 일러스트와 함께 카드가 화면 안에 들어가게 한다.
+func _apply_touch_layout() -> void:
+	if not MenuTouch.active():
+		return
+	MenuTouch.buttons([_submit_button, _retry_button, _menu_button])
+	var captions: Array = [$Panel/Info/GradeRow/GradeBox/GradeCaption]
+	captions.append($Panel/Info/GradeRow/TimeBox/TimeCaption)
+	MenuTouch.texts(captions + [_penalty_label, _stats_label, _submit_status])
+	_info.custom_minimum_size.x = _TOUCH_INFO_W
+	_info.add_theme_constant_override("separation", 6)
+	for l in [_track_label, _stats_label, _submit_status]:
+		(l as Label).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_track_label.max_lines_visible = 2
+	_track_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# 요약 줄은 "Cuts / 2"처럼 항목 안에서 끊기지 않게, 항목 안 공백만 줄바꿈 없는 공백으로 바꾼다
+	# (줄 바꿈은 항목 구분점 자리에서만 일어난다).
+	var sep: String = "   ·   "
+	var items: PackedStringArray = _stats_label.text.split(sep)
+	for i in range(items.size()):
+		items[i] = items[i].replace(" ", "\u00a0")
+	_stats_label.text = sep.join(items)
 
 
 ## 에디터 테스트 플레이 결과: 주 버튼은 "편집으로 돌아가기"(앞·포커스), 보조는 "다시 테스트".

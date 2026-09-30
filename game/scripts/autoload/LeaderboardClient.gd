@@ -22,12 +22,27 @@ extends Node
 ## 호출 규약: 결과 시그널에 먼저 connect한 뒤 메서드를 호출한다. 오프라인·닉네임 없음
 ## 같은 가드 실패는 메서드 호출 중 동기적으로 시그널을 방출하므로, "호출 후 await" 패턴은
 ## 그 경우를 놓친다(UI는 모두 connect-먼저-후-호출로 안전하다).
+##
+## 리더보드 조회는 예외로 조회 번호(1 이상)를 돌려주고 결과를 leaderboard_result(조회 번호·트랙·난이도
+## 포함)로 알린다. 가장 최근 조회만 결과를 내고, 그보다 먼저 보낸 조회의 늦은 응답과 cancel_leaderboard로
+## 취소한 조회의 응답은 버린다(빠른 트랙 전환·화면 재진입 때 이전 응답이 섞이지 않게,
+## CommunityTrackClient의 요청 번호 관례). 결과는 오프라인·요청 시작 즉시 실패를 포함해 항상 다음
+## 프레임 이후에 알린다(호출자가 조회 번호를 먼저 받은 뒤 도착한다).
+## 기존 leaderboard_fetched는 호환을 위해 같은 시점(최신 조회 결과)에 함께 방출한다.
 
 signal submit_completed(success: bool, rank: int, status: String, message: String)
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
+signal leaderboard_result(
+	request_id: int,
+	track_id: String,
+	difficulty: String,
+	success: bool,
+	entries: Array,
+	message: String
+)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "2.2.0"  # §13.3 game_version. 트랙 에디터 개편, Start 트랙 종류 선택.
+const GAME_VERSION: String = "2.2.1"  # §13.3 game_version. 아이템 슬롯, 구간 지우기, 모바일 메뉴 터치 배치.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -90,6 +105,13 @@ var steer_expo: float = DEFAULT_STEER_EXPO
 # 닫히면 save_tutorial_seen으로 영속한다(하위 호환: settings.json에 키 없으면 false).
 var tutorial_seen: bool = false
 
+# user://settings.json 쓰기 시도 누적 횟수(자동 저장이 입력마다 파일을 쓰지 않는지 회귀 검사가 센다).
+var settings_writes: int = 0
+
+# 리더보드 조회 번호: 마지막으로 발급한 번호와 결과를 낼 최신 조회 번호(0 = 없음·취소됨).
+var _leaderboard_seq: int = 0
+var _leaderboard_live: int = 0
+
 # settings.json에 사용자가 수동으로 적은 셀프호스팅/개발용 base_url이 있으면 true. 이 경우에만
 # base_url을 다시 settings.json에 기록해 보존한다(기본값은 코드에서 결정 — 향후 기본 변경 자동 반영).
 var _base_url_manual: bool = false
@@ -130,9 +152,14 @@ func has_nickname() -> bool:
 
 ## 닉네임을 갱신하고 user://settings.json에 저장한다(서버 URL은 UI에서 제거됨 — 건드리지
 ## 않는다). 저장 성공 시 true. 최초 실행 모달·타이틀 태그·설정 화면이 공유한다.
+## 저장에 실패하면 메모리 값도 이전 닉네임으로 되돌린다(화면이 실패를 알리고 취소할 수 있게).
 func save_nickname(new_nickname: String) -> bool:
+	var previous: String = nickname
 	nickname = new_nickname.strip_edges()
-	return _write_settings()
+	if _write_settings():
+		return true
+	nickname = previous
+	return false
 
 
 ## 볼륨 설정(선형 0..1)을 갱신하고 settings.json에 영속한다(0..1로 클램프). 저장 성공 시 true.
@@ -199,6 +226,7 @@ func _settings_dict() -> Dictionary:
 
 ## user://settings.json 저장(단일 경로). 성공 시 true.
 func _write_settings() -> bool:
+	settings_writes += 1
 	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("LeaderboardClient: 설정 저장 실패 " + SETTINGS_PATH)
@@ -268,27 +296,56 @@ func submit_run(result: Dictionary) -> void:
 	submit_completed.emit(true, rank, status, "")
 
 
-## GET /api/leaderboard?track_id=&difficulty=&limit=. 결과는 leaderboard_fetched로 통지.
+## GET /api/leaderboard?track_id=&difficulty=&limit=. 조회 번호를 돌려주고 결과는 leaderboard_result
+## (와 호환용 leaderboard_fetched)로 통지한다. 새 조회를 시작하면 진행 중인 이전 조회의 결과는 버린다.
 ## 응답 최상위 구조가 달라도 관대하게 파싱한다(_extract_entries).
-func fetch_leaderboard(track_id: String, difficulty: String, limit: int = 100) -> void:
+func fetch_leaderboard(track_id: String, difficulty: String, limit: int = 100) -> int:
+	_leaderboard_seq += 1
+	var id: int = _leaderboard_seq
+	_leaderboard_live = id
 	if not is_online_enabled():
-		leaderboard_fetched.emit(false, [], "오프라인 (서버 URL 미설정)")
-		return
+		_finish_leaderboard.call_deferred(id, track_id, difficulty, false, [], "오프라인 (서버 URL 미설정)")
+		return id
+	_fetch_leaderboard_async(id, track_id, difficulty, limit)
+	return id
+
+
+## 조회를 취소한다(화면을 떠날 때). request_id가 0이면 진행 중인 조회 전부. 취소된 조회는 결과를 내지 않는다.
+func cancel_leaderboard(request_id: int = 0) -> void:
+	if request_id == 0 or request_id == _leaderboard_live:
+		_leaderboard_live = 0
+
+
+func _fetch_leaderboard_async(id: int, track_id: String, difficulty: String, limit: int) -> void:
 	var url: String = (
 		"%s/api/leaderboard?track_id=%s&difficulty=%s&limit=%d"
 		% [_base(), track_id.uri_encode(), difficulty.uri_encode(), limit]
 	)
+	# _request는 HTTPRequest.request가 바로 오류를 내면(형식이 잘못된 주소 등) await 없이 돌아온다.
+	# 그래도 결과가 조회 번호 반환보다 먼저 도착하지 않도록 방출은 모두 지연 호출로 한다.
 	var resp: Dictionary = await _request(HTTPClient.METHOD_GET, url, "")
 	if not bool(resp["ok"]):
-		leaderboard_fetched.emit(false, [], _friendly_reason(resp))
+		var reason: String = _friendly_reason(resp)
+		_finish_leaderboard.call_deferred(id, track_id, difficulty, false, [], reason)
 		return
 	var code: int = int(resp["code"])
 	if code < 200 or code >= 300:
 		var msg: String = "트랙을 찾을 수 없음" if code == 404 else "서버 오류 (HTTP %d)" % code
-		leaderboard_fetched.emit(false, [], msg)
+		_finish_leaderboard.call_deferred(id, track_id, difficulty, false, [], msg)
 		return
 	var data: Variant = JSON.parse_string(str(resp["body"]))
-	leaderboard_fetched.emit(true, _extract_entries(data), "")
+	_finish_leaderboard.call_deferred(id, track_id, difficulty, true, _extract_entries(data), "")
+
+
+## 최신 조회의 결과만 방출한다(이전 조회·취소된 조회의 늦은 응답은 여기서 버린다).
+func _finish_leaderboard(
+	id: int, track_id: String, difficulty: String, success: bool, entries: Array, message: String
+) -> void:
+	if id != _leaderboard_live:
+		return
+	_leaderboard_live = 0
+	leaderboard_result.emit(id, track_id, difficulty, success, entries, message)
+	leaderboard_fetched.emit(success, entries, message)
 
 
 ## GET /api/health → {status, version}. 결과는 health_checked로 통지(서버 연결 확인용).

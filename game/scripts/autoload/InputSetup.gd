@@ -12,6 +12,8 @@ func _ready() -> void:
 	_bind(&"speed_up", [KEY_UP, KEY_W])
 	_bind(&"speed_down", [KEY_DOWN, KEY_S])
 	_bind(&"drift", [KEY_SHIFT])
+	# 아이템 슬롯 사용(v2.2.1). Ctrl 조합은 웹에서 Ctrl+W/S/A/D 브라우저 단축키와 겹쳐 Space를 쓴다.
+	_bind(&"use_item", [KEY_SPACE])
 	_bind(&"restart", [KEY_R])
 	_bind(&"pause", [KEY_ESCAPE])
 	_bind(&"to_menu", [KEY_M])

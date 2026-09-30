@@ -30,9 +30,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -240.0
-offset_top = -150.0
+offset_top = -178.0
 offset_right = 240.0
-offset_bottom = 150.0
+offset_bottom = 178.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -46,9 +46,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -200.0
-offset_top = -118.0
+offset_top = -146.0
 offset_right = 200.0
-offset_bottom = 118.0
+offset_bottom = 146.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 14
@@ -83,4 +83,8 @@ horizontal_alignment = 1
 
 [node name="ConfirmButton" type="Button" parent="Panel"]
 layout_mode = 2
-text = "확인"
+text = "저장"
+
+[node name="SecondaryButton" type="Button" parent="Panel"]
+layout_mode = 2
+text = "취소"

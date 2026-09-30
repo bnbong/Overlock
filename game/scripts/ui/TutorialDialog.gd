@@ -6,7 +6,8 @@ extends Control
 ## (Esc/"시작하기" 버튼 → closed 방출 후 queue_free).
 ##
 ## - 인게임 화면 전체를 살짝 어둡게 덮고, 설명 대상(바늘·미니맵·진행도·시간·속도·RISK·
-##   드리프트, 터치 모드면 조향/일시정지 버튼)만 딤에서 오려내 보라 박음질 테두리로 강조한다.
+##   드리프트·아이템 슬롯, 터치 모드면 조향/일시정지/USE 버튼)만 딤에서 오려내 보라 박음질 테두리로
+##   강조한다.
 ## - 대상마다 베이지 설명 라벨 + 화살표를 붙인다. 라벨은 대상 위치에 따라 선호 방향 목록을
 ##   차례로 시도해, 다른 대상·라벨·제목·버튼과 겹치지 않는 첫 자리에 놓는다(_place_box).
 ## - 대상 사각형은 하드코딩하지 않고 첫 프레임 레이아웃이 확정된 뒤 HUD 노드에서 읽는다.
@@ -21,6 +22,9 @@ enum Side { ABOVE, BELOW, LEFT, RIGHT }
 
 const TITLE_TEXT: String = "Overlock 튜토리얼"
 const NOTE_ITEMS: String = "아이템 — 골무: 잠시 부상 면역 · 엄마 찬스: 잠시 자동 주행"
+const TEXT_SLOTS_KEYS: String = "먹은 아이템은 2칸에 보관\nSpace로 사용(먼저 먹은 것부터)"
+const TEXT_SLOTS_TOUCH: String = "먹은 아이템은 2칸에 보관"
+const TEXT_USE_TOUCH: String = "USE 버튼으로 아이템 사용\n(먼저 먹은 것부터)"
 const NOTE_KEYS: String = "R 재시작 · Esc 일시정지"
 const TEXT_NEEDLE_KEYS: String = "보라색 재봉선을 따라 바늘을 움직이세요.\n← → (A/D) 조향"
 const TEXT_NEEDLE_TOUCH: String = "보라색 재봉선을 따라 바늘을 움직이세요."
@@ -150,7 +154,11 @@ func _collect_specs(touch: TouchControls) -> Array:
 		var stext: String = TEXT_SPEED_TOUCH if touch != null else TEXT_SPEED_KEYS
 		specs.append(_spec(speed, stext, [Side.ABOVE, Side.LEFT]))
 	_add_node_spec(specs, hud, "RiskMeter", TEXT_RISK, [Side.ABOVE, Side.RIGHT])
+	var slots_text: String = TEXT_SLOTS_TOUCH if touch != null else TEXT_SLOTS_KEYS
+	_add_node_spec(specs, hud, "ItemSlots", slots_text, [Side.ABOVE, Side.RIGHT])
 	if touch != null:
+		var use: Rect2 = _touch_rect(touch, TouchControls.Btn.USE_ITEM)
+		specs.append(_spec(use, TEXT_USE_TOUCH, [Side.LEFT, Side.ABOVE]))
 		var drift: Rect2 = _touch_rect(touch, TouchControls.Btn.DRIFT)
 		specs.append(_spec(drift, TEXT_DRIFT_TOUCH, [Side.ABOVE, Side.LEFT]))
 		var steer: Rect2 = _touch_rect(touch, TouchControls.Btn.STEER_LEFT).merge(

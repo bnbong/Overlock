@@ -110,7 +110,7 @@ awk -v userdir="$USERDIR_NAME" '
 }
 mv "$PROJ/project.godot.new" "$PROJ/project.godot"
 mkdir -p "$PROJ/track_editor_regression"
-cp "$HERE/check.gd" "$HERE/check_base.gd" "$HERE/check_doc.gd" "$HERE/check_view.gd" "$HERE/check_items.gd" "$HERE/check_review.gd" "$HERE/check.tscn" "$PROJ/track_editor_regression/"
+cp "$HERE/check.gd" "$HERE/check_base.gd" "$HERE/check_doc.gd" "$HERE/check_view.gd" "$HERE/check_items.gd" "$HERE/check_review.gd" "$HERE/check_erase.gd" "$HERE/check.tscn" "$PROJ/track_editor_regression/"
 
 # 제한 시간 안에서 Godot 실행: run_godot <제한 초> <log> <Godot 인자...>. 결과는 RUN_CODE(시간 초과 124).
 RUN_CODE=0

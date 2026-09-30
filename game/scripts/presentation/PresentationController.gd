@@ -153,6 +153,15 @@ func _ready() -> void:
 	add_child(_toast)
 
 
+## 주행 씬이 트리를 떠나면(일시정지 후 메뉴·재시작, 에디터 복귀, 결과 전환 등 모든 경로) 이 노드가
+## 구동하던 재봉틀 틱 루프를 멈춘다. 틱 rate 갱신자가 사라지므로 여기서 한 번에 정리해야 메뉴로
+## 나간 뒤 마지막 rate로 틱이 계속 울리지 않는다(AudioManager.stop_run_audio 참조).
+func _exit_tree() -> void:
+	var am: Node = _audio()
+	if am != null and am.has_method("stop_run_audio"):
+		am.stop_run_audio()
+
+
 ## 트랙 JSON의 fabric 필드로 원단 타일 텍스처와 셰이더 대표색을 결정한다(1회).
 ## 읽기 전용(TrackLoader 캐시 조회) → 물리 루프·시뮬 결정론과 무관.
 func _setup_fabric() -> void:

@@ -24,9 +24,16 @@ signal view_changed
 signal item_press(world_pos: Vector2)
 signal item_drag(world_pos: Vector2)
 signal item_release
+# 구간 지우기(ERASE): 누름·드래그 위치를 월드 좌표로 넘기고, 그리기 영역 안에서 떼면 erase_end,
+# 영역 밖에서 떼거나 뗌을 놓치거나 취소되면 erase_cancel(문서 불변). 판정·적용은 EditorEraseTool이 한다.
+# continuous=false는 영역 밖에 나갔다가 들어온 첫 위치다(그 사이를 브러시로 잇지 않는다).
+signal erase_begin(world_pos: Vector2)
+signal erase_dragged(world_pos: Vector2, continuous: bool)
+signal erase_end
+signal erase_cancel
 
 # 도구. 값은 테스트 복귀 스냅샷에 정수로 남으므로 기존 값(DRAW=0, TRIM=1)을 유지하고 뒤에 붙인다.
-enum Mode { DRAW, TRIM, PAN, ITEM }
+enum Mode { DRAW, TRIM, PAN, ITEM, ERASE }
 
 const MIN_SAMPLE_PX: float = 4.0  # 최소 이동 4px마다 원시 점 추가
 # 새 문서 시작 배율. 수동 축소·전체 보기의 하한(ZOOM_MIN)은 이보다 낮아, 허용 최대 길이(8000)의 직선
@@ -58,6 +65,11 @@ const AUTOPILOT_COLOR: Color = Color(0.93, 0.46, 0.62, 1.0)  # 엄마 찬스
 const REVIEW_COLOR: Color = Color(1.0, 0.25, 0.2, 1.0)  # 검토 필요 아이템 테두리
 const SELECT_COLOR: Color = Color(1.0, 1.0, 1.0, 0.95)  # 선택 아이템 테두리
 const FOCUS_COLOR: Color = Color(0.35, 0.85, 1.0, 1.0)  # 검증 항목 "해당 위치로 이동" 강조
+const GAP_COLOR: Color = Color(1.0, 0.36, 0.30, 1.0)  # 틈 끝점(이어 그릴 곳)
+const BRUSH_COLOR: Color = Color(1.0, 0.95, 0.85, 0.8)  # 지우기 브러시 원
+# 틈 끝점 고리 반경: TrackEditor의 이어 그리기 스냅 반경(SNAP_PX 24, 월드 최소 28)과 같게 그린다.
+const GAP_RING_PX: float = 24.0
+const GAP_RING_MIN: float = 28.0
 const ITEM_ICON_PX: float = 22.0  # 아이템 아이콘 화면 크기(줌과 무관)
 # 게임 아이템과 같은 스프라이트(ItemField·HUD와 같은 에셋).
 const ICON_THIMBLE: Texture2D = preload("res://assets/gfx/item_thimble.png")
@@ -66,6 +78,11 @@ const ICON_AUTOPILOT: Texture2D = preload("res://assets/gfx/item_moms_chance.png
 const MIN_BAND_PX: float = 3.0  # 코리도 밴드 최소 두께
 
 var mode: int = Mode.DRAW
+# 구간 지우기 미리보기(EditorEraseTool이 넣는다. {segs, refused, start?, gap?}, 빈 Dictionary면 끔).
+var erase_preview: Dictionary = {}:
+	set(value):
+		erase_preview = value
+		queue_redraw()
 
 var _zoom: float = ZOOM_DEFAULT
 var _pan: Vector2 = Vector2.ZERO
@@ -92,12 +109,22 @@ var _item_marks: Array = []  # [{pos(월드), type, review(bool)}]
 var _preview: PackedVector2Array = PackedVector2Array()  # 적용 전 미리보기 경로(비면 없음)
 var _item_active: bool = false  # 아이템 도구 누름 중
 var _focus_points: PackedVector2Array = PackedVector2Array()  # 검증 항목 강조 위치(월드)
+var _gap: int = -1  # 틈 index(EditorDoc gap). _centerline[_gap-1]과 [_gap] 사이는 그리지 않는다
+var _erasing: bool = false
+var _erase_outside: bool = false  # 지우기 드래그가 그리기 영역 밖에 나가 있다
+var _brush_on: bool = false
+var _brush_screen: Vector2 = Vector2.ZERO
+# 마지막 포인터 위치(화면)와 그때의 월드 좌표. 드래그 중 카메라가 바뀌어 포인터 아래 월드 점이 달라지면
+# (키·버튼 줌, 전체 보기, 화면 이동) 이전 위치와 잇지 않는다(_on_view_jump).
+var _pointer_screen: Vector2 = Vector2.ZERO
+var _pointer_world: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_CLICK
 	clip_contents = true
 	_last_size = size
+	view_changed.connect(_on_view_jump)
 
 
 func world_to_screen(w: Vector2) -> Vector2:
@@ -113,11 +140,13 @@ func world_radius(px: float, min_world: float) -> float:
 	return maxf(min_world, px / _zoom)
 
 
-## 중심선/폭 갱신(스트로크·편집 후 TrackEditor가 호출).
-func set_track(centerline: PackedVector2Array, safe: float, fail: float) -> void:
+## 중심선/폭 갱신(스트로크·편집 후 TrackEditor가 호출). gap은 틈 위치(EditorDoc.gap_index, 없으면 -1)이며
+## 틈 선분은 그리지 않고 두 끝점을 강조한다.
+func set_track(centerline: PackedVector2Array, safe: float, fail: float, gap: int = -1) -> void:
 	_centerline = centerline
 	_safe = safe
 	_fail = fail
+	_gap = gap
 	queue_redraw()
 
 
@@ -138,6 +167,9 @@ func set_mode(m: int) -> void:
 	mode = m
 	if m != Mode.TRIM:
 		set_trim_preview(-1)
+	if m != Mode.ERASE:
+		_brush_on = false
+		erase_preview = {}
 	mouse_default_cursor_shape = CURSOR_DRAG if m == Mode.PAN else CURSOR_ARROW
 	if m == Mode.ITEM:
 		mouse_default_cursor_shape = CURSOR_POINTING_HAND
@@ -225,11 +257,14 @@ func cancel_input() -> void:
 	if _trimming:
 		_trimming = false
 		trim_hover_exit.emit()  # 취소는 자르지 않는다(미리보기만 끔)
+	if _erasing:
+		_erasing = false
+		erase_cancel.emit()  # 취소는 지우지 않는다
 	queue_redraw()
 
 
 func is_busy() -> bool:
-	return _drawing or _panning or _trimming or _item_active
+	return _drawing or _panning or _trimming or _item_active or _erasing
 
 
 ## 월드 점을 그리기 영역 중앙으로 옮긴다(zoom은 min_zoom보다 작으면 올린다). 카메라만 바뀐다.
@@ -249,6 +284,9 @@ func _notification(what: int) -> void:
 		NOTIFICATION_MOUSE_EXIT:
 			if mode == Mode.TRIM and not _trimming:
 				trim_hover_exit.emit()
+			if _brush_on:
+				_brush_on = false
+				queue_redraw()
 		NOTIFICATION_RESIZED:
 			_on_resized()
 		NOTIFICATION_FOCUS_EXIT, NOTIFICATION_VISIBILITY_CHANGED:
@@ -313,12 +351,13 @@ func _handle_button(event: InputEventMouseButton) -> void:
 			if event.pressed:
 				_press_left(event.position)
 			else:
-				_release_left()
+				_release_left(event.position)
 
 
 func _press_left(pos: Vector2) -> void:
 	grab_focus()
 	cancel_input()
+	_track_pointer(pos)
 	match mode:
 		Mode.TRIM:
 			_trimming = true
@@ -329,6 +368,12 @@ func _press_left(pos: Vector2) -> void:
 		Mode.ITEM:
 			_item_active = true
 			item_press.emit(screen_to_world(pos))
+		Mode.ERASE:
+			_erasing = true
+			_erase_outside = false
+			_brush_on = true
+			_brush_screen = pos
+			erase_begin.emit(screen_to_world(pos))
 		_:
 			_drawing = true
 			_active_raw = PackedVector2Array([screen_to_world(pos)])
@@ -337,14 +382,18 @@ func _press_left(pos: Vector2) -> void:
 
 
 ## 왼쪽 뗌. 그리기 영역 밖에서 떼도(마우스 포커스가 캔버스에 남아 이벤트가 온다) 같은 처리다.
-func _release_left() -> void:
+## 단 구간 지우기는 영역 안에서 뗐을 때만 적용하고, 밖에서 떼거나 뗌을 놓치면(pos 없음) 취소한다.
+func _release_left(pos: Vector2 = Vector2.INF) -> void:
 	if _drawing:
-		_drawing = false
-		var raw: PackedVector2Array = _active_raw
-		_active_raw = PackedVector2Array()
+		_finish_stroke()
+	if _erasing:
+		_erasing = false
+		_brush_on = false  # 터치에서는 손가락을 뗀 뒤 브러시 원이 남지 않게 한다
 		queue_redraw()
-		if raw.size() >= 1:
-			stroke_committed.emit(raw)
+		if Rect2(Vector2.ZERO, size).has_point(pos):
+			erase_end.emit()
+		else:
+			erase_cancel.emit()
 	if _trimming:
 		_trimming = false
 		trim_end.emit()
@@ -357,8 +406,10 @@ func _release_left() -> void:
 
 func _handle_motion(event: InputEventMouseMotion) -> void:
 	var left: bool = (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0
+	_track_pointer(event.position)
 	# 뗌 이벤트를 놓친 채(창 밖에서 뗌 등) 버튼 없이 움직이면 뗀 것으로 마무리한다.
-	if not left and (_drawing or _trimming or _item_active or (_panning and mode == Mode.PAN)):
+	var any_left: bool = _drawing or _trimming or _item_active or _erasing
+	if not left and (any_left or (_panning and mode == Mode.PAN)):
 		var other: bool = (
 			(event.button_mask & (MOUSE_BUTTON_MASK_MIDDLE | MOUSE_BUTTON_MASK_RIGHT)) != 0
 		)
@@ -374,6 +425,9 @@ func _handle_motion(event: InputEventMouseMotion) -> void:
 		if _item_active and left:
 			item_drag.emit(screen_to_world(event.position))
 		return
+	if mode == Mode.ERASE:
+		_erase_motion(event.position, left)
+		return
 	if mode == Mode.TRIM:
 		if _trimming and left:
 			trim_dragged.emit(screen_to_world(event.position))
@@ -385,6 +439,52 @@ func _handle_motion(event: InputEventMouseMotion) -> void:
 			_active_raw.append(screen_to_world(event.position))
 			_last_screen = event.position
 			queue_redraw()
+
+
+## 진행 중 스트로크를 지금까지 그린 원시 점으로 마무리한다(뗌·카메라 점프 공용).
+func _finish_stroke() -> void:
+	_drawing = false
+	var raw: PackedVector2Array = _active_raw
+	_active_raw = PackedVector2Array()
+	queue_redraw()
+	if raw.size() >= 1:
+		stroke_committed.emit(raw)
+
+
+func _track_pointer(pos: Vector2) -> void:
+	_pointer_screen = pos
+	_pointer_world = screen_to_world(pos)
+
+
+## 카메라가 바뀌었을 때: 포인터 아래 월드 점이 그대로면(포인터 기준 휠 줌) 아무것도 하지 않는다. 달라졌으면
+## 지우기는 다음 이동을 이전 위치와 잇지 않고(문지르지 않은 구간을 지우지 않게), 그리기는 지금까지 그린
+## 스트로크로 마무리한다(새 위치까지 직선이 끼어들지 않게). 끝부분 자르기·아이템 드래그는 현재 위치만 판정해
+## 보간이 없으므로 그대로 둔다.
+func _on_view_jump() -> void:
+	if not (_drawing or _erasing):
+		return
+	var now: Vector2 = screen_to_world(_pointer_screen)
+	if now.distance_to(_pointer_world) * _zoom < 0.5:
+		return
+	_pointer_world = now
+	if _erasing:
+		_erase_outside = true
+	if _drawing:
+		_finish_stroke()
+
+
+## 지우기 도구 이동: 브러시 원을 따라 그리고, 누르는 중이면 영역 안 위치만 넘긴다.
+func _erase_motion(pos: Vector2, left: bool) -> void:
+	_brush_on = true
+	_brush_screen = pos
+	queue_redraw()
+	if not (_erasing and left):
+		return
+	if not Rect2(Vector2.ZERO, size).has_point(pos):
+		_erase_outside = true
+		return
+	erase_dragged.emit(screen_to_world(pos), not _erase_outside)
+	_erase_outside = false
 
 
 func _apply_zoom(pivot: Vector2, factor: float) -> void:
@@ -404,11 +504,16 @@ func _draw() -> void:
 	if _centerline.size() >= 2:
 		_draw_centerline()
 		_draw_trim_preview()
+		_draw_gap()
+		_draw_erase_preview()
 		_draw_items()
 	if _preview.size() >= 2:
 		draw_polyline(_project(_preview), PREVIEW_COLOR, 2.0)
 	if _active_raw.size() >= 2:
 		draw_polyline(_project(_active_raw), RAW_COLOR, 1.5)
+	if _brush_on and mode == Mode.ERASE:
+		var br: float = world_radius(EditorEraseTool.ERASE_PX, EditorEraseTool.ERASE_RADIUS) * _zoom
+		draw_arc(_brush_screen, br, 0.0, TAU, 32, BRUSH_COLOR, 1.5)
 	_draw_markers()
 	for f in _focus_points:
 		var fc: Vector2 = world_to_screen(f)
@@ -440,9 +545,11 @@ func _draw_grid() -> void:
 func _draw_centerline() -> void:
 	var screen: PackedVector2Array = _project(_centerline)
 	# fail/safe 코리도 밴드(폭×2 두께 폴리라인) → 중심선 → 시작/끝 마커 → 진행 화살표.
-	draw_polyline(screen, CORRIDOR_COLOR, maxf(_fail * 2.0 * _zoom, MIN_BAND_PX * 2.0))
-	draw_polyline(screen, SAFE_COLOR, maxf(_safe * 2.0 * _zoom, MIN_BAND_PX))
-	draw_polyline(screen, CENTER_COLOR, 2.5)
+	# 틈이 있으면 앞 조각과 뒤 조각을 따로 그린다(틈 선분은 실제 경로가 아니다).
+	for piece in _pieces(screen):
+		draw_polyline(piece, CORRIDOR_COLOR, maxf(_fail * 2.0 * _zoom, MIN_BAND_PX * 2.0))
+		draw_polyline(piece, SAFE_COLOR, maxf(_safe * 2.0 * _zoom, MIN_BAND_PX))
+		draw_polyline(piece, CENTER_COLOR, 2.5)
 	var start_s: Vector2 = screen[0]
 	var finish_s: Vector2 = screen[screen.size() - 1]
 	draw_circle(start_s, 6.0, START_COLOR)
@@ -458,13 +565,55 @@ func _draw_centerline() -> void:
 			draw_line(tip, tip - dir * 8.0 - perp, ARROW_COLOR, 2.5)
 
 
+## 화면 점 열을 틈에서 나눈 조각들(틈이 없으면 하나).
+func _pieces(screen: PackedVector2Array, offset: int = 0) -> Array:
+	var g: int = _gap - offset
+	if _gap < 0 or g < 1 or g >= screen.size():
+		return [screen]
+	return [screen.slice(0, g), screen.slice(g)]
+
+
 func _draw_trim_preview() -> void:
 	if _trim_from < 0 or _trim_from >= _centerline.size():
 		return
-	var cut: PackedVector2Array = _project(_centerline.slice(maxi(_trim_from - 1, 0)))
-	if cut.size() >= 2:
-		draw_polyline(cut, TRIM_COLOR, 6.0)
+	var from: int = maxi(_trim_from - 1, 0)
+	var cut: PackedVector2Array = _project(_centerline.slice(from))
+	for piece in _pieces(cut, from):
+		if piece.size() >= 2:
+			draw_polyline(piece, TRIM_COLOR, 6.0)
 	draw_circle(cut[0], 7.0, TRIM_COLOR)
+
+
+## 틈: 두 끝점을 빨간 점과 이어 그리기 스냅 반경 고리로, 그 사이를 점선으로 표시한다.
+func _draw_gap() -> void:
+	if _gap < 1 or _gap >= _centerline.size():
+		return
+	var a: Vector2 = world_to_screen(_centerline[_gap - 1])
+	var b: Vector2 = world_to_screen(_centerline[_gap])
+	_draw_dashed(a, b, GAP_COLOR)
+	var ring: float = maxf(GAP_RING_PX, GAP_RING_MIN * _zoom)
+	for c in [a, b]:
+		draw_circle(c, 7.0, GAP_COLOR)
+		draw_arc(c, ring, 0.0, TAU, 32, Color(GAP_COLOR, 0.6), 2.0)
+
+
+## 구간 지우기 미리보기: 지워질 선분(빨강, 거절이면 주황), 옮겨질 시작점(초록 고리), 생길 틈 끝점.
+func _draw_erase_preview() -> void:
+	if erase_preview.is_empty():
+		return
+	var refused: bool = bool(erase_preview.get("refused", false))
+	var col: Color = VIOL_SOFT_COLOR if refused else TRIM_COLOR
+	for seg in erase_preview.get("segs", []):
+		var sp: PackedVector2Array = _project(seg)
+		if sp.size() >= 2:
+			draw_polyline(sp, col, 6.0)
+	if erase_preview.has("start"):
+		var st: Vector2 = world_to_screen(erase_preview["start"])
+		draw_arc(st, 11.0, 0.0, TAU, 24, START_COLOR, 3.0)
+		draw_circle(st, 5.0, START_COLOR)
+	if erase_preview.has("gap"):
+		for w in erase_preview["gap"]:
+			draw_arc(world_to_screen(w), 9.0, 0.0, TAU, 20, GAP_COLOR, 3.0)
 
 
 ## 아이템 마커: 게임과 같은 아이콘(화면 고정 크기) + 종류 색 테두리. 검토 필요는 빨간 테두리,

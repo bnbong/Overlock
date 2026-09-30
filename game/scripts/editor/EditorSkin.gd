@@ -68,6 +68,11 @@ static func layout_chrome(ed: Control) -> void:
 		var bh: float = bar.get_combined_minimum_size().y
 		bar.offset_bottom = canvas_bottom - 8.0
 		bar.offset_top = bar.offset_bottom - bh
+	# 틈 안내 줄은 검토 필요 줄 자리 바로 위에 둔다(둘이 함께 보여도 겹치지 않게).
+	var review: Control = ed.get_node("ReviewRow")
+	var gap_row: Control = ed.get_node("GapRow")
+	gap_row.offset_bottom = review.offset_top - 6.0
+	gap_row.offset_top = gap_row.offset_bottom - gap_row.get_combined_minimum_size().y
 
 
 ## 그리기 영역 위쪽에 겹쳐 두는 아이템 막대(왼쪽)와 검증 목록(오른쪽)을 캔버스 위 끝에 맞추고,

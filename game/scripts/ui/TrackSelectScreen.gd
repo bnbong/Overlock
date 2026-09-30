@@ -20,6 +20,10 @@ extends Control
 ## (_remember_current) 현재 모드를 pending_mode에 남겨 리더보드·에디터·허브에서 돌아오면 그대로
 ## 복원하고, Play로 떠난 경우에는 비워 둬서 결과 화면에서 돌아올 때 GameState.track_id가
 ## custom_ 로 시작하면 유저 모드, 아니면 공식 모드로 연다.
+##
+## 터치 기기(MenuTouch.active)에서는 두 열(왼쪽 미리보기·트랙 정보, 오른쪽 버튼)로 다시 배치해 모든 버튼을
+## 손가락 크기(논리 높이 84)로 키우고, 만들기·불러오기 같은 작은 버튼 줄은 한 줄에 두 개씩 줄을 바꾼다.
+## 긴 트랙 이름은 말줄임으로 자른다. 데스크톱 배치는 그대로다.
 
 const DEFAULT_TRACK: String = "cotton_01"
 const MAIN_SCENE: String = "res://scenes/Main.tscn"
@@ -165,6 +169,7 @@ func _ready() -> void:
 	_confirm.confirmed.connect(_do_delete)
 	add_child(_confirm)
 	_apply_skin()
+	_apply_touch_layout()
 	_apply_mode()
 	_refresh()
 	_focus_default()
@@ -228,6 +233,29 @@ func _apply_skin() -> void:
 		b.custom_minimum_size = Vector2(48, 48)
 	UiSkin.skin_icon_nav(_prev_button, "prev", 26)
 	UiSkin.skin_icon_nav(_next_button, "next", 26)
+
+
+## 터치 기기: 두 열 배치와 손가락 크기 버튼. 줄(PlayRow·ActionRow·HubRow)의 visible 규칙은 그대로 둔다.
+func _apply_touch_layout() -> void:
+	if not MenuTouch.active():
+		return
+	var panel: VBoxContainer = $Panel
+	MenuTouch.set_box(panel, Vector2(606.0, 346.0))
+	var left: Array = [_preview, _empty_label, _selector, _info_label, _fabric_row, _best_time_label]
+	left.append(_hint_label)
+	MenuTouch.columns(panel, 1, left, [$Panel/PlayRow, _action_row, _hub_row, _back_button], 32)
+	_preview.custom_minimum_size = Vector2(560.0, 250.0)
+	_empty_label.custom_minimum_size = Vector2(560.0, 250.0)
+	MenuTouch.text(_empty_label, 26)
+	for b in [_prev_button, _next_button]:
+		b.custom_minimum_size = Vector2(MenuTouch.MIN_H, MenuTouch.MIN_H)
+	MenuTouch.buttons([_prev_button, _next_button, _play_button, _hub_button, _back_button])
+	MenuTouch.buttons(_action_row.get_children() + _hub_row.get_children())
+	MenuTouch.wrap_row(_action_row, 270.0)
+	MenuTouch.wrap_row(_hub_row, 270.0)
+	MenuTouch.texts([_info_label, _fabric_text_label, _best_time_label])
+	MenuTouch.text(_track_label, 26)
+	MenuTouch.ellipsis(_track_label)
 
 
 ## 재봉 스킨 톤 버튼 스타일(액션 행 버튼을 기존 메뉴와 통일).

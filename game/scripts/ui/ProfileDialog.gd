@@ -8,6 +8,7 @@ extends Control
 ## - 링크 열기: 데스크톱은 OS.shell_open, 웹은 JavaScriptBridge로 window.open(_, "_blank").
 ##   웹 팝업 차단을 피하려면 반드시 클릭(pressed) 핸들러 안에서 동기로 호출해야 한다.
 ## - 순수 UI — 게임 값·판정과 무관.
+## - 터치 기기에서는 버튼을 손가락 크기(MenuTouch)로 키우고 아바타를 조금 줄여 패널이 화면에 들어가게 한다.
 
 signal closed
 
@@ -45,6 +46,11 @@ func _ready() -> void:
 	# URL이 비어 있으면 숨김 유지, 채워지면 자동 노출(수동 토글 불필요).
 	_support.visible = not SUPPORT_URL.strip_edges().is_empty()
 	_apply_skin()
+	if MenuTouch.active():
+		MenuTouch.buttons([_report, _support, _close])
+		MenuTouch.text(_intro_label)
+		($Panel/AvatarBox as Control).custom_minimum_size.y = 112.0
+		_avatar.custom_minimum_size = Vector2(108.0, 108.0)
 	# 팝업 안 키보드 포커스는 제보 버튼에서 시작(Tab/방향키로 닫기와 순환, Esc로 해제).
 	_report.grab_focus()
 	# 버튼 수(제보/후원/닫기 또는 제보/닫기)에 따라 콘텐츠 높이가 달라지므로

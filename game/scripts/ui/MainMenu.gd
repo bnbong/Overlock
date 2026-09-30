@@ -16,6 +16,9 @@ extends Control
 ## 프로필 칩(우하단): 소형 재봉 칩(원형 아바타 + "bnbong"). 좌상단 정체성 바·중앙 버튼
 ## 열과 겹치지 않게 우하단 모서리에 고정한다. 마우스 클릭 전용(FOCUS_NONE)이라 기존
 ## 키보드 포커스 순환에 끼지 않으며, 클릭하면 개발자 프로필 팝업(ProfileDialog)을 연다.
+##
+## 터치 기기(MenuTouch.active)에서는 로고와 여백을 줄여 네 버튼·닉네임 태그·프로필 칩을 손가락 크기
+## (논리 높이 84)로 키우고, 상태·버전 글자를 읽을 수 있게 키운다. 데스크톱 배치는 그대로다.
 
 const KIND_SELECT_SCENE: String = "res://scenes/TrackKindSelect.tscn"
 const SETTINGS_SCENE: String = "res://scenes/Settings.tscn"
@@ -36,6 +39,7 @@ const _C_OFFLINE: Color = Color(0.87, 0.47, 0.42)
 const _C_CHECKING: Color = Color(0.82, 0.79, 0.72)
 
 var _toast: Toast
+var _touch: bool = false
 var _nick_tag: Button
 var _status_label: Label
 var _profile_chip: Button
@@ -47,11 +51,13 @@ var _profile_chip: Button
 
 
 func _ready() -> void:
+	_touch = MenuTouch.active()
 	_start_button.pressed.connect(_on_start_pressed)
 	_settings_button.pressed.connect(_on_settings_pressed)
 	_leaderboard_button.pressed.connect(_on_leaderboard_pressed)
 	_quit_button.pressed.connect(_on_quit_pressed)
 	_apply_skin()
+	_apply_touch_layout()
 	_play_menu_bgm()
 	# 웹(HTML5)에는 앱 종료 개념이 없어 Quit 버튼을 숨긴다(브라우저 탭이 곧 앱 수명).
 	_quit_button.visible = not OS.has_feature("web")
@@ -80,6 +86,18 @@ func _apply_skin() -> void:
 		UiSkin.skin_button(b, "large")
 
 
+## 터치 기기: 로고·여백을 줄인 만큼 네 버튼을 키워 세로 열이 1280×720 안에 들어가게 한다.
+func _apply_touch_layout() -> void:
+	if not _touch:
+		return
+	var menu: VBoxContainer = $Menu
+	menu.add_theme_constant_override("separation", 12)
+	($Menu/TitlePlaque as Control).custom_minimum_size.y = 140.0
+	($Menu/Spacer as Control).custom_minimum_size.y = 8.0
+	MenuTouch.text($Menu/SubtitleLabel)
+	MenuTouch.buttons([_start_button, _settings_button, _leaderboard_button, _quit_button])
+
+
 # --- 정체성 바(좌상단): 닉네임 태그 + 온라인 상태 ---
 
 
@@ -102,6 +120,9 @@ func _build_identity_bar() -> void:
 	_status_label.add_theme_color_override("font_outline_color", Color(0.11, 0.086, 0.072))
 	_status_label.add_theme_constant_override("outline_size", 3)
 	bar.add_child(_status_label)
+	if _touch:
+		MenuTouch.button(_nick_tag)
+		MenuTouch.text(_status_label)
 
 	_refresh_nick_tag()
 	_set_status(_C_CHECKING, "서버 확인 중…")
@@ -146,6 +167,11 @@ func _build_profile_chip() -> void:
 		_profile_chip.add_theme_constant_override("h_separation", 8)
 	_profile_chip.pressed.connect(_open_profile_dialog)
 	add_child(_profile_chip)
+	if _touch:
+		MenuTouch.button(_profile_chip)
+		# 키운 크기가 모서리 여백을 밀어내지 않게 왼쪽·위로 자라게 한다.
+		_profile_chip.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_profile_chip.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	# 우하단 고정(최소 크기, 모서리에서 16px 여백). 창 크기가 변해도 우하단에 붙는다.
 	_profile_chip.set_anchors_and_offsets_preset(
 		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 16
@@ -186,6 +212,8 @@ func _build_version_label() -> void:
 	label.add_theme_color_override("font_color", Color(0.278, 0.203, 0.153, 0.6))
 	label.add_theme_color_override("font_outline_color", Color(0.97, 0.93, 0.85, 0.45))
 	label.add_theme_constant_override("outline_size", 2)
+	if _touch:
+		MenuTouch.text(label)
 	add_child(label)
 	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 8)
 

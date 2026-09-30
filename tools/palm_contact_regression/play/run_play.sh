@@ -103,8 +103,9 @@ elif [ "$SCEN" = "inject" ]; then
 		-- --inject-out="$OUT" > "$OUT/console.log" 2>&1
 else
 	# 창이 다른 창에 가려지면 macOS가 그리기를 멈춰 캡처가 빠지므로 항상 위에 띄우고 화면 잠자기를 막는다.
+	# --no-focus-pause: 창 포커스를 잃어도 자동 일시정지하지 않게 한다(v2.2.1, 드라이버가 포커스 없이 돈다).
 	caffeinate -d -i "$GODOT" --path "$PROJ" --resolution "$RES" --fixed-fps "${LOW_FPS:-60}" --always-on-top \
-		-- --out="$OUT" --scenario="$SCEN" "$@" > "$OUT/console.log" 2>&1
+		-- --out="$OUT" --scenario="$SCEN" --no-focus-pause "$@" > "$OUT/console.log" 2>&1
 fi
 code=$?
 set -e

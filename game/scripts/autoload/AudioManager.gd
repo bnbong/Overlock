@@ -47,6 +47,10 @@ const TICK_LOG_STEP: float = 0.15  # 이만큼 rate가 바뀌면 디버그 로�
 # 디스플레이에서 물리 틱 없는 렌더 프레임이 순간적으로 rate 0을 넣어도 틱 스케줄이
 # 살아남게 하는 방어(호출부의 이동 판정 히스테리시스와 이중 안전).
 const TICK_ZERO_GRACE: float = 0.12
+# set_machine_rate가 이 시간(처리 시간 기준) 넘게 오지 않으면 구동자(주행 씬의 프레젠테이션)가
+# 사라진 것으로 보고 틱 루프를 끈다. 일시정지 중에는 이 오토로드도 멈춰 경과가 쌓이지 않는다.
+# 씬 전환 시 stop_run_audio가 1차 정리이고, 이것은 호출이 누락돼도 메뉴에서 틱이 새지 않게 하는 방어.
+const TICK_STALE_TIME: float = 0.5
 
 var _bgm_streams: Dictionary = {}  # loop_id(String) → AudioStream
 var _sfx_streams: Dictionary = {}
@@ -60,6 +64,7 @@ var _prev_stage: int = 1
 var _tick_norm: float = 0.0
 var _tick_accum: float = 0.0
 var _tick_zero_t: float = 0.0
+var _tick_rate_age: float = 0.0  # 마지막 set_machine_rate 이후 경과(처리 시간)
 var _last_logged_norm: float = -1.0
 var _debug: bool = false
 
@@ -93,6 +98,11 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	# 재봉틀 틱 루프: 매 프레임 rate만 반영, 재생 자체는 여기서 스케줄한다.
+	_tick_rate_age += delta
+	if _tick_rate_age > TICK_STALE_TIME and _tick_norm > 0.0:
+		_log("machine rate stale -> tick off")
+		_tick_norm = 0.0
+		_last_logged_norm = -1.0
 	if _tick_player == null or _tick_norm <= 0.001:
 		# rate 0으로 떨어져도 짧은 유예 동안은 accum을 유지한다(고주사율에서 물리 틱
 		# 공백 프레임이 넣는 순간적 rate 0로 틱 스케줄이 리셋되는 것을 막는다).
@@ -177,6 +187,7 @@ func on_speed_stage(stage: int) -> void:
 ## 재봉틀 틱 루프 속도(0..1). 매 프레임 rate만 갱신, 재생은 _process가 스케줄.
 func set_machine_rate(speed_norm: float) -> void:
 	_tick_norm = clampf(speed_norm, 0.0, 1.0)
+	_tick_rate_age = 0.0
 	if absf(_tick_norm - _last_logged_norm) >= TICK_LOG_STEP:
 		_last_logged_norm = _tick_norm
 		_log("set_machine_rate(%.2f)" % _tick_norm)
@@ -192,6 +203,12 @@ func play_injury() -> void:
 func on_band_enter(band: int) -> void:
 	_play_sfx("offseam")
 	_log("on_band_enter(%d)" % band)
+
+
+## 아이템 슬롯이 가득 차 필드 아이템을 못 먹음(v2.2.1). 새 에셋 없이 짧은 재봉틀 틱을 낮은 음으로 낸다.
+func on_item_slots_full() -> void:
+	_play_sfx("tick", 0.6)
+	_log("on_item_slots_full")
 
 
 func play_finish() -> void:
@@ -214,6 +231,24 @@ func _end_run_audio() -> void:
 	_last_logged_norm = -1.0
 	if _tick_player != null:
 		_tick_player.stop()
+
+
+## 주행 씬 이탈(일시정지 후 메뉴·재시작, 에디터 복귀, 결과 전환 등 모든 트리 이탈) 시 주행 전용
+## 소리를 멈춘다: 재봉틀 틱 루프와 그 상태, 남은 SFX 보이스. 틱 rate는 주행 씬의 프레젠테이션만
+## 갱신하는데, 일시정지 중엔 그 갱신도 이 오토로드의 _process도 멈춰 있다가 씬 전환 후 마지막
+## rate로 되살아나 메뉴에서 틱이 계속 울렸다(Esc→M 버그). BGM은 건드리지 않는다(재시작은 곡을
+## 이어 가고, 메뉴·에디터 화면은 각자 play_bgm으로 곡을 맞추며, 완주는 play_finish가 멈춘다).
+func stop_run_audio() -> void:
+	_tick_norm = 0.0
+	_tick_accum = 0.0
+	_tick_zero_t = 0.0
+	_last_logged_norm = -1.0
+	if _tick_player != null:
+		_tick_player.stop()
+	for voice in _sfx_pool:
+		if voice != null:
+			voice.stop()
+	_log("stop_run_audio")
 
 
 # --- 볼륨 API (선형 0..1 → 버스 dB, 0=뮤트) ---

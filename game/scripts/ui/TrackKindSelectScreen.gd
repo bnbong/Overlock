@@ -26,6 +26,7 @@ const USER_DESC: String = "직접 만들거나 공유 허브에서 받은 트랙
 const HINT_TEXT: String = "← →  선택      Enter  결정      Esc  뒤로"
 
 const CARD_SIZE: Vector2 = Vector2(470.0, 330.0)
+const TOUCH_CARD_SIZE: Vector2 = Vector2(580.0, 330.0)
 const CARD_GAP: int = 44
 const CARD_RADIUS: int = 18
 const TITLE_FONT: int = 34
@@ -45,11 +46,21 @@ var _back_button: Button
 
 func _ready() -> void:
 	_build_ui()
+	_apply_touch_layout()
 	if TrackSelectScript.last_mode == TrackSelectScript.MODE_USER:
 		_user_card.grab_focus()
 	else:
 		_official_card.grab_focus()
 	_play_menu_bgm()
+
+
+## 터치 기기: 버튼·글자는 CommunityHubWidgets가 이미 키웠다. 커진 설명 글자가 카드 안에서 음절 단위로
+## 끊기지 않게 카드만 넓힌다(두 장 합계 1204, 캔버스 1280 안).
+func _apply_touch_layout() -> void:
+	if not MenuTouch.active():
+		return
+	for card in [_official_card, _user_card]:
+		(card as Control).custom_minimum_size = TOUCH_CARD_SIZE
 
 
 ## Esc(ui_cancel): 메인으로. 카드 이동·결정은 Godot 기본 GUI 포커스 처리에 맡긴다.

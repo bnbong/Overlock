@@ -1,5 +1,6 @@
 extends Node
-## 모바일 조향 버튼 확대(STEER_SIZE 128) 입력·배치 회귀 검사(사본 프로젝트 전용, run.sh 가 실행).
+## 모바일 조향 버튼 확대(STEER_SIZE 144, v2.2.1) + 아이템 USE 버튼 입력·배치 회귀 검사(사본 프로젝트
+## 전용, run.sh 가 실행).
 ## InputEventScreenTouch/ScreenDrag 를 뷰포트에 직접 넣고 Input.is_action_pressed 로 액션 상태를
 ## 확인한다(데스크톱 헤드리스 모사이며 실제 기기 터치 검증이 아니다). run.sh 는 `-- --touch-controls`
 ## 를 붙여 실행하므로 Gameplay 의 HUD 도 터치 버튼을 만든다.
@@ -12,15 +13,16 @@ const HURT_PORTRAIT_PATH: String = "res://assets/gfx/ui/player_hurt_teary.png"
 
 const B := TouchControls.Btn
 const EXPECTED: Dictionary = {
-	B.STEER_LEFT: Rect2(16.0, 576.0, 128.0, 128.0),
-	B.STEER_RIGHT: Rect2(160.0, 576.0, 128.0, 128.0),
+	B.STEER_LEFT: Rect2(16.0, 560.0, 144.0, 144.0),
+	B.STEER_RIGHT: Rect2(176.0, 560.0, 144.0, 144.0),
 	B.SPEED_UP: Rect2(1152.0, 464.0, 112.0, 112.0),
 	B.SPEED_DOWN: Rect2(1152.0, 592.0, 112.0, 112.0),
 	B.DRIFT: Rect2(1004.0, 572.0, 132.0, 132.0),
 	B.PAUSE: Rect2(946.0, 10.0, 80.0, 80.0),
+	B.USE_ITEM: Rect2(1014.0, 436.0, 112.0, 112.0),
 }
 const ALL_ACTIONS: Array[StringName] = [
-	&"steer_left", &"steer_right", &"speed_up", &"speed_down", &"drift", &"pause"
+	&"steer_left", &"steer_right", &"speed_up", &"speed_down", &"drift", &"pause", &"use_item"
 ]
 # 끝까지 실행돼야 하는 검사 구획(스크립트 오류로 중간에 끊기면 마지막 대조에서 실패).
 const SECTIONS: Array[String] = [
@@ -31,6 +33,7 @@ const SECTIONS: Array[String] = [
 	"outside",
 	"multi",
 	"tap_rules",
+	"use_item",
 	"hit_pad",
 	"blocked",
 	"focus",
@@ -63,6 +66,7 @@ func _ready() -> void:
 	_check_outside()
 	_check_multi()
 	_check_tap_rules()
+	_check_use_item()
 	_check_hit_pad()
 	_check_blocked()
 	_check_focus()
@@ -137,7 +141,9 @@ func _c(b: int) -> Vector2:
 
 
 func _check_constants() -> void:
-	_ok(TouchControls.STEER_SIZE == 128.0, "STEER_SIZE 128")
+	_ok(TouchControls.STEER_SIZE == 144.0, "STEER_SIZE 144")
+	_ok(TouchControls.USE_ITEM_SIZE == 112.0, "USE_ITEM_SIZE 112")
+	_ok(TouchControls.USE_ITEM_GAP == 24.0, "USE_ITEM_GAP 24")
 	_ok(TouchControls.SPEED_SIZE == 112.0, "SPEED_SIZE unchanged 112")
 	_ok(TouchControls.DRIFT_SIZE == 132.0, "DRIFT_SIZE unchanged 132")
 	_ok(TouchControls.PAUSE_SIZE == 80.0, "PAUSE_SIZE unchanged 80")
@@ -173,13 +179,13 @@ func _check_tap() -> void:
 	_ok(_p(&"steer_right") and not _p(&"steer_left"), "tap right: steer_right pressed")
 	_touch(0, _c(B.STEER_RIGHT), false)
 	_ok(_none_pressed(), "tap right: released")
-	# 새로 커진 영역의 모서리(이전 112 크기 바깥) 탭도 인정한다.
-	_touch(0, Vector2(140.0, 580.0), true)
-	_ok(_p(&"steer_left"), "tap left enlarged corner (140,580)")
-	_touch(0, Vector2(140.0, 580.0), false)
-	_touch(0, Vector2(284.0, 700.0), true)
-	_ok(_p(&"steer_right"), "tap right enlarged corner (284,700)")
-	_touch(0, Vector2(284.0, 700.0), false)
+	# 새로 커진 영역의 모서리(이전 128 크기 바깥) 탭도 인정한다.
+	_touch(0, Vector2(156.0, 564.0), true)
+	_ok(_p(&"steer_left"), "tap left enlarged corner (156,564)")
+	_touch(0, Vector2(156.0, 564.0), false)
+	_touch(0, Vector2(316.0, 700.0), true)
+	_ok(_p(&"steer_right"), "tap right enlarged corner (316,700)")
+	_touch(0, Vector2(316.0, 700.0), false)
 	_ok(_none_pressed(), "corner taps released")
 	_done.append("tap")
 
@@ -188,11 +194,11 @@ func _check_slide() -> void:
 	_touch(0, _c(B.STEER_LEFT), true)
 	_drag(0, Vector2(100.0, 640.0))
 	_ok(_p(&"steer_left"), "slide: still left inside left")
-	# 두 버튼 사이 간격(144..160)의 한가운데(152)는 오른쪽 판정 시작점 → 빈틈 없이 전환.
-	_drag(0, Vector2(151.9, 640.0))
-	_ok(_p(&"steer_left") and not _p(&"steer_right"), "slide: 151.9 still left (pad)")
-	_drag(0, Vector2(152.0, 640.0))
-	_ok(_p(&"steer_right") and not _p(&"steer_left"), "slide: 152 switches to right")
+	# 두 버튼 사이 간격(160..176)의 한가운데(168)는 오른쪽 판정 시작점 → 빈틈 없이 전환.
+	_drag(0, Vector2(167.9, 640.0))
+	_ok(_p(&"steer_left") and not _p(&"steer_right"), "slide: 167.9 still left (pad)")
+	_drag(0, Vector2(168.0, 640.0))
+	_ok(_p(&"steer_right") and not _p(&"steer_left"), "slide: 168 switches to right")
 	_drag(0, _c(B.STEER_RIGHT))
 	_ok(_p(&"steer_right") and not _p(&"steer_left"), "slide: right center")
 	_drag(0, _c(B.STEER_LEFT))
@@ -236,11 +242,11 @@ func _check_multi() -> void:
 	_touch(1, _c(B.DRIFT), false)
 	_ok(not _p(&"drift") and _p(&"steer_right"), "drift lift keeps steer")
 	# 같은 버튼을 두 손가락이 누르면 마지막 손가락이 뗄 때만 해제.
-	_touch(4, Vector2(170.0, 590.0), true)
+	_touch(4, Vector2(190.0, 590.0), true)
 	_ok(_tc._press_count[B.STEER_RIGHT] == 2, "same button two fingers: count 2")
 	_touch(0, _c(B.STEER_RIGHT), false)
 	_ok(_p(&"steer_right"), "same button: first lift keeps pressed")
-	_touch(4, Vector2(170.0, 590.0), false)
+	_touch(4, Vector2(190.0, 590.0), false)
 	_ok(_none_pressed(), "multi: all released")
 	_done.append("multi")
 
@@ -262,6 +268,31 @@ func _check_tap_rules() -> void:
 	_done.append("tap_rules")
 
 
+## USE(아이템 사용)는 탭형: 시작한 버튼에서만 눌리고, 홀드 버튼에서 미끄러져 들어와도 눌리지 않는다.
+func _check_use_item() -> void:
+	_touch(0, _c(B.USE_ITEM), true)
+	_ok(_p(&"use_item"), "USE tap: use_item pressed")
+	_drag(0, Vector2(640.0, 360.0))
+	_ok(_p(&"use_item"), "USE: stays pressed when dragged out (tap rule)")
+	_touch(0, Vector2(640.0, 360.0), false)
+	_ok(_none_pressed(), "USE: released on lift")
+	_touch(1, _c(B.DRIFT), true)
+	_drag(1, _c(B.USE_ITEM))
+	_ok(not _p(&"use_item") and not _p(&"drift"), "slide DRIFT -> USE: no use, drift released")
+	_touch(1, _c(B.USE_ITEM), false)
+	var use: Rect2 = _tc.button_rect(B.USE_ITEM)
+	var drift: Rect2 = _tc.button_rect(B.DRIFT)
+	var gap: float = drift.position.y - use.end.y - TouchControls.HIT_PAD * 2.0
+	_ok(is_equal_approx(gap, 8.0), "USE/DRIFT hit areas 8px apart (%.1f)" % gap)
+	_touch(2, Vector2(use.get_center().x, use.end.y + TouchControls.HIT_PAD + 1.0), true)
+	_ok(not _p(&"use_item") and not _p(&"drift"), "touch in USE/DRIFT gap: nothing")
+	_touch(2, Vector2(use.get_center().x, use.end.y + TouchControls.HIT_PAD + 1.0), false)
+	_tc.set_use_icon(null)
+	_ok(_tc.use_icon() == null, "USE icon cleared (disabled look)")
+	_ok(_none_pressed(), "use_item: nothing left pressed")
+	_done.append("use_item")
+
+
 func _hit_at(pos: Vector2) -> Array:
 	_touch(7, pos, true)
 	var res: Array = [_p(&"steer_left"), _p(&"steer_right")]
@@ -276,13 +307,13 @@ func _check_hit_pad() -> void:
 	var my: float = l.get_center().y
 	_ok(_hit_at(Vector2(l.position.x - pad, my))[0], "left pad edge x=8 hits")
 	_ok(not _hit_at(Vector2(l.position.x - pad - 0.5, my))[0], "left pad outside x=7.5 misses")
-	_ok(_hit_at(Vector2(l.get_center().x, l.position.y - pad))[0], "left pad top y=568 hits")
-	_ok(not _hit_at(Vector2(l.get_center().x, l.position.y - pad - 0.5))[0], "top y=567.5 misses")
+	_ok(_hit_at(Vector2(l.get_center().x, l.position.y - pad))[0], "left pad top y=552 hits")
+	_ok(not _hit_at(Vector2(l.get_center().x, l.position.y - pad - 0.5))[0], "top y=551.5 misses")
 	_ok(_hit_at(Vector2(l.get_center().x, l.end.y + pad - 0.5))[0], "left pad bottom y=711.5 hits")
-	_ok(_hit_at(Vector2(r.end.x + pad - 0.5, my))[1], "right pad edge x=295.5 hits")
-	_ok(not _hit_at(Vector2(r.end.x + pad, my))[1], "right pad outside x=296 misses")
-	_ok(_hit_at(Vector2(r.get_center().x, r.position.y - pad))[1], "right pad top y=568 hits")
-	_ok(not _hit_at(Vector2(r.get_center().x, r.position.y - pad - 0.5))[1], "right top 567.5 misses")
+	_ok(_hit_at(Vector2(r.end.x + pad - 0.5, my))[1], "right pad edge x=327.5 hits")
+	_ok(not _hit_at(Vector2(r.end.x + pad, my))[1], "right pad outside x=328 misses")
+	_ok(_hit_at(Vector2(r.get_center().x, r.position.y - pad))[1], "right pad top y=552 hits")
+	_ok(not _hit_at(Vector2(r.get_center().x, r.position.y - pad - 0.5))[1], "right top 551.5 misses")
 	_ok(_none_pressed(), "hit pad: nothing left pressed")
 	_done.append("hit_pad")
 
@@ -374,10 +405,10 @@ func _check_hud_layout_and_pause() -> void:
 	_ok(sl.is_equal_approx(EXPECTED[B.STEER_LEFT]), "HUD steer left %s" % sl)
 	_ok(sr.is_equal_approx(EXPECTED[B.STEER_RIGHT]), "HUD steer right %s" % sr)
 	var risk: Rect2 = _rect_of(hud.get_node("RiskMeter"))
-	_ok(risk.is_equal_approx(Rect2(16.0, 414.0, 120.0, 150.0)), "RiskMeter %s" % risk)
+	_ok(risk.is_equal_approx(Rect2(16.0, 398.0, 120.0, 150.0)), "RiskMeter %s" % risk)
 	_ok(is_equal_approx(risk.end.y + TouchControls.HUD_GAP, sl.position.y), "RISK 12px above steer")
 	var eff: Control = hud._effect_box
-	_ok(is_equal_approx(eff.offset_bottom, -316.0), "effect box bottom 404 (%.1f)" % eff.offset_bottom)
+	_ok(is_equal_approx(eff.offset_bottom, -332.0), "effect box bottom 388 (%.1f)" % eff.offset_bottom)
 	# 두 카드를 모두 띄웠을 때의 스택 범위.
 	hud._thimble_card.visible = true
 	hud._autopilot_card.visible = true
@@ -394,6 +425,15 @@ func _check_hud_layout_and_pause() -> void:
 	_ok(not mini.intersects(sl) and not prog.intersects(sl), "minimap/progress clear of steer")
 	var speed: Rect2 = _rect_of(hud.get_node("SpeedPanel"))
 	_ok(speed.is_equal_approx(Rect2(1152.0, 214.0, 112.0, 238.0)), "SpeedPanel unchanged %s" % speed)
+	# 아이템 슬롯 위젯(RISK 오른쪽)과 USE 버튼.
+	var slots: Rect2 = _rect_of(hud.get_node("ItemSlots"))
+	_ok(slots.is_equal_approx(Rect2(146.0, 468.0, 124.0, 80.0)), "ItemSlots %s" % slots)
+	_ok(not slots.intersects(risk) and not slots.intersects(er), "ItemSlots clear of RISK/effects")
+	var steer_hit: Rect2 = sl.merge(sr).grow(TouchControls.HIT_PAD)
+	_ok(not slots.intersects(steer_hit), "ItemSlots clear of steer hit rects")
+	var use: Rect2 = tc.button_rect(B.USE_ITEM)
+	_ok(use.is_equal_approx(EXPECTED[B.USE_ITEM]), "HUD USE %s" % use)
+	_ok(not use.grow(TouchControls.HIT_PAD).intersects(speed), "USE hit clear of SpeedPanel")
 	var status: Label = hud.get_node("StatusLabel")
 	print("INFO StatusLabel rect ", _rect_of(status))
 	hud._thimble_card.visible = false
@@ -446,7 +486,9 @@ func _check_toast() -> void:
 	await get_tree().process_frame
 	var steer: Rect2 = EXPECTED[B.STEER_LEFT].merge(EXPECTED[B.STEER_RIGHT])
 	for path in [MOM_PORTRAIT_PATH, HURT_PORTRAIT_PATH]:
-		t.push_immediate("아얏!", load(path))
+		# 엄마 꾸중은 실제 가장 긴 대사로 넣어 줄어든 폭 안에 들어가는지 본다.
+		var line: String = "이녀석, 제대로 해야지!" if path == MOM_PORTRAIT_PATH else "아얏!"
+		t.push_immediate(line, load(path))
 		for i in 3:
 			await get_tree().process_frame
 		var panel: Rect2 = Rect2(t._panel.position, t._panel.size)
@@ -454,6 +496,14 @@ func _check_toast() -> void:
 		print("INFO toast %s panel %s portrait %s" % [path.get_file(), panel, portrait])
 		_ok(not panel.intersects(steer), "%s: bubble clear of steer buttons" % path.get_file())
 		_ok(not portrait.intersects(steer), "%s: portrait rect clear of steer" % path.get_file())
+		# 터치 모드 말풍선: 폭을 줄여 DRIFT·USE 와도 겹치지 않고, 대사가 줄어든 폭 안에 들어간다.
+		var right_btns: Rect2 = EXPECTED[B.DRIFT].merge(EXPECTED[B.USE_ITEM])
+		_ok(not panel.intersects(right_btns), "%s: bubble clear of DRIFT/USE" % path.get_file())
+		_ok(is_equal_approx(panel.position.x, 344.0), "%s: bubble left 344" % path.get_file())
+		var wmsg: String = "%s: bubble width 648 (%.1f)" % [path.get_file(), panel.size.x]
+		_ok(is_equal_approx(panel.size.x, 648.0), wmsg)
+		_ok(is_equal_approx(portrait.position.x, 332.0), "%s: portrait left 332" % path.get_file())
+		_ok(is_equal_approx(panel.size.y, 82.0), "%s: bubble height kept 82" % path.get_file())
 		# 초상화 불투명 영역(알파>0.05)의 실제 왼쪽 끝과 조향 버튼 오른쪽 끝의 간격.
 		var img: Image = (load(path) as Texture2D).get_image()
 		var min_x: int = img.get_width()

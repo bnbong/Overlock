@@ -9,6 +9,8 @@ extends Control
 ##  - 저장 기준(_saved_serials): 문서 계보(doc_key)별 마지막 저장 직렬화. dirty = 현재 문서 직렬화와 비교.
 ##  - 검증 기준(_validated_geom): 검증을 통과한 경로+판정 폭 키. 이름·원단 변경은 검증을 유지한다.
 ##  - 화면 상태: zoom/pan(DrawCanvas)·선택 도구·선택 아이템. 문서가 아니라 undo·dirty 대상이 아니다.
+##  - 틈(_doc["gap"]): 구간 지우기(EditorEraseTool)로 경로 중간을 지운 상태. 문서의 일부라 undo·dirty·
+##    테스트 복귀 스냅샷에 포함되며, 이어질 때까지 검증·저장·테스트를 막는다.
 ##
 ## 테스트 플레이: 유효한 문서에서 누르면(미저장이면 "저장 후 테스트") 문서·저장 기준·undo/redo·
 ## 화면 상태를 GameState.editor_session에 맡기고 editor_test 출처로 Gameplay에 들어간다. 결과·일시정지의
@@ -46,6 +48,7 @@ var _validated_geom: String = ""  # 검증 통과한 geom_key(없으면 "")
 var _shown_geom: String = ""  # 현재 마커·상태 문구가 가리키는 geom_key
 var _last_edit: String = ""  # 직전 undo 단위 종류(연속 이름 입력 묶기)
 var _trim_tool: EditorTrimTool
+var _erase_tool: EditorEraseTool  # 구간 지우기와 틈 잇기(v2.2.1)
 var _hint_restore: Array = []  # 자르기 미리보기 안내 전 상태 문구 [text, color](안내 중일 때만)
 var _selected_item: int = -1  # 선택 아이템(배치 도구는 뒤 단계, 화면 상태로만 보관)
 var _pending: Callable = Callable()  # 확인창 확인 시 실행할 동작
@@ -61,6 +64,7 @@ var _web_bridge: WebFileBridge
 @onready var _mode_draw: Button = $Toolbar/ModeDraw
 @onready var _mode_pan: Button = $Toolbar/ModePan
 @onready var _mode_trim: Button = $Toolbar/ModeTrim
+@onready var _mode_erase: Button = $Toolbar/ModeErase
 @onready var _mode_item: Button = $Toolbar/ModeItem
 @onready var _fabric_swatch: TextureRect = $MetaPanel/Row1/FabricSwatch
 @onready var _close_toggle: CheckButton = $Toolbar/CloseToggle
@@ -94,6 +98,7 @@ func _ready() -> void:
 	EditorSession.populate_options(_diff_option, _fabric_option)
 	_item_tool = EditorItemTool.new(self)
 	_trim_tool = EditorTrimTool.new(self)
+	_erase_tool = EditorEraseTool.new(self)
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(_on_confirm_ok)
 	_confirm.canceled.connect(_on_confirm_cancel)
@@ -106,6 +111,10 @@ func _ready() -> void:
 	_wire()
 	EditorSkin.setup_chrome(self)
 	_status_label.add_theme_color_override("font_color", NEUTRAL_COLOR)
+	# 테스트 플레이(인게임 곡)·결과(BGM 정지)에서 돌아와도 메뉴 곡으로 맞춘다(같은 곡이면 유지).
+	var am: Node = get_node_or_null("/root/AudioManager")
+	if am != null and am.has_method("play_bgm"):
+		am.play_bgm("menu")
 	if GameState.has_editor_session():
 		_restore_session(GameState.editor_session)
 		GameState.clear_editor_test()
@@ -124,6 +133,7 @@ func _ready() -> void:
 func _wire() -> void:
 	_canvas.stroke_committed.connect(_on_stroke_committed)
 	_trim_tool.bind()
+	_erase_tool.bind()
 	_canvas.view_changed.connect(_on_view_changed)
 	_mode_draw.pressed.connect(_set_mode.bind(DrawCanvas.Mode.DRAW))
 	_mode_pan.pressed.connect(_set_mode.bind(DrawCanvas.Mode.PAN))
@@ -178,9 +188,9 @@ func _needs_save() -> bool:
 	return _is_dirty() or str(_doc["local_id"]).is_empty()
 
 
-## 저장·테스트 가능: 기하 검증 통과 + 검토 필요 아이템 없음.
+## 저장·테스트 가능: 틈 없음 + 기하 검증 통과 + 검토 필요 아이템 없음.
 func _can_commit() -> bool:
-	return _is_validated() and _items_problem().is_empty()
+	return not EditorDoc.has_gap(_doc) and _is_validated() and _items_problem().is_empty()
 
 
 ## 실제 아이템 제약(개수·종류·s·lat·검토) 위반 사유. 검토 표시에만 의존하지 않는다.
@@ -225,7 +235,8 @@ func _redo() -> void:
 	_after_history("다시 실행했습니다.")
 
 
-## 진행 중인 아이템 드래그·스트로크·자르기를 문서 변경 없이 취소한다(undo/redo 직전).
+## 진행 중인 아이템 드래그·스트로크·자르기·지우기를 문서 변경 없이 취소한다. 문서·경로를 바꾸는 모든
+## 단축키·버튼(undo/redo·Backspace·C·Delete·검증·자동 수정·길이 조절·불러오기·난이도·틈 잇기 등)이 먼저 부른다.
 func _cancel_gestures() -> void:
 	_item_tool.cancel()
 	_canvas.cancel_input()
@@ -262,6 +273,8 @@ func _on_stroke_committed(raw: PackedVector2Array) -> void:
 	var seg: PackedVector2Array = _proc.process(raw, false, StrokeProcessor.CLOSE_GAP, raw_step)
 	if seg.size() < 2:
 		return
+	if EditorDoc.has_gap(_doc) and _erase_tool.gap_stroke(seg):
+		return  # 틈 끝점에서 이어 그리기(잇기·늘리기)는 지우기 도구가 처리한다
 	var path: PackedVector2Array = _doc["path"]
 	var snap: float = _canvas.world_radius(SNAP_PX, SNAP_RADIUS)
 	if path.size() >= 2 and path[path.size() - 1].distance_to(seg[0]) > snap:
@@ -296,6 +309,9 @@ func _on_trim_hover_exit() -> void:
 ## 경로를 앞 keep_count개 점만 남기고 자른다. 잘린 구간의 아이템은 같은 undo 단위로 제거한다.
 func _cut_to(keep_count: int) -> void:
 	var path: PackedVector2Array = _doc["path"]
+	var g: int = EditorDoc.gap_index(_doc)
+	if g >= 0 and keep_count < g + 2:
+		keep_count = mini(keep_count, g)  # 틈 뒤 조각이 한 점 이하로 남으면 뒤 조각을 모두 자른다
 	if keep_count >= path.size():
 		return
 	var new_path: PackedVector2Array = path.slice(0, maxi(keep_count, 0))
@@ -304,12 +320,14 @@ func _cut_to(keep_count: int) -> void:
 	_doc["path"] = new_path
 	_doc["items"] = kept["items"]
 	_doc["closed"] = false
+	_doc["gap"] = g if keep_count >= g + 2 else -1
 	_after_edit()
 	var extra: String = "  (아이템 %d개 함께 제거)" % int(kept["removed"]) if kept["removed"] > 0 else ""
 	_set_status("끝부분을 잘랐습니다" + extra, NEUTRAL_COLOR)
 
 
 func _trim_tail() -> void:
+	_cancel_gestures()
 	var path: PackedVector2Array = _doc["path"]
 	if path.size() <= 2:
 		return
@@ -324,6 +342,8 @@ func _set_mode(m: int) -> void:
 	_mode_pan.set_pressed_no_signal(m == DrawCanvas.Mode.PAN)
 	_mode_trim.set_pressed_no_signal(m == DrawCanvas.Mode.TRIM)
 	_mode_item.set_pressed_no_signal(m == DrawCanvas.Mode.ITEM)
+	_mode_erase.set_pressed_no_signal(m == DrawCanvas.Mode.ERASE)
+	_erase_tool.on_mode(m)
 	if m != DrawCanvas.Mode.ITEM:
 		_selected_item = -1  # 선택은 아이템 도구 안에서만 유지한다
 	if m == DrawCanvas.Mode.ITEM and _doc.has("path"):
@@ -333,12 +353,13 @@ func _set_mode(m: int) -> void:
 
 
 func _set_closed(on: bool) -> void:
+	_cancel_gestures()
 	var path: PackedVector2Array = _doc["path"]
 	if on == bool(_doc["closed"]):
 		_close_toggle.set_pressed_no_signal(on)
 		return
 	if on:
-		if path.size() < 3:
+		if path.size() < 3 or _erase_tool.blocked("루프를 닫을 수 없습니다"):
 			_close_toggle.set_pressed_no_signal(false)
 			return
 		var closed_path: PackedVector2Array = _proc.apply_close_gap(
@@ -370,6 +391,7 @@ func _set_closed(on: bool) -> void:
 
 ## "새로 그리기…": 경로와 아이템을 지우는 명시 동작(확인 후, undo 한 단위). 메타는 유지한다.
 func _on_new_pressed() -> void:
+	_cancel_gestures()
 	var n_items: int = (_doc["items"] as Array).size()
 	if (_doc["path"] as PackedVector2Array).is_empty() and n_items == 0:
 		return
@@ -387,6 +409,7 @@ func _clear_path() -> void:
 	_doc["pre_close"] = PackedVector2Array()
 	_doc["items"] = []
 	_doc["closed"] = false
+	_doc["gap"] = -1
 	_selected_item = -1
 	_sync_ui()
 	_after_edit()
@@ -411,6 +434,7 @@ func _on_name_focus_exited() -> void:
 
 ## 난이도 선택 = 폭 프리셋 적용(사용자 지정 폭은 이때만 명시적으로 바뀐다). 검증을 다시 요구한다.
 func _on_diff_changed(idx: int) -> void:
+	_cancel_gestures()
 	var id: String = str(EditorDoc.DIFFS[clampi(idx, 0, EditorDoc.DIFFS.size() - 1)]["id"])
 	if id == str(_doc["difficulty"]) and not EditorDoc.is_custom_width(_doc):
 		return
@@ -445,10 +469,13 @@ func _on_fabric_changed(idx: int) -> void:
 
 
 func _validate() -> void:
+	_cancel_gestures()
 	var path: PackedVector2Array = _doc["path"]
 	_shown_geom = EditorDoc.geom_key(_doc)
 	if path.size() < 2:
 		_set_status("트랙을 먼저 그리세요.", NEUTRAL_COLOR)
+		return
+	if _erase_tool.blocked("검증할 수 없습니다"):
 		return
 	var res: Dictionary = _validator.validate(path, float(_doc["width"]["fail"]))
 	_canvas.set_markers(res["curvature"], res["proximity"])
@@ -476,8 +503,9 @@ func _validate() -> void:
 ## "자동 수정…": 급한 곡선을 둥글게 고친 결과를 미리 보여 주고(청록 선) 확인 후에만 적용한다.
 ## 아이템은 이전 중심선 위치를 새 경로에 투영하고, 크게 옮겨지거나 헷갈리는 것은 검토 필요로 표시한다.
 func _auto_fix() -> void:
+	_cancel_gestures()
 	var path: PackedVector2Array = _doc["path"]
-	if path.size() < 5:
+	if path.size() < 5 or _erase_tool.blocked("자동 수정할 수 없습니다"):
 		return
 	var fixed: PackedVector2Array = _proc.relax_curvature(path, TrackValidator.MIN_RADIUS)
 	var items: Array = EditorDoc.reproject_items(path, fixed, _doc["items"])
@@ -530,9 +558,9 @@ func _apply_path_edit(
 ## "트랙 길이 조절…": 목표 길이 입력 → 미리보기 → 적용(undo 한 단계). 긴 트랙을 자동 축소하지 않는다.
 func _open_length_dialog() -> void:
 	var path: PackedVector2Array = _doc["path"]
-	if path.size() < 2:
+	if path.size() < 2 or _erase_tool.blocked("길이를 조절할 수 없습니다"):
 		return
-	_canvas.cancel_input()
+	_cancel_gestures()
 	_length_dialog.open_for(path, _doc["pre_close"], float(_doc["width"]["fail"]))
 
 
@@ -553,6 +581,7 @@ func _apply_length(r: Dictionary) -> void:
 
 ## 검토 필요 아이템을 지금 위치로 확정한다(undo 한 단계). 개별 해결은 셋째 묶음의 아이템 도구가 한다.
 func _confirm_reviews() -> void:
+	_cancel_gestures()
 	if EditorDoc.review_count(_doc["items"]) == 0:
 		return
 	_push_undo("review")
@@ -582,7 +611,9 @@ func _has_hard_curvature(res: Dictionary) -> bool:
 ## 검증을 통과한 문서를 저장한다. 성공 여부를 반환한다(테스트 출발 조건).
 func _save() -> bool:
 	if not _can_commit():
-		if _is_validated() and not _items_problem().is_empty():
+		if _erase_tool.blocked("저장할 수 없습니다"):
+			pass
+		elif _is_validated() and not _items_problem().is_empty():
 			_set_status("저장할 수 없습니다: " + _items_problem(), FAIL_COLOR)
 		return false
 	var dict: Dictionary = EditorDoc.to_track_dict(_doc)
@@ -602,7 +633,7 @@ func _save() -> bool:
 
 
 func _test_play() -> void:
-	if not _can_commit():
+	if _erase_tool.blocked("테스트할 수 없습니다") or not _can_commit():
 		return
 	if _needs_save():
 		var name_note: String = ""
@@ -682,7 +713,7 @@ func _parse_for_edit(text: String) -> Dictionary:
 
 ## "불러오기" 버튼. 웹은 브라우저 파일 선택, 데스크톱은 FileDialog를 연다.
 func _on_import_pressed() -> void:
-	_canvas.cancel_input()
+	_cancel_gestures()
 	if _web_bridge != null:
 		_web_bridge.pick_file(_on_web_file_loaded)
 	else:
@@ -715,6 +746,7 @@ func _import_file(path: String) -> void:
 ## → 편집 문서. 실패하면 기존 문서·ID·화면을 그대로 둔다. 성공 시 미저장 변경이 있으면 확인 후
 ## 교체하며, 교체는 undo 한 단위다. 불러온 트랙은 새 로컬 트랙(저장 시 새 id, §8)이다.
 func _import_from_text(text: String) -> void:
+	_cancel_gestures()
 	var parsed: Dictionary = _parse_for_edit(text)
 	if not bool(parsed["ok"]):
 		_set_status("불러오기 실패 — " + str(parsed["message"]), FAIL_COLOR)
@@ -788,7 +820,8 @@ func _after_edit() -> void:
 func _refresh() -> void:
 	var path: PackedVector2Array = _doc["path"]
 	var w: Dictionary = _doc["width"]
-	_canvas.set_track(path, float(w["safe"]), float(w["fail"]))
+	_canvas.set_track(path, float(w["safe"]), float(w["fail"]), EditorDoc.gap_index(_doc))
+	_erase_tool.refresh_row()
 	var items: Array = _doc["items"]
 	if _selected_item >= items.size():
 		_selected_item = -1
@@ -825,6 +858,8 @@ func _refresh() -> void:
 	var state: String = "저장 안 됨" if dirty else "저장됨"
 	if str(_doc["local_id"]).is_empty():
 		state = "새 트랙 · 저장 전" if (dirty or path.size() >= 2) else "새 트랙"
+	if EditorDoc.has_gap(_doc):
+		state = "틈 있음 · 저장 불가"
 	var n_items: int = (_doc["items"] as Array).size()
 	_doc_state_label.text = "트랙 길이 %d · 아이템 %d · %s" % [
 		int(EditorDoc.path_length(path)), n_items, state
@@ -832,7 +867,9 @@ func _refresh() -> void:
 
 
 func _set_idle_status() -> void:
-	if (_doc["path"] as PackedVector2Array).size() >= 2:
+	if EditorDoc.has_gap(_doc):
+		_set_status(EditorEraseTool.GAP_HINT, WARN_COLOR)
+	elif (_doc["path"] as PackedVector2Array).size() >= 2:
 		_set_status("검증하려면 '검증'(Enter)을 누르세요.", NEUTRAL_COLOR)
 	else:
 		_set_status(

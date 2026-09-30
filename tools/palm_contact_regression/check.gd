@@ -366,14 +366,14 @@ func _check_press_scale() -> void:
 	var steer_s: float = _rh.press_scale()
 	var relax_s: float = _lh.press_scale()
 	_ok(steer_s > 1.015, "press scale: steer max %.4f > old 1.015" % steer_s)
-	_ok(steer_s >= 1.05 and steer_s <= 1.08, "press scale: steer max %.4f in [1.05, 1.08]" % steer_s)
-	_ok(relax_s <= 1.0 and relax_s >= 0.96, "press scale: relaxed hand %.4f in [0.96, 1]" % relax_s)
+	_ok(steer_s >= 1.12 and steer_s <= 1.14, "press scale: steer max %.4f in [1.12, 1.14]" % steer_s)
+	_ok(relax_s <= 1.0 and relax_s >= 0.94, "press scale: relaxed hand %.4f in [0.94, 1]" % relax_s)
 	_ok(1.0 - relax_s < steer_s - 1.0, "press scale: relax shrink smaller than steer grow")
 	# 우드리프트: 우측 손만 추가 확대, 좌측(반대) 손은 증폭 없이 이완 그대로.
 	_settle_press(1.0, true, 1.0, dt)
 	var drift_s: float = _rh.press_scale()
 	_ok(drift_s > steer_s, "press scale: drift max %.4f > steer max %.4f" % [drift_s, steer_s])
-	_ok(drift_s >= 1.10 and drift_s <= 1.13, "press scale: drift max %.4f in [1.10, 1.13]" % drift_s)
+	_ok(drift_s >= 1.20 and drift_s <= 1.23, "press scale: drift max %.4f in [1.20, 1.23]" % drift_s)
 	_ok(
 		is_equal_approx(_lh.press_scale(), relax_s),
 		"press scale: drift opposite hand not boosted (%.4f)" % _lh.press_scale()
@@ -422,7 +422,7 @@ func _check_press_scale() -> void:
 	var nz: bool = sc.slice(0, 4).all(func(v: float) -> bool: return absf(v - 1.0) <= 0.001)
 	var up: bool = range(7, 22, 2).all(func(i: int) -> bool: return sc[i] >= sc[i - 2])
 	_ok(nz, "press scale: near-zero drift (dir ±0.001) hands ~1 %s" % str(sc.slice(0, 4)))
-	_ok(up and sc[21] >= 1.10, "press scale: drift grows with |dir| to max (R) %s" % str(sc))
+	_ok(up and sc[21] >= 1.20, "press scale: drift grows with |dir| to max (R) %s" % str(sc))
 	_settle_press(0.0, false, 0.0, dt)
 	_ok(
 		is_equal_approx(_lh.press_scale(), 1.0) and is_equal_approx(_rh.press_scale(), 1.0),

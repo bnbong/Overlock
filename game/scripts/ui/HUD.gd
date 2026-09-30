@@ -14,6 +14,13 @@ const THIMBLE_ACCENT := Color(1.0, 0.82, 0.28)
 const THIMBLE_ACCENT_DEEP := Color(0.78, 0.58, 0.12)
 const AUTOPILOT_ACCENT := Color(0.93, 0.46, 0.62)
 const AUTOPILOT_ACCENT_DEEP := Color(0.70, 0.28, 0.42)
+## 아이템 슬롯 위젯 배치(RISK 패널 오른쪽, 바닥선 정렬). 키보드 모드 사용 키 힌트.
+const SLOT_GAP: float = 10.0
+const SLOT_KEY_HINT: String = "Space"
+## 자동 일시정지(세로 전환·포커스 상실) 안내 문구. 키보드는 재개 키를 함께 적고, 터치는 바로 아래
+## "계속" 버튼이 있으므로 짧게 쓰고 글자를 키운다(폰 축소 배율에서도 읽히게).
+const AUTO_PAUSE_TEXT_KEYS: String = "화면을 벗어나 자동으로 멈췄습니다 · Esc로 계속"
+const AUTO_PAUSE_TEXT_TOUCH: String = "화면을 벗어나 자동으로 멈췄습니다"
 
 var _length: float = 1.0
 var _prev_band: int = RunStats.Band.PERFECT
@@ -23,6 +30,11 @@ var _prev_band: int = RunStats.Band.PERFECT
 var _effect_box: VBoxContainer = null
 var _thimble_card: EffectTimerCard = null
 var _autopilot_card: EffectTimerCard = null
+
+# 아이템 슬롯 2칸 위젯(v2.2.1). RISK 패널 오른쪽에 붙고, 터치 모드에서는 RISK와 함께 위로 옮긴다.
+var _item_slots: ItemSlots = null
+# 자동 일시정지 안내 라벨(일시정지 오버레이 제목 아래). 자동 정지일 때만 보인다.
+var _auto_pause_label: Label = null
 
 # 모바일 터치 컨트롤(docs/mobile.md 1단계). 터치 기기(또는 --touch-controls 강제)에서만 생성한다.
 # _modal_count는 HUD 위에 뒤늦게 붙는 모달 수 — 떠 있는 동안 버튼을 숨기고 막는다.
@@ -46,7 +58,9 @@ var _in_finish_view: bool = false
 func _ready() -> void:
 	_apply_skin()
 	_build_effect_cards()
+	_build_item_slots()
 	_build_touch_controls()
+	_build_auto_pause_label()
 	_apply_editor_test_pause()
 
 
@@ -72,6 +86,42 @@ func _build_effect_cards() -> void:
 	)
 	_effect_box.add_child(_thimble_card)
 	_effect_box.add_child(_autopilot_card)
+
+
+## RISK 패널 오른쪽(SLOT_GAP 간격)에 슬롯 위젯을 동적 생성한다(씬 미수정 컨벤션). RISK와 같은
+## 좌하단 앵커·같은 바닥선이라, 터치 모드에서 _apply_touch_layout이 RISK와 같은 만큼 옮긴다.
+func _build_item_slots() -> void:
+	_item_slots = ItemSlots.new()
+	_item_slots.name = "ItemSlots"
+	_item_slots.setup({"thimble": ICON_THIMBLE, "autopilot": ICON_AUTOPILOT})
+	_item_slots.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_item_slots.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_item_slots.offset_left = _risk_meter.offset_right + SLOT_GAP
+	_item_slots.offset_right = _item_slots.offset_left + ItemSlots.SIZE.x
+	_item_slots.offset_bottom = _risk_meter.offset_bottom
+	_item_slots.offset_top = _item_slots.offset_bottom - ItemSlots.SIZE.y
+	_item_slots.set_key_hint("" if TouchControls.should_show() else SLOT_KEY_HINT)
+	add_child(_item_slots)
+	# 일시정지 딤 아래에 그려지도록 오버레이 앞에 둔다.
+	move_child(_item_slots, _pause_overlay.get_index())
+
+
+## 일시정지 오버레이 제목(PAUSED) 아래에 자동 정지 안내 라벨을 붙인다(평소 숨김).
+func _build_auto_pause_label() -> void:
+	_auto_pause_label = Label.new()
+	_auto_pause_label.name = "AutoPauseLabel"
+	_auto_pause_label.visible = false
+	_auto_pause_label.set_anchors_preset(Control.PRESET_CENTER)
+	_auto_pause_label.offset_left = -236.0
+	_auto_pause_label.offset_right = 236.0
+	_auto_pause_label.offset_top = -18.0
+	_auto_pause_label.offset_bottom = 6.0
+	_auto_pause_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_auto_pause_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_auto_pause_label.add_theme_font_size_override("font_size", 20 if _touch != null else 17)
+	_auto_pause_label.add_theme_color_override("font_color", SewingSkin.THREAD_PURPLE)
+	_auto_pause_label.text = AUTO_PAUSE_TEXT_TOUCH if _touch != null else AUTO_PAUSE_TEXT_KEYS
+	_pause_overlay.add_child(_auto_pause_label)
 
 
 ## 사용자 제공 시트 스킨(있으면): TIME=태그 라벨, 일시정지=베이지 패널. 없으면 절차 폴백.
@@ -104,10 +154,53 @@ func show_go() -> void:
 	_countdown.show_go()
 
 
-func set_pause_visible(value: bool) -> void:
+## 일시정지 오버레이 표시. auto=true면 자동 일시정지(세로 전환·포커스 상실) 안내를 함께 보인다.
+func set_pause_visible(value: bool, auto: bool = false) -> void:
 	_pause_overlay.visible = value
 	_pause_visible = value
+	if _auto_pause_label != null:
+		_auto_pause_label.visible = value and auto
 	_refresh_touch_block()
+
+
+func is_auto_pause_notice_visible() -> bool:
+	return _auto_pause_label != null and _auto_pause_label.is_visible_in_tree()
+
+
+# --- 아이템 슬롯 (v2.2.1) ---
+
+
+## RaceDirector가 슬롯이 바뀔 때마다(담기·사용·완주 비움·시작) 호출한다. 슬롯 위젯과 터치 USE 버튼
+## 아이콘(다음에 쓸 아이템, 비면 비활성 표시)을 함께 갱신한다.
+func set_item_slots(slots: Array[String]) -> void:
+	if _item_slots != null:
+		_item_slots.set_slots(slots)
+	if _touch != null:
+		_touch.set_use_icon(_item_icon(slots[0]) if not slots.is_empty() else null)
+
+
+## 슬롯이 가득 차 아이템을 못 먹었다(반경 진입 1회). 슬롯 흔들림 + 약한 효과음 훅.
+func on_item_slots_full() -> void:
+	if _item_slots != null:
+		_item_slots.shake(true)
+	var am: Node = _audio()
+	if am != null and am.has_method("on_item_slots_full"):
+		am.on_item_slots_full()
+
+
+## 사용 입력이 거절됐다(빈 슬롯 또는 부상·이탈 조작 잠금). 경고색 없이 짧게 흔든다.
+func on_item_use_rejected() -> void:
+	if _item_slots != null:
+		_item_slots.shake(false)
+
+
+static func _item_icon(type: String) -> Texture2D:
+	match type:
+		"thimble":
+			return ICON_THIMBLE
+		"autopilot":
+			return ICON_AUTOPILOT
+	return null
 
 
 ## 완주 줌아웃 연출 진입 시 인게임 HUD 위젯을 숨긴다(FinishView 오버레이가 화면을
@@ -200,6 +293,7 @@ func _build_touch_controls() -> void:
 ## 터치 모드 하단 위젯 재배치(씬 미수정 — 키보드 모드는 씬 배치 그대로). 조향 버튼은 왼쪽 끝,
 ## 속도·드리프트 버튼은 오른쪽 끝에 붙으므로(TouchControls.button_rect) 그 위로 위젯을 올린다.
 ## - 좌측: RISK 패널을 ◀ 바로 위(왼쪽 정렬)로, 효과 카드 스택은 RISK 위 간격(10px)을 유지한 채 함께.
+##   아이템 슬롯 위젯도 RISK 오른쪽 바닥선 정렬을 유지한 채 함께 옮긴다(▶ 윗변보다 위).
 ## - 우측: SPEED 패널을 ▲ 열 폭에 맞춰(오른쪽 정렬) ▲ 바로 위로, 게이지·힌트 라벨은 패널 안에서
 ##   씬과 같은 세로 관계를 유지한 채 함께 옮긴다.
 ## 모든 위젯이 하단(좌/우) 앵커라 offset만 바꾸면 되고, 캔버스는 1280×720 고정(stretch keep)이다.
@@ -212,6 +306,8 @@ func _apply_touch_layout() -> void:
 	_shift_offsets(_risk_meter, 0.0, dy_left)
 	if _effect_box != null:
 		_shift_offsets(_effect_box, 0.0, dy_left)
+	if _item_slots != null:
+		_shift_offsets(_item_slots, 0.0, dy_left)
 	# 우측: SPEED 패널 = ▲ 열(오른쪽 여백 m, 폭 SPEED_SIZE), 바닥 = ▲ 윗변 - gap. 높이는 씬 값 유지.
 	var panel: Control = $SpeedPanel
 	var col_w: float = TouchControls.SPEED_SIZE

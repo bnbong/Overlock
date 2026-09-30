@@ -465,6 +465,34 @@ func finalize(finish_time: float, safe_width: float, track_id: String, diff: Str
 
 **재봉 평점(Seam Grade)**: `finalize`가 in-line 충실도를 등급으로 환산해 결과 dict에 `grade`(문자)·`grade_score`(0 ~ 100 수치)로 담는다. `grade_score = clamp(accuracy×0.6 + perfect_rate×0.4 − cuts×5, 0, 100)`, 등급 컷오프는 S≥95 / A≥88 / B≥75 / C≥60 / D. accuracy(평균 이탈의 역수)를 주 가중치로 두어 "재봉선대로 정직하게 완주"를 보상하고 부상(cuts)을 무겁게 감점한다. 리더보드 정렬 기준(`final_time_ms`)은 불변이며 등급은 성취 표시용이다(결과 화면·완주 줌아웃 연출에서 표시).
 
+### 6.6 아이템 슬롯 (v2.2.1)
+
+v2.2.1부터 필드 아이템(골무, 엄마 찬스)은 밟는 순간 효과를 내지 않고 두 칸짜리 슬롯에 담긴다. 플레이어는 원하는 때에 사용 입력(`use_item`, 키보드 Space, 터치 USE 버튼)을 눌러 가장 먼저 담은 아이템부터 쓴다. 슬롯 상태는 `RaceDirector`가 가지며, 모든 변경은 60Hz 고정 틱 안에서만 일어난다.
+
+**담기 규칙**
+
+- 슬롯은 `RaceDirector.ITEM_SLOT_CAPACITY`(2)칸의 FIFO 큐(`_slots`, 아이템 type 문자열 배열)이다. 앞쪽 원소가 다음에 쓸 아이템이다.
+- 노루발이 아이템 반경(`Tuning.item_pickup_radius`) 안에 들어오면, 빈 칸이 있을 때 슬롯 맨 뒤에 담고 그 아이템을 획득한 것으로 처리한다(`_collected[i] = true`, `ItemField.on_collected`).
+- 슬롯이 가득 차 있으면 아이템을 획득하지 않는다. 아이템은 필드에 그대로 남고, 반경에 들어온 첫 틱에만 HUD에 "가득 참" 피드백(슬롯 위젯 흔들림, 낮은 재봉틀 틱 소리)을 보낸다. 반경 안에 머무는 동안 슬롯이 비면 다음 틱에 정상적으로 담는다.
+- 한 틱에 아이템 여러 개가 겹치면 배열 인덱스 순서로 담는다.
+
+**사용 규칙**
+
+- `use_item` 눌림은 속도 입력처럼 `_unhandled_input`에서 버퍼링하고, 다음 물리 틱의 `InputFrame.use_item`으로 소비한다. 키 반복(echo) 이벤트는 받지 않으므로 길게 눌러도 한 번만 쓰며, 한 틱 안에 여러 번 눌러도 한 번으로 합친다.
+- 사용은 그 틱의 `simulate` 전에 처리한다. 슬롯 맨 앞 아이템을 꺼내 기존 효과 함수 `_apply_item`을 그대로 부르므로, 골무는 `grant_thimble`(부상 면역 `Tuning.thimble_duration`)이, 엄마 찬스는 `grant_autopilot`(자동 주행 `Tuning.autopilot_duration`)이 실행된다. 엄마 찬스의 자동 주행 시작점은 직전 틱의 트랙 질의 결과(`_last_s`)이다.
+- 같은 효과가 이미 켜져 있을 때 다시 쓰면 타이머가 전체 지속 시간으로 갱신된다. 남은 시간에 더해지지는 않으며, 슬롯 도입 전에 아이템을 다시 먹었을 때와 같은 규칙이다. 서로 다른 효과는 함께 켜질 수 있다.
+- 부상 대기(손 미끄러짐 사전 연출) 중에도 쓸 수 있다. 예전에는 아이템을 먹을 때 `grant_*`가 대기 중인 부상을 해제했는데, 이제는 사용할 때 같은 해제가 일어난다. 담기만 해서는 대기 중인 부상이 풀리지 않는다. 사용이 시뮬레이션보다 먼저 처리되므로, 대기가 끝나는 마지막 틱에 눌러도 그 틱의 부상을 막는다.
+- 부상 스턴(`stun_timer`)과 원단 이탈 복귀 잠금(`offfabric_timer`) 중에는 속도 입력과 마찬가지로 조작 잠금으로 보고 사용을 무시한다. 슬롯은 그대로 남고 눌림은 버려지므로, 잠금이 풀린 뒤에 뒤늦게 쓰이지 않는다. 빈 슬롯에서 누른 경우와 함께 HUD에는 짧은 흔들림만 보낸다.
+- 카운트다운, 일시정지, 완주 줌아웃 중의 눌림은 버퍼에 넣지 않는다. 일시정지를 걸거나 풀 때도 버퍼를 비운다.
+
+**한 틱 안의 순서**는 입력 샘플 → 아이템 사용 → 자동 주행 타깃 주입 → `simulate` → 트랙 질의 → 아이템 담기 → 이탈 리셋 판정 → 집계 순이다. 그래서 슬롯이 가득 찬 상태에서 아이템 위를 지나며 사용 입력을 누르면, 먼저 앞 칸을 쓰고 같은 틱에 새 아이템을 뒤 칸에 담는다.
+
+**완주와 재시작.** 완주하면 결과를 확정한 직후 남은 슬롯을 효과 없이 비운다. 기록과 등급에는 영향이 없다. 재시작은 씬을 다시 불러오므로 슬롯이 빈 상태로 시작한다.
+
+**통계와 제출 스키마.** `RunStats`에는 아이템 관련 집계가 없으므로 결과 dict와 리더보드 제출 필드는 바뀌지 않았다. `tools/item_slot_regression`이 결과 dict의 키 목록을 확인한다.
+
+**결정론.** 슬롯은 문자열 배열 하나이고, 담기와 사용이 모두 고정 틱 안에서만 바뀌며, 사용 입력은 `InputFrame`에 기록된다. 같은 입력 시퀀스를 두 번 실행하면 틱마다 위치, 방향, RISK, 슬롯, 효과 타이머가 같다는 것을 `tools/item_slot_regression`이 확인한다.
+
 ---
 
 ## 7. 입력 맵 (§11.1)
@@ -496,6 +524,9 @@ func _bind(action: StringName, keys: Array) -> void:
 | `speed_up` / `speed_down` | ↑/W, ↓/S | 이산: `_unhandled_input` 버퍼링 |
 | `restart` | R | 이산: Gameplay 재로드 |
 | `pause` | Esc | 이산: PauseOverlay 토글 |
+| `use_item` | Space | 이산: `_unhandled_input` 버퍼링 → `InputFrame.use_item`(v2.2.1, §6.6) |
+
+`use_item`에 Ctrl을 쓰지 않은 이유는 두 가지다. 조향이 A/D, 속도가 W/S라서 웹 빌드에서 Ctrl+W(탭 닫기)·Ctrl+S·Ctrl+A·Ctrl+D가 브라우저 단축키와 겹치고, Ctrl+W는 페이지에서 막을 수 없다. macOS에서는 Ctrl+방향키가 데스크톱 전환이다. Space는 Godot 기본 `ui_accept`에도 들어 있지만, 주행 중에는 포커스를 가진 Control이 없어서 GUI가 Space를 소비하지 않고 `_unhandled_input`까지 전달된다(튜토리얼이 떠 있을 때는 "시작하기" 버튼이 포커스를 가지므로 Space가 Enter처럼 튜토리얼을 닫는다). 웹에서는 엔진의 캔버스 `keydown` 처리기가 모든 키 이벤트에 `preventDefault()`를 부르고 기본 셸의 `body`가 `overflow: hidden`이라서 Space가 페이지를 스크롤하지 않는다. 이 내용은 Godot 4.6.1 웹 템플릿의 `godot.js`에서 확인했으며, 실제 브라우저에서는 검증하지 않았다.
 
 Tab(고스트 토글)은 MVP 제외.
 
