@@ -14,7 +14,7 @@ FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 REP = {
     "01_title": 3.0, "02_trackselect": 4.0, "03_countdown_go": 1.5, "04_straight_speedup": 3.6,
     "05_curves_clean": 6.0, "06_drift": 1.5, "07_thimble": 2.0, "08_mom_chance": 2.5,
-    "09_injury": 2.6, "10_bonk_scold": 3.0, "11_finish_reveal": 3.0, "11b_finish_reveal_star": 3.0, "12_result": 2.0,
+    "09_injury_A": 1.8, "09_injury_B": 1.8, "10_bonk_scold": 3.0, "11_finish_reveal": 3.0, "11b_finish_reveal_star": 3.0, "12_result": 2.0,
 }
 
 

@@ -10,9 +10,20 @@ extends CanvasLayer
 ## (보라 박음질 + 초상화 쪽을 향한 꼬리) 왼쪽 위에 초상화가 걸치고 대사는 그 오른쪽에 크게 쓴다.
 ## 스타일은 큐 항목이 실제로 표시되는 시점(_show_next)에 그 항목 기준으로 적용하므로, 표시 중인
 ## 토스트는 뒤에 쌓인 항목의 종류와 무관하고 다음 일반 항목에서는 일반 스타일로 모두 되돌아간다.
+##
+## push_immediate(message, portrait)는 부상 대사 전용 최소 경로다: 큐에 넣지 않고 현재 슬롯을 바로
+## 차지한다. 표시 중이던 일반 항목은 종료(다시 넣지 않음)하고 대기 큐는 그대로 두어 끝난 뒤 이어서
+## 표시한다. 즉시 알림이 떠 있는 중에 또 오면 같은 슬롯의 대사를 새로 바꾸고 표시 시간을 다시 센다.
+## 표시 작업마다 세대 번호(_gen)를 올려, 선점된 항목의 대기 중인 process_frame 재개나 트윈 콜백이
+## 새 항목의 배치·알파·큐를 건드리지 못하게 한다.
+## dismiss()는 표시 중 항목을 짧게 걷고 대기 큐를 비운다(완주 줌아웃 진입 때 PresentationController가 호출).
 
 const _DURATION: float = 3.6  # 완전 표시 유지 시간(초)
 const _FADE: float = 0.28  # 페이드 인/아웃 시간(초)
+# push_immediate 페이드 인 시간(초, 빈 상태·선점·갱신 공통). 대사·초상화·스타일은 호출한 프레임에
+# 한꺼번에 바뀌고, 선점 때 알파는 직전 값에서 이어서 올라가므로(깜빡임 없음) 부상 순간에 늦지 않게
+# 짧게 잡는다.
+const _IMMEDIATE_FADE: float = 0.08
 const _BOTTOM_MARGIN: float = 64.0  # 화면 하단에서 띄우는 간격(px)
 
 # 재봉 팔레트(SewingSkin 계승) — 베이지 원단 + 실 보라 테두리 + 짙은 갈색 글.
@@ -46,6 +57,9 @@ const _TAIL_TIP: Vector2 = Vector2(188.0, -21.0)
 
 var _queue: Array[Dictionary] = []  # {"text": String, "portrait": Texture2D 또는 null}
 var _busy: bool = false
+var _immediate: bool = false  # 현재 슬롯이 push_immediate 항목인지
+var _gen: int = 0  # 표시 작업 세대 번호(선점·정리 때 올려 이전 작업을 무효화)
+var _tween: Tween = null  # 현재 항목의 페이드·유지 트윈
 var _root: Control
 # 패널·초상화를 함께 페이드하는 알림 그룹(clip 없음 → 말풍선 위로 올라온 머리도 잘리지 않는다).
 var _group: Control
@@ -108,26 +122,108 @@ func push(message: String, portrait: Texture2D = null) -> void:
 		_show_next()
 
 
-func _show_next() -> void:
-	if _queue.is_empty():
-		_busy = false
-		_group.visible = false
+## 현재 표시 중인 알림보다 우선해 즉시 표시한다(부상 대사 전용).
+func push_immediate(message: String, portrait: Texture2D = null) -> void:
+	if not is_inside_tree():
 		return
-	_busy = true
-	var item: Dictionary = _queue.pop_front()
-	_label.text = item["text"]
-	# 이 항목 기준으로 스타일을 적용한다(초상화 없는 항목은 일반 스타일로 전부 복원).
-	_apply_style(item["portrait"])
-	_group.visible = true
-	_group.modulate.a = 0.0
-	# 콘텐츠 크기가 정해진 뒤 하단 중앙에 배치한다.
-	await get_tree().process_frame
+	# 표시 중(일반 항목이든 이전 즉시 알림이든)이면 선점: 그 항목은 종료하고 큐에는 되돌리지 않는다.
+	var preempt: bool = _busy and _group.visible
+	var from_alpha: float = _group.modulate.a if preempt else 0.0
+	_kill_tween()
+	var gen: int = _begin(message, portrait, true)
+	_group.modulate.a = from_alpha
+	# 콘텐츠·스타일·배치를 이 프레임 안에서 한꺼번에 바꾼다(이전 초상화·패널과 섞인 프레임 없음).
 	_reposition()
-	var tw: Tween = create_tween()
-	tw.tween_property(_group, "modulate:a", 1.0, _FADE)
-	tw.tween_interval(_DURATION)
-	tw.tween_property(_group, "modulate:a", 0.0, _FADE)
-	tw.tween_callback(_show_next)
+	# 빈 상태에서도 짧게 페이드 인한다(부상 순간에 대사가 늦게 읽히지 않게).
+	_start_tween(gen, _IMMEDIATE_FADE)
+
+
+func _show_next() -> void:
+	_kill_tween()
+	if _queue.is_empty():
+		_gen += 1
+		_busy = false
+		_immediate = false
+		_group.visible = false
+		_portrait.texture = null
+		return
+	var item: Dictionary = _queue.pop_front()
+	var gen: int = _begin(item["text"], item["portrait"], false)
+	_group.modulate.a = 0.0
+	# 콘텐츠 크기가 정해진 뒤 하단 중앙에 배치한다. 기다리는 사이 선점·정리되면 이 작업은 버린다.
+	await get_tree().process_frame
+	if gen != _gen:
+		return
+	_reposition()
+	_start_tween(gen, _FADE)
+
+
+## 항목 하나를 현재 슬롯에 올린다(대사·스타일·초상화를 한꺼번에). 새 세대 번호를 돌려준다.
+func _begin(text: String, portrait: Texture2D, immediate: bool) -> int:
+	_gen += 1
+	_busy = true
+	_immediate = immediate
+	_label.text = text
+	# 이 항목 기준으로 스타일을 적용한다(초상화 없는 항목은 일반 스타일로 전부 복원).
+	_apply_style(portrait)
+	_group.visible = true
+	return _gen
+
+
+## 페이드 인 → 유지 → 페이드 아웃 → 다음 항목. 콜백은 자기 세대일 때만 다음으로 넘어간다.
+func _start_tween(gen: int, fade_in: float) -> void:
+	_tween = create_tween()
+	_tween.tween_property(_group, "modulate:a", 1.0, fade_in)
+	_tween.tween_interval(_DURATION)
+	_tween.tween_property(_group, "modulate:a", 0.0, _FADE)
+	_tween.tween_callback(_on_item_done.bind(gen))
+
+
+func _on_item_done(gen: int) -> void:
+	if gen == _gen:
+		_show_next()
+
+
+func _kill_tween() -> void:
+	if _tween != null and _tween.is_valid():
+		_tween.kill()
+	_tween = null
+
+
+## 표시 중인 항목을 짧게 페이드 아웃하고 대기 큐를 비운다(완주 연출 진입 등 더 알릴 게 없는 시점용).
+## 세대를 올려 진행 중이던 표시 작업·트윈 콜백은 모두 무효가 되고, 이후 push는 평소대로 동작한다.
+func dismiss() -> void:
+	_kill_tween()
+	_gen += 1
+	_queue.clear()
+	_busy = false
+	_immediate = false
+	if not _group.visible:
+		_portrait.texture = null
+		return
+	var gen: int = _gen
+	_tween = create_tween()
+	_tween.tween_property(_group, "modulate:a", 0.0, _IMMEDIATE_FADE)
+	_tween.tween_callback(_on_dismissed.bind(gen))
+
+
+func _on_dismissed(gen: int) -> void:
+	if gen == _gen:
+		_group.visible = false
+		_portrait.texture = null
+
+
+## 트리에서 빠지면(씬 재시작·화면 전환) 진행 중 트윈·대기 작업·큐·초상화를 모두 비운다.
+func _exit_tree() -> void:
+	_kill_tween()
+	_gen += 1
+	_queue.clear()
+	_busy = false
+	_immediate = false
+	if _group != null:
+		_group.visible = false
+		_group.modulate.a = 0.0
+		_portrait.texture = null
 
 
 ## 항목 하나의 표시 스타일을 적용한다. portrait == null 이면 일반 토스트(기존 값) 스타일.

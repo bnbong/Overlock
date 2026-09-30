@@ -20,6 +20,9 @@ extends Node2D
 ## 따르는 짧은 접촉 그림자를 먼저 그린다.
 ## texture가 null이면 절차적 도형으로 폴백한다(§9 함정 13).
 
+## 부상 사전 연출 단계(SLIP: 미끄러짐, RECOIL: cut 직후 움찔 복귀, RELEASE: cut 없는 해제 복귀).
+enum SlipMode { NONE, SLIP, RECOIL, RELEASE }
+
 const SKIN_COLOR: Color = Color(0.85, 0.66, 0.54, 1.0)
 const SKIN_SHADOW: Color = Color(0.72, 0.54, 0.44, 1.0)
 const SKIN_HI: Color = Color(0.90, 0.74, 0.62, 1.0)
@@ -91,6 +94,43 @@ const SWAP_MARGIN: float = 32.0
 ## max_press_scale()을 쓴다.
 const SWAP_MAX_PRESS: float = 1.0 + DRIFT_PRESS_BOOST
 
+## --- 부상 사전 연출(finger slip): RISK 최고 → 손 미끄러짐 → cut → 움찔 복귀 ---
+## PresentationController가 cut 대상 손에만 set_slip(u)로 사전 연출 진행값(0..1)을 주입하고, 실제
+## cut(스턴 상승엣지)에서 play_slip_recoil(), cut 없이 해제되면 release_slip()을 부른다. 추가 오프셋은
+## 조향·진동·엄마 교대 오프셋 위에 더해지며 플레이어 손에만 적용된다(엄마 손에는 전이하지 않음).
+## 손 이미지는 그대로 평행 이동만 한다(확대율·종횡비 불변, 그림자도 같은 변환을 공유).
+## 접촉 손가락 끝(표시 사각형 중심 기준 로컬 px, mirror=false 우측 손). 기본·밴드·골무 변형 모두 같은
+## 캔버스라 hand_flat.png 원본 1448x1086의 검지 손톱 끝(158,863)을 DISPLAY_SIZE 배율로 옮긴 값이다.
+## 손 안쪽에서 가장 앞서는 손가락이라 노루발에 먼저 닿는다(1·3번째 cut의 밴드 손가락과 같다).
+const SLIP_TIP: Vector2 = Vector2(-246.3, 139.2)
+## 미끄러짐 끝에서 접촉 손가락 끝이 닿는 화면 지점. 화면 중앙(바늘 x=640)에서 가로 SLIP_TARGET_DX,
+## 세로 SLIP_TARGET_Y(1280x720 캔버스). 노루발 불투명 영역(x 558..723, 아래 끝 y≈473)의 발끝 옆·
+## 조금 앞쪽이라 손가락이 바늘 자리(x=640)나 노루발 밑으로 들어가지 않는다. 좌측 손은 좌우 대칭.
+const SLIP_TARGET_DX: float = 90.0
+const SLIP_TARGET_Y: float = 500.0
+## 미끄러짐 이동 상한(px). 안쪽은 SLIP_MAX_IN, 위쪽은 SLIP_MAX_UP까지만 움직인다(손목이 원단에서
+## 들떠 보이지 않도록 세로는 작게). 이미 눌려 안쪽으로 온 손은 필요한 만큼만 움직인다.
+const SLIP_MAX_IN: float = 80.0
+const SLIP_MAX_UP: float = 36.0
+## 미끄러짐 곡선 c(u) = SLIP_EASE_LIN·u + (1-SLIP_EASE_LIN)·u². 기울기가 계속 커지는 ease-in이라
+## 점점 빨라지고, 첫 프레임부터 조금은 움직여 놀란 눈과 함께 바로 읽힌다.
+const SLIP_EASE_LIN: float = 0.25
+## cut 직후 움찔 복귀(닫힌 형식, 프레임 독립). 전체 SLIP_RECOIL_DUR 중 앞 SLIP_RECOIL_OUT_FRAC 구간에
+## 접촉 위치에서 바깥으로 SLIP_RECOIL_PX(아래로 SLIP_RECOIL_DOWN)만큼 튕겨 나가고, 나머지 구간에
+## 제자리(0)로 부드럽게 돌아온다.
+const SLIP_RECOIL_DUR: float = 0.16
+const SLIP_RECOIL_OUT_FRAC: float = 0.35
+const SLIP_RECOIL_PX: float = 14.0
+const SLIP_RECOIL_DOWN: float = 2.0
+## cut 없이 pending이 해제될 때(골무·엄마 찬스·이탈 리셋·리셋) 제자리로 돌아가는 시간(초, smoothstep).
+const SLIP_RELEASE_DUR: float = 0.18
+## 짧은 속도선(미끄러짐 중)과 접촉 섬광(cut 직후) 표현. Godot 기본 draw만 쓴다.
+const SLIP_STREAK_COLOR: Color = Color(1.0, 1.0, 1.0, 0.7)
+const SLIP_SPARK_DUR: float = 0.12
+const SLIP_SPARK_LEN: float = 20.0
+const SLIP_SPARK_COLOR: Color = Color(1.0, 0.93, 0.55, 1.0)
+
+
 ## true면 좌측 손(기준 우측 손 텍스처를 좌우 반전).
 @export var mirror: bool = false
 ## null이면 _draw 도형, 지정되면 스프라이트로 렌더.
@@ -127,6 +167,14 @@ var _mom_swipe: float = 0.0
 # 빠지고 플레이어 손이 들어온다. 도중에 목표가 바뀌어도 _swap이 연속이라 손이 순간 이동하지 않는다.
 var _swap_target: float = 0.0
 var _swap: float = 0.0
+# 부상 사전 연출 상태. SLIP은 주입된 진행값(_slip_u)으로, RECOIL/RELEASE는 경과 시간(_slip_t)과
+# 시작 순간 오프셋(_slip_from)의 닫힌 형식으로 오프셋을 정한다.
+var _slip_mode: int = SlipMode.NONE
+var _slip_u: float = 0.0
+var _slip_t: float = 0.0
+var _slip_from: Vector2 = Vector2.ZERO
+# 접촉 섬광 위치(노드 로컬, cut 순간 손가락 끝).
+var _spark_pos: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -154,6 +202,12 @@ func _process(delta: float) -> void:
 	# 교대하지 않고 플레이어 손을 제자리에 둔다(목표 0 고정, 그릴 엄마 손이 없어 빈 화면 방지).
 	var swap_goal: float = _swap_target if mom_texture != null else 0.0
 	_swap = move_toward(_swap, swap_goal, delta / MOM_SWAP_TIME)
+	# 움찔 복귀·해제 복귀 경과 시간(닫힌 형식이라 누적 시간만 진행). 끝나면 오프셋 0으로 종료.
+	if _slip_mode == SlipMode.RECOIL or _slip_mode == SlipMode.RELEASE:
+		_slip_t += maxf(delta, 0.0)
+		var dur: float = SLIP_RECOIL_DUR if _slip_mode == SlipMode.RECOIL else SLIP_RELEASE_DUR
+		if _slip_t >= dur:
+			_slip_mode = SlipMode.NONE
 	queue_redraw()
 
 
@@ -231,21 +285,155 @@ func _refresh_texture() -> void:
 
 func _draw() -> void:
 	var flip: float = -1.0 if mirror else 1.0
-	# 유효 프레스 = 조향 프레스 + 드리프트 증폭(드리프트 방향 손만 _drift_amt>0). 이 손이
-	# 드리프트 방향일 때 1을 넘어 더 깊이 눌린다(반대 손은 증폭 0이라 기존 수준 그대로).
-	var eff_press: float = _press + DRIFT_PRESS_BOOST * _drift_amt
 	var s: float = press_scale()
-	# 누름은 아래(+y)로, 그리고 재봉선 쪽(안쪽)으로 이동한다. 안쪽은 우측 손이 -x,
-	# 좌측 손이 +x이므로 flip 부호를 뒤집어(-flip) 양쪽 다 화면 중앙을 향하게 한다.
-	var offset: Vector2 = _jitter + Vector2(-PRESS_INWARD * eff_press * flip, PRESS_DOWN * eff_press)
 	# 엄마 찬스 손 교대: 플레이어 손(현재 texture=밴드·골무 포함)과 엄마 손 중 하나만 그린다.
 	# 각 손은 자기 쪽 바깥(좌측 손 -x, 우측 손 +x)으로 swap_distance만큼 빠진 자리와 제자리 사이를
 	# 오간다. 누름·진동 오프셋은 전환 중에도 그대로 더해 손 모양이 튀지 않게 한다. 접촉 그림자도
 	# 같은 호출 안에서 그려 이동을 그대로 따라간다(손이 빠진 자리에 그림자가 남지 않음).
+	# 부상 미끄러짐 오프셋은 플레이어 손에만 더한다(엄마 손으로 전이하지 않음).
 	if mom_texture != null and mom_hand_visible():
-		_draw_hand_tex(mom_texture, offset + Vector2(mom_hand_dx(), 0.0), flip, s, mom_display_rect())
+		_draw_hand_tex(mom_texture, _mom_draw_offset(), flip, s, mom_display_rect())
 	elif player_hand_visible():
-		_draw_hand_tex(texture, offset + Vector2(player_hand_dx(), 0.0), flip, s, display_rect())
+		_draw_hand_tex(texture, _player_draw_offset(), flip, s, display_rect())
+		draw_set_transform(Vector2(player_hand_dx(), 0.0), 0.0, Vector2.ONE)
+		_draw_slip_accents(slip_offset())
+
+
+## 엄마 손 그리기 오프셋(진동 + 누름 + 교대). 부상 미끄러짐은 더하지 않는다.
+func _mom_draw_offset() -> Vector2:
+	return _jitter + _press_offset() + Vector2(mom_hand_dx(), 0.0)
+
+
+## 플레이어 손 그리기 오프셋(진동 + 누름 + 교대 + 부상 미끄러짐).
+func _player_draw_offset() -> Vector2:
+	return _jitter + _press_offset() + Vector2(player_hand_dx(), 0.0) + slip_offset()
+
+
+## 누름 오프셋(진동 제외). 유효 프레스 = 조향 프레스 + 드리프트 증폭(드리프트 방향 손만 _drift_amt>0).
+## 이 손이 드리프트 방향일 때 1을 넘어 더 깊이 눌린다(반대 손은 증폭 0이라 기존 수준 그대로).
+## 누름은 아래(+y)로, 그리고 재봉선 쪽(안쪽)으로 이동한다. 안쪽은 우측 손이 -x, 좌측 손이 +x이므로
+## flip 부호를 뒤집어(-flip) 양쪽 다 화면 중앙을 향하게 한다.
+func _press_offset() -> Vector2:
+	var flip: float = -1.0 if mirror else 1.0
+	var eff_press: float = _press + DRIFT_PRESS_BOOST * _drift_amt
+	return Vector2(-PRESS_INWARD * eff_press * flip, PRESS_DOWN * eff_press)
+
+
+## 부상 사전 연출 진행값 주입(PresentationController가 cut 대상 손에만 매 프레임 호출, 0..1).
+## 움찔·해제 복귀 중에 새 pending이 시작되면 현재 위치에서 이어 가도록 SLIP으로 바로 전환한다.
+func set_slip(u: float) -> void:
+	_slip_mode = SlipMode.SLIP
+	_slip_u = clampf(u, 0.0, 1.0)
+	queue_redraw()
+
+
+## 실제 cut(스턴 상승엣지): 현재 미끄러진 위치에서 바깥으로 짧게 움찔한 뒤 제자리로 돌아온다.
+## 접촉 섬광은 이 순간의 손가락 끝에서 짧게 터진다.
+func play_slip_recoil() -> void:
+	_slip_from = slip_offset()
+	_spark_pos = _press_point(SLIP_TIP, display_rect()) + _slip_from
+	_slip_mode = SlipMode.RECOIL
+	_slip_t = 0.0
+	queue_redraw()
+
+
+## cut 없이 pending이 해제됨(골무·엄마 찬스·이탈 리셋·리셋): 움찔 없이 부드럽게 제자리로.
+## immediate=true면 즉시 제자리(리셋·재시작 경로).
+func release_slip(immediate: bool = false) -> void:
+	if immediate:
+		_slip_mode = SlipMode.NONE
+		_slip_u = 0.0
+		_slip_t = 0.0
+		_slip_from = Vector2.ZERO
+	elif _slip_mode != SlipMode.NONE:
+		_slip_from = slip_offset()
+		_slip_mode = SlipMode.RELEASE
+		_slip_t = 0.0
+	queue_redraw()
+
+
+## 현재 부상 연출 추가 오프셋(노드 로컬 px, 화면 방향). 회귀 검사·캡처용 읽기 전용.
+func slip_offset() -> Vector2:
+	match _slip_mode:
+		SlipMode.SLIP:
+			var u: float = _slip_u
+			return _slip_goal() * (SLIP_EASE_LIN * u + (1.0 - SLIP_EASE_LIN) * u * u)
+		SlipMode.RECOIL:
+			return _recoil_offset_at(_slip_t, _slip_from, _outward())
+		SlipMode.RELEASE:
+			var k: float = clampf(_slip_t / SLIP_RELEASE_DUR, 0.0, 1.0)
+			return _slip_from * (1.0 - k * k * (3.0 - 2.0 * k))
+	return Vector2.ZERO
+
+
+## 미끄러짐 끝(u=1)의 목표 오프셋. 지금 누름 상태의 손가락 끝(진동 제외)에서 접촉 목표 지점까지의
+## 벡터를 안쪽 [0, SLIP_MAX_IN], 세로 [-SLIP_MAX_UP, 0]으로 자른다. 누름·확대로 이미 안쪽에 온
+## 손은 덜 움직여 어느 조향 상태에서도 손가락 끝이 같은 자리에서 멈춘다(바늘 자리 침범 방지).
+func _slip_goal() -> Vector2:
+	var tip: Vector2 = _press_point(SLIP_TIP, display_rect())
+	var d: Vector2 = _slip_target_local() - tip
+	var inward: float = clampf(-d.x * _outward(), 0.0, SLIP_MAX_IN)
+	return Vector2(-inward * _outward(), clampf(d.y, -SLIP_MAX_UP, 0.0))
+
+
+## 접촉 목표 지점(노드 로컬). 화면 중앙 x에서 자기 쪽으로 SLIP_TARGET_DX, 세로 SLIP_TARGET_Y.
+func _slip_target_local() -> Vector2:
+	var cx: float = SWAP_VIEWPORT_W * 0.5 + SLIP_TARGET_DX * _outward()
+	return Vector2(cx, SLIP_TARGET_Y) - position
+
+
+## 현재 손가락 끝의 노드 로컬 위치(진동 제외, 미끄러짐 포함). 회귀 검사·캡처가 읽는다.
+func _slip_tip_local() -> Vector2:
+	return _press_point(SLIP_TIP, display_rect()) + slip_offset()
+
+
+## 움찔 복귀 오프셋(닫힌 형식). t∈[0, OUT]: 시작 오프셋 from에서 바깥 튕김 지점까지 ease-out,
+## t∈[OUT, DUR]: 튕김 지점에서 0까지 smoothstep. DUR 이후 0. outward는 바깥 x 부호(+1 우측 손).
+static func _recoil_offset_at(t: float, from: Vector2, outward: float) -> Vector2:
+	if t < 0.0:
+		return from
+	if t >= SLIP_RECOIL_DUR:
+		return Vector2.ZERO
+	var peak: Vector2 = Vector2(SLIP_RECOIL_PX * outward, SLIP_RECOIL_DOWN)
+	var t_out: float = SLIP_RECOIL_DUR * SLIP_RECOIL_OUT_FRAC
+	if t < t_out:
+		var v: float = t / t_out
+		return from.lerp(peak, 1.0 - (1.0 - v) * (1.0 - v))
+	var w: float = (t - t_out) / (SLIP_RECOIL_DUR - t_out)
+	return peak * (1.0 - w * w * (3.0 - 2.0 * w))
+
+
+## 로컬 점 p(표시 사각형 기준, mirror 전)가 지금 누름 변환(확대 기준점·안쪽 이동, 진동 제외)으로
+## 그려지는 노드 로컬 위치. _draw_hand_tex의 변환과 같은 식이다.
+func _press_point(p: Vector2, rect: Rect2) -> Vector2:
+	var flip: float = -1.0 if mirror else 1.0
+	var s: float = press_scale()
+	var pivot: Vector2 = rect.get_center() + rect.size * PRESS_PIVOT
+	var origin: Vector2 = _press_offset() + Vector2(pivot.x * flip, pivot.y) * (1.0 - s)
+	return origin + Vector2(p.x * flip, p.y) * s
+
+
+## 속도선(미끄러짐 중, 손등 바깥 뒤쪽으로 짧게)과 접촉 섬광(cut 직후 손가락 끝). 손 변환과 무관한
+## 노드 로컬 좌표에 그린다(확대·반전 없음).
+func _draw_slip_accents(slip: Vector2) -> void:
+	var out: float = _outward()
+	if _slip_mode == SlipMode.SLIP and _slip_u > 0.2:
+		var a: float = clampf((_slip_u - 0.2) / 0.5, 0.0, 1.0)
+		var tip: Vector2 = _press_point(SLIP_TIP, display_rect()) + slip
+		var col: Color = Color(SLIP_STREAK_COLOR, SLIP_STREAK_COLOR.a * a)
+		var len_px: float = 18.0 + 30.0 * _slip_u
+		# 손가락 끝 아래 원단 위에 이동 방향(안쪽·위)과 평행하게, 바깥 뒤쪽으로 꼬리를 남긴다.
+		for k in range(3):
+			var base: Vector2 = tip + Vector2(out * (18.0 + 30.0 * k), 40.0 + 12.0 * k)
+			draw_line(base, base + Vector2(out, 0.8) * len_px * 0.7, col, 3.0, true)
+	if _slip_mode == SlipMode.RECOIL and _slip_t < SLIP_SPARK_DUR:
+		var k2: float = _slip_t / SLIP_SPARK_DUR
+		var col2: Color = Color(SLIP_SPARK_COLOR, 1.0 - k2 * k2)
+		for j in range(5):
+			var dir: Vector2 = Vector2(-out, 0.0).rotated((-0.9 + 0.45 * j) * out)
+			var a0: Vector2 = _spark_pos + dir * SLIP_SPARK_LEN * (0.3 + 0.6 * k2)
+			var a1: Vector2 = _spark_pos + dir * SLIP_SPARK_LEN * (0.9 + 0.8 * k2)
+			draw_line(a0, a1, col2, 3.0, true)
 
 
 ## 교대 진행값 p(0..1)에서 (플레이어 손, 엄마 손)의 퇴장 비율(0=제자리, 1=화면 밖 퇴장 위치).

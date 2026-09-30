@@ -850,21 +850,21 @@
    "t1": 28.3639,
    "f0": 1571,
    "f1": 1702,
-   "clip": "09_injury.mp4",
-   "src_frame_first": 59,
-   "src_frame_last": 189,
+   "clip": "09_injury_B.mp4",
+   "src_frame_first": 22,
+   "src_frame_last": 152,
    "retime_keys": [
     {
      "b": 50,
      "f": 1636,
-     "src_sec": 2.067,
-     "src_frame": 124
+     "src_sec": 1.45,
+     "src_frame": 87
     }
    ],
    "zoom": {
     "center": [
-     1250,
-     600
+     1120,
+     800
     ],
     "mode": "step",
     "keys": [
@@ -874,7 +874,7 @@
      ],
      [
       50,
-      1.16
+      1.14
      ]
     ]
    }
@@ -993,21 +993,21 @@
    "t1": 34.6366,
    "f0": 2070,
    "f1": 2078,
-   "clip": "09_injury.mp4",
-   "src_frame_first": 150,
-   "src_frame_last": 157,
+   "clip": "09_injury_A.mp4",
+   "src_frame_first": 113,
+   "src_frame_last": 120,
    "retime_keys": [
     {
      "b": 63.25,
      "f": 2070,
-     "src_sec": 2.5,
-     "src_frame": 150
+     "src_sec": 1.883,
+     "src_frame": 113
     }
    ],
    "zoom": {
     "center": [
      960,
-     240
+     700
     ],
     "keys": [
      [
@@ -1039,7 +1039,7 @@
    "zoom": {
     "center": [
      960,
-     240
+     760
     ],
     "keys": [
      [
@@ -1712,8 +1712,8 @@
    "type": "caption",
    "start": 48,
    "end": 52,
-   "x": 250,
-   "y": 800,
+   "x": 110,
+   "y": 405,
    "lines": [
     {
      "at": 48,
@@ -1726,22 +1726,6 @@
    "t0": 26.182,
    "t1": 28.3639,
    "f0": 1571,
-   "f1": 1702
-  },
-  {
-   "type": "stamp",
-   "start": 50,
-   "end": 52,
-   "text": "아야!",
-   "cx": 1490,
-   "cy": 420,
-   "size": 170,
-   "fill": "red",
-   "stroke": "cream",
-   "rot": 8,
-   "t0": 27.2729,
-   "t1": 28.3639,
-   "f0": 1636,
    "f1": 1702
   },
   {

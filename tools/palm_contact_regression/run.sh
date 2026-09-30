@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 손 밀착 자세·바늘 연출 + 원단 이탈 페널티 알림(토스트) 회귀 검사 실행기.
+# 손 밀착 자세·바늘 연출 + 원단 이탈 페널티 알림(토스트) + 부상 사전 연출(windup) 시뮬 +
+# 손 미끄러짐 표현(slip, 파일이 있을 때만) + 부상 대사 말풍선(cut dialogue) 회귀 검사 실행기.
 # 저장소의 game/ 을 임시 디렉터리에 복사한 사본에서만 실행하므로 저장소와 실제 사용자 기록
 # (~/Library/Application Support/Godot/app_userdata/Overlock/)을 건드리지 않는다.
 # 사본의 user data 디렉터리는 실행마다 고유한 이름(overlock_palm_regression_<접미사>_<PID>)을 써
@@ -7,7 +8,10 @@
 # (예전 고정 이름 overlock_palm_regression 디렉터리는 자동으로 지우지 않는다.)
 # 환경변수: GODOT(엔진 경로), PALM_REGRESSION_TMP(임시 작업 디렉터리 상위 경로),
 #   PALM_REGRESSION_TIMEOUT(손·바늘 검사 제한 초, 기본 300), TOAST_REGRESSION_TIMEOUT(토스트 검사
-#   제한 초, 기본 180), IMPORT_TIMEOUT(headless import 제한 초, 기본 300).
+#   제한 초, 기본 180), CUT_WINDUP_REGRESSION_TIMEOUT(부상 사전 연출 시뮬 검사 제한 초, 기본 180),
+#   SLIP_REGRESSION_TIMEOUT(손 미끄러짐 표현 검사 제한 초, 기본 180), CUT_DIALOGUE_REGRESSION_TIMEOUT
+#   (부상 대사 말풍선 검사 제한 초, 기본 180), IMPORT_TIMEOUT(headless import 제한 초, 기본 300).
+# slip_check.gd/slip_check.tscn 이 둘 다 있을 때만 slip 검사를 실행하고, 없으면 건너뛴 사실을 출력한다.
 # 검사 스크립트가 파싱 오류 등으로 quit()에 닿지 못하면 headless Godot 가 끝나지 않으므로, 이 스크립트가
 # 띄운 Godot PID 만 제한 시간 뒤 종료시키고 실패(124)로 처리한다(외부 timeout 명령 불필요).
 # 종료 코드가 0이어도 검사 요약 줄("... regression: N passed, 0 failed")이 없으면 실패(3)로 본다.
@@ -19,8 +23,12 @@ REPO="$(cd "$HERE/../.." && pwd)"
 TMP_BASE="${PALM_REGRESSION_TMP:-${TMPDIR:-/tmp}}"
 PALM_TIMEOUT="${PALM_REGRESSION_TIMEOUT:-300}"
 TOAST_TIMEOUT="${TOAST_REGRESSION_TIMEOUT:-180}"
+CUT_TIMEOUT="${CUT_WINDUP_REGRESSION_TIMEOUT:-180}"
+SLIP_TIMEOUT="${SLIP_REGRESSION_TIMEOUT:-180}"
+DIALOGUE_TIMEOUT="${CUT_DIALOGUE_REGRESSION_TIMEOUT:-180}"
 IMPORT_LIMIT="${IMPORT_TIMEOUT:-300}"
-for v in "$PALM_TIMEOUT" "$TOAST_TIMEOUT" "$IMPORT_LIMIT"; do
+for v in "$PALM_TIMEOUT" "$TOAST_TIMEOUT" "$CUT_TIMEOUT" "$SLIP_TIMEOUT" "$DIALOGUE_TIMEOUT" \
+	"$IMPORT_LIMIT"; do
 	if ! [[ "$v" =~ ^[1-9][0-9]*$ ]]; then
 		echo "제한 시간은 1 이상의 정수(초)여야 합니다: '$v'" >&2
 		exit 2
@@ -133,10 +141,19 @@ awk -v userdir="$USERDIR_NAME" '
 }
 mv "$PROJ/project.godot.new" "$PROJ/project.godot"
 
-# 3) 검사 스크립트 복사(손·바늘 검사 check + 페널티 알림 토스트 검사 toast_check).
+# 3) 검사 스크립트 복사(손·바늘 검사 check + 페널티 알림 토스트 검사 toast_check + 부상 사전 연출
+#    시뮬 검사 cut_windup_check + 부상 대사 말풍선 검사 cut_dialogue_check, 그리고 있으면 손 미끄러짐
+#    표현 검사 slip_check).
 mkdir -p "$PROJ/palm_regression"
 cp "$HERE/check.gd" "$HERE/check.tscn" "$HERE/toast_check.gd" "$HERE/toast_check.tscn" \
-	"$HERE/toast_spy.gd" "$PROJ/palm_regression/"
+	"$HERE/toast_spy.gd" "$HERE/cut_windup_check.gd" "$HERE/cut_windup_check.tscn" \
+	"$HERE/cut_dialogue_check.gd" "$HERE/cut_dialogue_check.tscn" \
+	"$PROJ/palm_regression/"
+HAVE_SLIP=0
+if [ -f "$HERE/slip_check.gd" ] && [ -f "$HERE/slip_check.tscn" ]; then
+	cp "$HERE/slip_check.gd" "$HERE/slip_check.tscn" "$PROJ/palm_regression/"
+	HAVE_SLIP=1
+fi
 
 # log 파일에서 아직 출력하지 않은 부분만 표준 출력으로 내보낸다(SHOWN: 이미 출력한 바이트 수).
 SHOWN=0
@@ -195,8 +212,8 @@ run_check() {
 	fi
 }
 
-# 4) headless import 후 두 검사를 모두 실행한다. 하나라도 실패하면 0이 아닌 종료 코드
-#    (앞 검사의 종료 코드를 우선, 둘 다 통과면 0).
+# 4) headless import 후 검사를 모두 실행한다. 하나라도 실패하면 0이 아닌 종료 코드
+#    (앞 검사의 종료 코드를 우선, 모두 통과면 0). slip 검사는 파일이 없으면 건너뛴다(통과로 본다).
 run_godot "$IMPORT_LIMIT" "$WORK/import.log" 0 --headless --path "$PROJ" --import
 if [ "$RUN_CODE" -ne 0 ]; then
 	echo "import 실패(exit=$RUN_CODE):" >&2
@@ -208,8 +225,28 @@ code=$RUN_CODE
 run_check "$TOAST_TIMEOUT" "$WORK/toast.log" "toast regression" \
 	res://palm_regression/toast_check.tscn
 toast_code=$RUN_CODE
-echo "palm check exit=$code, toast check exit=$toast_code"
-if [ "$code" -ne 0 ]; then
-	exit "$code"
+run_check "$CUT_TIMEOUT" "$WORK/cut_windup.log" "cut windup regression" \
+	res://palm_regression/cut_windup_check.tscn
+cut_code=$RUN_CODE
+slip_code=0
+slip_state="skipped"
+if [ "$HAVE_SLIP" = "1" ]; then
+	run_check "$SLIP_TIMEOUT" "$WORK/slip.log" "slip regression" \
+		res://palm_regression/slip_check.tscn
+	slip_code=$RUN_CODE
+	slip_state="$slip_code"
+else
+	echo "slip regression: slip_check.gd/slip_check.tscn 이 없어 건너뜁니다"
 fi
-exit "$toast_code"
+run_check "$DIALOGUE_TIMEOUT" "$WORK/cut_dialogue.log" "cut dialogue regression" \
+	res://palm_regression/cut_dialogue_check.tscn
+dialogue_code=$RUN_CODE
+echo "palm check exit=$code, toast check exit=$toast_code," \
+	"cut windup check exit=$cut_code, slip check exit=$slip_state," \
+	"cut dialogue check exit=$dialogue_code"
+for c in "$code" "$toast_code" "$cut_code" "$slip_code" "$dialogue_code"; do
+	if [ "$c" -ne 0 ]; then
+		exit "$c"
+	fi
+done
+exit 0

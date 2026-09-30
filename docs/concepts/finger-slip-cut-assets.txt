@@ -1,0 +1,20 @@
+Finger slip / surprise asset delivery — 2026-09-30
+
+docs/concepts/finger-slip-cut-v1.png
+Three-panel concept: RISK MAX → 0.20s slip + surprise → existing finger cut.
+Reference composition only; do not copy panel framing, enlarged facial proportions, or explanatory arrows into gameplay.
+
+game/assets/gfx/eyes_surprised.png
+Generated with built-in image_gen using eyes_normal.png as reference.
+1672x941, RGBA8, genuine alpha; read-only PNG inspection confirmed alpha range 0..255 and 92.34% fully transparent pixels.
+Use as a separate surprised expression over face_base_clean.
+Not pixel-registered to the existing 1280x720 overlays: normalize into existing eye_rect and calibrate ONLY this expression.
+Suggested initial offset relative to eye_rect.size: (-0.017, -0.04), visually estimated, not gameplay-verified.
+
+Reuse existing palm_contact hand, bandage and thimble images. Animate transforms; preserve aspect ratio and contact shadows.
+Reuse eyes_injured.png for actual injury. Mother autopilot already prevents injury; no mother surprise bitmap required.
+Motion streaks/brief contact accent can be native Godot drawing.
+
+Generation prompts: docs/concepts/finger-slip-cut-prompts.json
+Claude handoff: docs/concepts/claude-finger-slip-cut-implementation.txt
+No game logic modified and no Claude session launched for this delivery.

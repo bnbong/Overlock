@@ -49,6 +49,10 @@ var risk_proximity_base: float = 0.35
 # 하향(구 0.14)으로 짧아진 갭 분포에서 5단 풀조향 유지 부상을 ~2.1s로 맞춘다.
 var risk_static_bias: float = 0.09
 var stun_duration: float = 2.0
+# 부상 사전 연출(windup) 길이(초). risk가 1.0에 도달하면 곧바로 부상하지 않고 이 시간 동안
+# pending(손 미끄러짐·놀람)을 거친 뒤 기존 부상 패널티가 실행된다. 물리 delta로만 진행(60Hz 12틱).
+# 0 이하이면 예전처럼 도달 틱에 즉시 부상한다.
+var cut_windup_duration: float = 0.20
 var stun_steer_return_rate: float = 1.1  # §19 표에 없음 → foot_response_rate 값 재사용
 # 맵 이탈 소프트 리셋 후 조작 잠금 시간(초). 재배치 직후 잘못된 입력이 바로 다시 원단을
 # 이탈시키는 것을 막고 방향 재인지 여유를 준다(스턴과 별개 게이트, PlayerController가 참조).

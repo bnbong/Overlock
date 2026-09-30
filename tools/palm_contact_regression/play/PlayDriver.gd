@@ -507,6 +507,8 @@ func _main() -> void:
 		await _scenario_mobile()
 	elif scenario == "scold":
 		await load("res://play_driver/ScoldPlay.gd").run(self)
+	elif scenario.begins_with("cutdlg"):
+		await load("res://play_driver/CutDialoguePlay.gd").run(self)
 	else:
 		await _scenario_full()
 	_ev("face cut min y over RUNNING frames = %.2f at frame %d" % [_face_min_y, _face_min_frame])

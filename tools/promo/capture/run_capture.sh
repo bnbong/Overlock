@@ -26,18 +26,22 @@ UDIR="$HOME/Library/Application Support/$UD_NAME"
 # 사본 project.godot [display] 의 window_width/height_override 로 처음부터 그 크기로 띄운다.
 W="${RES%x*}"
 H="${RES#*x}"
-awk -v w="$W" -v h="$H" '
+# BORDERLESS=1 이면 테두리 없는 창으로 띄운다. macOS 는 제목 표시줄이 있는 창을 화면 크기로 줄이므로,
+# 내장 화면(3024x1964)만 있을 때 3840x2160 스틸을 직접 렌더하려면 이 옵션이 필요하다.
+awk -v w="$W" -v h="$H" -v bl="${BORDERLESS:-0}" '
 	{
 		line = $0
 		cr = ""
 		if (sub(/\r$/, "", line)) cr = "\r"
 	}
 	line ~ /^window\/size\/window_(width|height)_override=/ { next }
+	line ~ /^window\/size\/borderless=/ { next }
 	line == "[editor]" || line ~ /^movie_writer\/video_quality=/ { next }
 	{ print; last_cr = cr }
 	line == "[display]" {
 		print "window/size/window_width_override=" w cr
 		print "window/size/window_height_override=" h cr
+		if (bl == "1") print "window/size/borderless=true" cr
 	}
 	END {
 		# Movie Maker AVI(MJPEG) 화질을 최대로(기본 0.75).

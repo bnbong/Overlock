@@ -20,6 +20,7 @@ const K_DRIFT: int = KEY_SHIFT
 const R: GDScript = preload("res://promo_driver/PromoRead.gd")
 const CAP_MAX_WAIT: int = 20
 const BONK_RELEASE_DEG: float = 40.0
+const INJ_PERIOD: int = 14  # 부상 유도 급반전 주기(프레임)
 
 # 자동 조향 파라미터(피드포워드 곡률 + 헤딩/횡오차 피드백 → 조향량 역산 → 키 탭 선택).
 const FF_TIME: float = 0.16  # 곡률 미리보기 시간(초)
@@ -40,6 +41,10 @@ var auto_gear: bool = false
 var auto_drift: bool = false
 var max_gear: int = 4
 var manual_override: bool = false
+# 자동 조향 횡오프셋(px, +=진행 방향 오른쪽). 아이템을 비켜 가야 할 때 [s0, s1] 구간에서만 쓴다.
+var lat_offset: float = 0.0
+var lat_s0: float = INF
+var lat_s1: float = -INF
 var drift_count: int = 0
 var _held: Dictionary = {}
 var _gear_key: int = 0
@@ -343,6 +348,7 @@ func _detect_events(gp: Node, p: Node) -> void:
 			}
 		)
 	var flags: Dictionary = {
+		"cut_pending": p.cut_pending_timer > 0.0,
 		"stun": p.stun_timer > 0.0,
 		"thimble": p.thimble_timer > 0.0,
 		"autopilot": p.autopilot_timer > 0.0,
@@ -356,9 +362,43 @@ func _detect_events(gp: Node, p: Node) -> void:
 			_ev(k + ("_start" if on else "_end"), {"s": snappedf(_progress_s(), 0.1)})
 	if int(_prev.get("gear", -1)) != int(p.speed_index):
 		_ev("gear", {"value": int(p.speed_index)})
+	_detect_toast(gp)
 	_prev.merge(flags, true)
 	_prev["st"] = st
 	_prev["gear"] = int(p.speed_index)
+
+
+## 하단 알림(부상 대사·엄마 꾸중 말풍선·아이템 토스트) 상태 변화를 기록한다. 읽기만 한다.
+## toast_show: 새 항목(세대 번호 변화)과 대사·초상화, toast_full: 알파 1 도달, toast_fade: 페이드아웃 시작,
+## toast_hidden: 사라짐. _process 시점 값이라 화면과 1프레임 어긋날 수 있다(프레임 분석으로 확인).
+func _detect_toast(gp: Node) -> void:
+	var pres: Node = gp.get_node_or_null("Presenter")
+	var t: Node = pres.get("_toast") if pres != null else null
+	if t == null or t.get("_group") == null:
+		return
+	var g: Control = t.get("_group")
+	var gen: int = int(t.get("_gen"))
+	var vis: bool = g.visible
+	var a: float = g.modulate.a if vis else 0.0
+	var pr: TextureRect = t.get("_portrait")
+	var tex: String = "-"
+	if pr != null and pr.visible and pr.texture != null:
+		tex = pr.texture.resource_path.get_file()
+	var text: String = str(t.get("_label").text)
+	if vis and gen != int(_prev.get("toast_gen", -1)):
+		_ev("toast_show", {"text": text, "portrait": tex, "immediate": bool(t.get("_immediate"))})
+		_prev["toast_full"] = false
+	var prev_a: float = float(_prev.get("toast_a", 0.0))
+	if vis and a >= 0.999 and not bool(_prev.get("toast_full", false)):
+		_prev["toast_full"] = true
+		_ev("toast_full", {"text": text})
+	if vis and bool(_prev.get("toast_full", false)) and a < 0.999 and prev_a >= 0.999:
+		_ev("toast_fade", {"text": text})
+	if not vis and bool(_prev.get("toast_vis", false)):
+		_ev("toast_hidden")
+	_prev["toast_gen"] = gen if vis else int(_prev.get("toast_gen", -1))
+	_prev["toast_a"] = a
+	_prev["toast_vis"] = vis
 
 
 # ---------------------------------------------------------------- 자동 조향(읽은 값으로 판단)
@@ -446,6 +486,8 @@ func _auto_steer_step(p: Node2D, tr: Object, gp: Node) -> void:
 	var t: Vector2 = tr.tangent_at_s(s)
 	var n_right: Vector2 = Vector2(-t.y, t.x)
 	var e_right: float = (p.position - c).dot(n_right)
+	if s >= lat_s0 and s <= lat_s1:
+		e_right -= lat_offset
 	var kff: float = R.signed_curvature(tr, minf(s + v * FF_TIME, tr.length))
 	var ref_h: float = tr.tangent_at_s(minf(s + v * HEAD_TIME, tr.length)).angle()
 	var psi: float = wrapf(ref_h - p.heading, -PI, PI)
@@ -674,35 +716,112 @@ func _scenario_tee() -> void:
 		3000
 	)
 	await _wait_until(func(): return _player().thimble_timer > 0.0, 3000, "thimble")
-	await _wait_until(func(): return _player().thimble_timer <= 0.0, 600, "thimble end")
-	# 5) 직선(s 3500~3850)에서 5단 + 드리프트 홀드 좌우 급반전(실제 키 입력)으로 부상을 유도한다.
-	await _wait_until(func(): return _progress_s() >= 3480.0, 3000, "s>=3480")
+	# 5) 직선(s 3150~3850)에서 5단 좌우 급반전(실제 키 입력)으로 부상 A를 유도한다. 직선이 짧아 골무가
+	#    끝나기 약 1초 전부터 시작한다(골무 중에는 RISK 가 0.95에서 멈추고, 골무가 끝나면 곧 부상한다).
+	#    RISK 최대 → 놀란 눈·손 미끄러짐(0.20초) → 부상(밴드·> <·대사 말풍선) → 움찔 복귀.
+	await _wait_until(func(): return _player().thimble_timer <= 1.3, 600, "thimble ending")
 	auto_gear = false
 	await _gear_to(5)
-	_still_when(
-		"injury",
-		func(): return _player() != null and _player().stun_timer > 1.0,
-		2,
-		25,
-		900
-	)
-	_ev("induce_injury_begin")
-	manual_override = true
-	_key(K_DRIFT, true)
-	var dir: int = 1
-	for _i in range(12):
-		if _player().stun_timer > 0.0 or _progress_s() >= 3850.0:
-			break
-		_steer_hold(dir)
-		dir = -dir
-		await _wait(22)
-	_key(K_DRIFT, false)
-	_steer_hold(0)
-	_ev("induce_injury_end", {"stun": _player().stun_timer})
+	await _induce_injury("A", 3850.0)
+	# 대사 말풍선(약 4초)이 사라질 때까지 자동 주행. 부상 뒤 강제 복귀가 끼어들지 않았는지 events 로 본다.
 	await _wait_until(func(): return _player().stun_timer <= 0.0, 300, "stun end")
 	manual_override = false
 	auto_gear = true
-	await _wait(200)
+	max_gear = 3
+	# 6) 두 번째 골무(s 4211)는 옆으로 비켜 간다(골무 면역이 부상 B 구간까지 이어지지 않게).
+	lat_offset = 50.0
+	lat_s0 = 4020.0
+	lat_s1 = 4290.0
+	await _wait_until(_toast_gone, 600, "dialogue A gone")
+	_ev("dialogue_gone", {"s": snappedf(_progress_s(), 0.1)})
+	# 7) 긴 직선(s 4600~5500)에서 부상 B.
+	await _wait_until(func(): return _progress_s() >= 4640.0, 3000, "s>=4640")
+	auto_gear = false
+	await _gear_to(5)
+	await _induce_injury("B", 5450.0)
+	await _wait_until(func(): return _player().stun_timer <= 0.0, 300, "stun end")
+	manual_override = false
+	auto_gear = true
+	await _wait_until(_toast_gone, 600, "dialogue B gone")
+	await _wait(90)
+
+
+## 하단 알림이 모두 사라졌는가(읽기 전용).
+func _toast_gone() -> bool:
+	var gp: Node = _gp()
+	var pres: Node = gp.get_node_or_null("Presenter") if gp != null else null
+	var t: Node = pres.get("_toast") if pres != null else null
+	if t == null or t.get("_group") == null:
+		return true
+	return not (t.get("_group") as Control).visible
+
+
+## 5단 + 드리프트 홀드 좌우 급반전으로 부상을 낸다(키 입력만). RISK 가 높아지거나 사전 연출이 시작되면
+## 트랙 쪽으로 조향해 두어, 조작이 잠기는 스턴 동안 원단 밖으로 흘러 강제 복귀가 끼어드는 일을 줄인다.
+## 스틸: 사전 연출 중간(놀란 눈·미끄러짐)과 대사 말풍선이 완전히 뜬 직후(부상 0.25초 뒤) 한 장씩.
+func _induce_injury(tag: String, s_limit: float) -> bool:
+	_still_when(
+		"injury%s_slip" % tag,
+		func():
+			var p: Node = _player()
+			return p != null and p.cut_pending_timer > 0.0 and p.cut_pending_timer <= 0.09,
+		1,
+		1,
+		900
+	)
+	_still_when(
+		"injury%s" % tag,
+		func(): return _player() != null and _player().stun_timer > 0.0 and _player().stun_timer < 1.75,
+		1,
+		1,
+		900
+	)
+	_ev("induce_injury_begin", {"tag": tag})
+	manual_override = true
+	var dir: int = 1
+	var hit: bool = false
+	for _i in range(80):
+		var p: Node = _player()
+		if p.stun_timer > 0.0:
+			hit = true
+			break
+		if _progress_s() >= s_limit or p.offfabric_timer > 0.0:
+			break
+		if p.cut_pending_timer > 0.0:
+			# 사전 연출(0.20초) 동안은 자동 조향으로 재봉선 쪽 heading 을 맞춰 둔다(스턴 중 이탈 방지).
+			manual_override = false
+			await _wait(1)
+			continue
+		var toward: int = _toward_track()
+		var off_line: bool = R.err(_gp()) > 24.0 or absf(R.heading_err_deg(_gp())) > 18.0
+		if off_line and toward != 0:
+			dir = toward
+		_steer_hold(dir)
+		dir = -dir
+		for _k in range(INJ_PERIOD):
+			await _wait(1)
+			if _player().stun_timer > 0.0 or _player().cut_pending_timer > 0.0:
+				break
+	manual_override = true
+	_steer_hold(0)
+	_ev("induce_injury_end", {"tag": tag, "hit": hit, "stun": _player().stun_timer})
+	return hit
+
+
+## 앞쪽 재봉선 지점을 향하는 조향 부호(+1=우, -1=좌, 0=정렬). 읽기 전용.
+func _toward_track() -> int:
+	var gp: Node = _gp()
+	var p: Node2D = _player()
+	if gp == null or p == null:
+		return 0
+	var tr: Object = gp.get("_track")
+	var s: float = float(tr.query(p.position, int(gp.get("_hint")))["s"])
+	var look: float = clampf(p.speed * 0.42, 42.0, 130.0)
+	var tgt: Vector2 = tr.point_at_s(minf(s + look, tr.length))
+	var herr: float = wrapf((tgt - p.position).angle() - p.heading, -PI, PI)
+	if absf(herr) < 0.05:
+		return 0
+	return 1 if herr > 0.0 else -1
 
 
 func _gear_to(target: int) -> void:

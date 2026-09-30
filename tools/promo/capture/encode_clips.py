@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Movie Maker 원본(AVI, MJPEG)에서 클립을 잘라 편집용 H.264로 인코딩하고 footage.json을 만든다.
 
-usage: encode_clips.py <runs 디렉터리> <footage 출력 디렉터리> [--crf 12] [--only 05_curves_clean]
+usage: encode_clips.py <runs 디렉터리> <footage 출력 디렉터리> [--crf 12] [--only 04_,07_,09_injury]
 
 <runs>/m_heart, m_tee, m_star 에 run_capture.sh ... movie 결과(movie/f.avi, events.jsonl)가 있어야 한다.
 클립 구간은 아래 CLIPS 표의 Movie Maker 프레임 번호(= events.jsonl 의 mf)로 정한다. 같은 입력이면
@@ -20,6 +20,10 @@ FPS = 60
 # 화면 좌표는 1920x1080 기준. focus = 편집 줌 기준점(시선이 가는 곳).
 FOOT = {"x": 960, "y": 330, "what": "노루발·바늘(화면 중앙 상단), 그 아래로 스티치가 찍힌다"}
 FACE = {"x": 960, "y": 170, "what": "상단 얼굴(표정·기울기)"}
+
+# 부상 클립은 사전 연출·부상·말풍선 시각을 인코딩된 클립 프레임에서 직접 측정한 값(markers)으로 적는다.
+# events.jsonl 의 같은 사건(mf)도 같은 프레임을 가리키지만(측정값과 일치 확인), 중복을 피하려고 뺀다.
+INJURY_SKIP = ["cut_pending_start", "stun_start", "toast_show", "toast_full", "toast_fade", "toast_hidden"]
 
 CLIPS = [
     {
@@ -73,7 +77,8 @@ CLIPS = [
         "scene": "골무 아이템 획득 → 양손 검지에 골무, 좌측 HUD에 골무 잔여시간 배지, '골무! 4.5초 동안 부상 면역' 토스트.",
         "focus": {"x": 960, "y": 560, "what": "골무 낀 손가락(좌우 손 끝)"},
         "use": [0.5, 5.5],
-        "note": "시작 부분에 앞선 꾸중 말풍선이 페이드아웃 중이다(약 1.3초까지).",
+        "note": "시작 부분에 앞선 꾸중 말풍선이 페이드아웃 중이다(약 1.6초까지). 4.5초부터는 부상 A를 내기 위한 "
+                "좌우 급반전 입력이 시작되어 RISK 게이지가 오른다(골무 중이라 부상은 없다).",
     },
     {
         "file": "08_mom_chance.mp4", "run": "m_tee", "start": 854, "end": 1170,
@@ -89,13 +94,31 @@ CLIPS = [
         ],
     },
     {
-        "file": "09_injury.mp4", "run": "m_tee", "start": 1729, "end": 1972,
+        "file": "09_injury_A.mp4", "run": "m_tee", "start": 1714, "end": 2070,
         "track": "tee_01 (Tailor's Tee, cotton)",
-        "scene": "5단 + 드리프트 홀드로 좌우 급반전 → 위험도 게이지가 차고 부상(FINGER CUT). "
-                 "우측 손가락에 밴드가 붙고 표정이 찡그림으로 바뀐다. 1단으로 떨어지고 조작 잠금.",
-        "focus": {"x": 1250, "y": 560, "what": "밴드가 생기는 우측 손가락"},
-        "use": [0.8, 4.0],
-        "note": "부상 뒤 노루발이 재봉선 밖 원단으로 미끄러진다. 클립은 강제 복귀 직전에서 끝난다.",
+        "scene": "5단 좌우 급반전으로 RISK 게이지가 가득 참 → 놀란 눈과 함께 오른손이 노루발 쪽으로 미끄러짐(0.20초) → "
+                 "부상(FINGER CUT): 오른손 검지에 밴드, 표정이 > <로 바뀌고 화면이 흔들리며, 눈물 맺힌 초상화 말풍선 "
+                 "'아파!'가 하단 중앙에 뜬다 → 손이 움찔 물러났다 제자리로. 1단으로 떨어지고 2초 조작 잠금.",
+        "focus": {"x": 1120, "y": 760, "what": "부상 대사 말풍선(하단 중앙)과 밴드가 붙는 우측 손가락"},
+        "use": [0.3, 5.5],
+        "dialogue": "아파!",
+        "markers_from": "A",
+        "skip_events": INJURY_SKIP,
+        "note": "런의 첫 부상이다. 시작 직후(약 1.2초까지) 앞선 골무 안내 토스트가 페이드아웃 중이고 양손에 골무가 "
+                "남아 있다가 0.95초 무렵 골무 효과가 끝난다. 부상 뒤 강제 복귀 없이 재봉선 근처를 계속 달린다.",
+    },
+    {
+        "file": "09_injury_B.mp4", "run": "m_tee", "start": 2440, "end": 2795,
+        "track": "tee_01 (Tailor's Tee, cotton)",
+        "scene": "긴 직선에서 5단 좌우 급반전 → 놀란 눈과 함께 왼손이 노루발 쪽으로 미끄러짐(0.20초) → 부상(FINGER CUT): "
+                 "왼손 손가락에 밴드, > < 표정과 흔들림, 눈물 맺힌 초상화 말풍선 '아얏!' → 손이 움찔 복귀.",
+        "focus": {"x": 1120, "y": 760, "what": "부상 대사 말풍선(하단 중앙)과 밴드가 붙는 좌측 손가락"},
+        "use": [0.3, 5.5],
+        "dialogue": "아얏!",
+        "markers_from": "B",
+        "skip_events": INJURY_SKIP,
+        "note": "런의 두 번째 부상이라 오른손 검지에는 첫 부상의 밴드가 이미 붙어 있다. 시작 전에 다른 알림은 모두 "
+                "사라진 상태다. 부상 뒤 강제 복귀는 없다.",
     },
     {
         "file": "10_bonk_scold.mp4", "run": "m_tee", "start": 1165, "end": 1600,
@@ -109,7 +132,9 @@ CLIPS = [
             {"t_mf": 1520, "event": "말풍선 페이드아웃 시작"},
             {"t_mf": 1540, "event": "말풍선 사라짐"},
         ],
-        "note": "6.0초 무렵 골무를 먹어 골무 토스트가 이어서 뜬다.",
+        "skip_events": ["toast_full", "toast_fade", "toast_hidden"],
+        "note": "5.6초에 골무를 먹고, 꾸중 말풍선이 사라진 뒤(6.2초) 골무 토스트가 이어서 뜬다. "
+                "이 장면은 런의 첫 부상보다 앞이라 부상 대사 말풍선이 섞이지 않는다.",
     },
     {
         "file": "11_finish_reveal.mp4", "run": "m_heart", "start": 2363, "end": 2700,
@@ -168,6 +193,12 @@ EVENT_LABEL = {
     "bonk_steer_release": lambda e: "조향 키 뗌(직진)",
     "speedup_begin": lambda e: "가속 입력 시작",
     "induce_injury_begin": lambda e: "급반전 입력 시작",
+    "cut_pending_start": lambda e: "RISK 최대: 놀란 눈·손 미끄러짐 시작(0.20초 사전 연출)",
+    "toast_show": lambda e: ("부상 대사 말풍선 '%s' 등장" % e["text"]) if e.get("immediate")
+    else ("알림 등장: %s" % e["text"]),
+    "toast_full": lambda e: "알림 완전 표시: %s" % e["text"],
+    "toast_fade": lambda e: "알림 페이드아웃 시작: %s" % e["text"],
+    "toast_hidden": lambda e: "알림 사라짐",
 }
 
 
@@ -185,6 +216,57 @@ def probe(path):
     return json.loads(out)
 
 
+def _bubble_curve(path):
+    """클립 전체 프레임에서 하단 말풍선 안쪽(1180~1420, 940~990) 밝기(RGB 평균, 편집 렌더러와 같은 BT.709 리미티드 변환) 평균과 표준편차를 구한다(정확한 프레임 번호).
+    말풍선이 완전히 보이면 이 영역은 단색 원단(표준편차 약 0)이다."""
+    import numpy as np
+    raw = subprocess.run(
+        [FFMPEG, "-v", "error", "-i", path, "-vf",
+         "crop=240:50:1180:940,scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24",
+         "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
+        capture_output=True, check=True).stdout
+    a = np.frombuffer(raw, np.uint8).reshape(-1, 50, 240, 3).astype(float).mean(axis=3)
+    return a.mean(axis=(1, 2)), a.std(axis=(1, 2))
+
+
+def _eyes_curve(path):
+    """놀란 눈 판정용: 얼굴 눈 영역(700~1220, 250~420)의 연속 프레임 차이."""
+    import numpy as np
+    raw = subprocess.run(
+        [FFMPEG, "-v", "error", "-i", path, "-vf",
+         "crop=520:170:700:250,scale=130:42:in_color_matrix=bt709:in_range=tv:out_range=pc,format=gray",
+         "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
+        capture_output=True, check=True).stdout
+    a = np.frombuffer(raw, np.uint8).reshape(-1, 42, 130).astype(float)
+    return np.r_[0.0, np.abs(np.diff(a, axis=0)).mean(axis=(1, 2))]
+
+
+def markers(path):
+    """부상 클립의 연출 시각(초)을 인코딩된 클립에서 직접 측정한다.
+    cut = 말풍선이 처음 보이는 프레임(밴드·FINGER CUT·흔들림도 같은 프레임), slip_start = cut 12프레임 전
+    (사전 연출 0.20초, 놀란 눈 전환 프레임으로 교차 확인), dialogue_full = 말풍선 알파 1 도달,
+    dialogue_fade = 페이드아웃 시작, dialogue_gone = 완전히 사라짐."""
+    import numpy as np
+    b, sd = _bubble_curve(path)
+    n = len(b)
+    full = int(next(i for i in range(n - 60) if (sd[i:i + 60] < 0.2).all()))
+    full_v = float(np.median(b[full:full + 60]))
+    cut = full
+    while cut > 1 and b[cut - 1] - b[cut - 2] > 12.0:
+        cut -= 1
+    fade = int(next(i for i in range(full, n) if b[i] < full_v - 0.5))
+    gone = int(next(i for i in range(fade + 10, n - 1)
+                    if abs(b[i] - b[i - 1]) < 1.0 and abs(b[i + 1] - b[i]) < 1.0))
+    e = _eyes_curve(path)
+    lo = max(1, cut - 20)
+    eyes = int(lo + e[lo:cut - 3].argmax())
+    r = lambda f: round(f / FPS, 3)
+    return {"slip_start": r(cut - 12), "surprised_eyes_frame_check": r(eyes), "cut": r(cut),
+            "dialogue_full": r(full), "dialogue_fade": r(fade), "dialogue_gone": r(gone),
+            "frames": {"slip_start": cut - 12, "cut": cut, "dialogue_full": full, "dialogue_fade": fade,
+                       "dialogue_gone": gone}}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("runs")
@@ -199,7 +281,7 @@ def main():
         src = os.path.join(a.runs, c["run"], "movie", "f.avi")
         dst = os.path.join(a.out, c["file"])
         n = c["end"] - c["start"]
-        if not a.skip_encode and (not a.only or a.only in c["file"]):
+        if not a.skip_encode and (not a.only or any(k in c["file"] for k in a.only.split(","))):
             subprocess.run(
                 [FFMPEG, "-v", "error", "-y", "-ss", "%.6f" % (c["start"] / FPS), "-i", src,
                  "-frames:v", str(n), "-an", "-c:v", "libx264", "-preset", "slow",
@@ -214,12 +296,23 @@ def main():
             print("encoded", c["file"])
         evs = []
         for e in load_events(os.path.join(a.runs, c["run"], "events.jsonl")):
+            if e["ev"] in c.get("skip_events", []):
+                continue
             if e["ev"] in EVENT_LABEL and c["start"] <= e["mf"] < c["end"]:
                 evs.append({"t": round((e["mf"] - c["start"]) / FPS, 3),
                             "event": EVENT_LABEL[e["ev"]](e)})
         for x in c.get("extra", []):
             if c["start"] <= x["t_mf"] < c["end"]:
                 evs.append({"t": round((x["t_mf"] - c["start"]) / FPS, 3), "event": x["event"]})
+        mk = markers(dst) if "markers_from" in c else None
+        if mk:
+            line = c.get("dialogue", "")
+            for k, label in (("slip_start", "놀란 눈·손 미끄러짐 시작(0.20초 사전 연출)"),
+                             ("cut", "부상 프레임: 밴드·FINGER CUT!·흔들림, 대사 말풍선 '%s' 등장" % line),
+                             ("dialogue_full", "대사 말풍선 완전 표시"),
+                             ("dialogue_fade", "대사 말풍선 페이드아웃 시작"),
+                             ("dialogue_gone", "대사 말풍선 사라짐")):
+                evs.append({"t": mk[k], "event": label})
         evs.sort(key=lambda d: d["t"])
         p = probe(dst)
         st = p["streams"][0]
@@ -237,6 +330,8 @@ def main():
             "events": evs,
             "focus_point_1080p": c["focus"],
             "recommended_use_s": c["use"],
+            **({"dialogue": c["dialogue"]} if "dialogue" in c else {}),
+            **({"markers_s": mk} if mk else {}),
             "note": c.get("note", ""),
         })
     doc = {
