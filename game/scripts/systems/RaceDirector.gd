@@ -208,8 +208,12 @@ func _restart() -> void:
 
 
 ## 일시정지 중 M 입력: 런을 파기하고 메인 메뉴로 돌아간다(확인창 없음, 재시작과 동일하게 즉시형).
+## 에디터 테스트 플레이면 메인 대신 편집 화면으로 돌아간다(편집 세션은 에디터가 복원).
 func _to_menu() -> void:
 	get_tree().paused = false
+	if GameState.is_editor_test():
+		GameState.return_to_editor()
+		return
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")
 
 
@@ -380,7 +384,13 @@ func _finish() -> void:
 	var result: Dictionary = _stats.finalize(
 		_elapsed, _track.safe, GameState.track_id, GameState.difficulty
 	)
-	var is_best: bool = RecordStore.submit(result)
+	# 에디터 테스트 플레이는 결과 통계만 보여 주고 개인 최고 기록을 갱신하지 않는다(서버 제출도
+	# 결과 화면이 editor_test 표시로 막는다). 일반 플레이는 기존대로 즉시 기록한다.
+	var is_best: bool = false
+	if GameState.is_editor_test():
+		result["editor_test"] = true
+	else:
+		is_best = RecordStore.submit(result)
 	result["is_new_record"] = is_best
 	_pending_result = result
 	_state = State.FINISH_VIEW

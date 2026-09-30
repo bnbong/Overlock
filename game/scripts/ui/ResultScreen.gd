@@ -59,6 +59,7 @@ func _ready() -> void:
 	_retry_button.pressed.connect(_on_retry_pressed)
 	_menu_button.pressed.connect(_on_menu_pressed)
 	_retry_button.grab_focus()
+	_apply_editor_test()
 	# 오디오 훅: 신기록이면 팡파레, 아니면 피니시 징글(가드: 미등록 시 무시).
 	_play_result_audio(is_new_record)
 	# 스킨·일러스트·제출 버튼이 모두 배선된 뒤 실제 콘텐츠 크기로 카드를 감싼다.
@@ -72,6 +73,23 @@ func _apply_skin() -> void:
 	UiSkin.skin_panel(_panel_bg, "beige")
 	for b in [_submit_button, _retry_button, _menu_button]:
 		UiSkin.skin_button(b, "large")
+
+
+## 에디터 테스트 플레이 결과: 주 버튼은 "편집으로 돌아가기"(앞·포커스), 보조는 "다시 테스트".
+## 기록을 저장하지 않는다는 안내를 제출 상태 줄에 띄운다(일반 플레이는 변경 없음).
+func _apply_editor_test() -> void:
+	if not GameState.is_editor_test():
+		return
+	_menu_button.text = "편집으로 돌아가기"
+	_retry_button.text = "다시 테스트"
+	# 한글 라벨이 기본 "Retry/Menu"보다 길어 필 버튼 양끝 단추 장식에 가리지 않게 폭을 확보한다.
+	_menu_button.custom_minimum_size.x = maxf(_menu_button.custom_minimum_size.x, 280.0)
+	_retry_button.custom_minimum_size.x = maxf(_retry_button.custom_minimum_size.x, 210.0)
+	_menu_button.get_parent().move_child(_menu_button, 0)
+	_menu_button.grab_focus()
+	_new_record_label.visible = false
+	_submit_status.visible = true
+	_submit_status.text = "테스트 플레이는 기록을 저장하지 않습니다"
 
 
 ## 재봉 평점(등급)을 큰 문자로 눈에 띄게 표시. 하위 호환: grade 없으면 "-".
@@ -177,8 +195,11 @@ func _setup_submit(result: Dictionary) -> void:
 	var track_id: String = str(result.get("track_id", ""))
 	var is_custom: bool = track_id.begins_with(LeaderboardClient.CUSTOM_PREFIX)
 	var offline: bool = LeaderboardClient.health_known and not LeaderboardClient.server_reachable
+	# 에디터 테스트 플레이는 서버에 제출하지 않는다(버튼 숨김 + _on_submit_pressed 가드).
 	var can_submit: bool = (
-		not is_custom
+		not GameState.is_editor_test()
+		and not bool(result.get("editor_test", false))
+		and not is_custom
 		and LeaderboardClient.is_online_enabled()
 		and LeaderboardClient.has_nickname()
 		and not offline
@@ -193,6 +214,8 @@ func _setup_submit(result: Dictionary) -> void:
 
 
 func _on_submit_pressed() -> void:
+	if GameState.is_editor_test() or bool(GameState.last_result.get("editor_test", false)):
+		return
 	# 중복 제출 방지: 누른 즉시 비활성화하고 제출 중 상태를 표시한다.
 	_submit_button.disabled = true
 	_submit_status.visible = true
@@ -219,14 +242,19 @@ func _on_submit_completed(success: bool, rank: int, status: String, message: Str
 		_toast.push("제출 실패: " + message)
 
 
+## 재도전. 실행 출처는 유지한다(에디터 테스트면 "다시 테스트").
 func _on_retry_pressed() -> void:
-	GameState.start_run(GameState.track_id, GameState.difficulty)
+	GameState.retry_run()
 
 
 ## "Menu"는 맵 선택 화면으로 돌아간다(2단 네비게이션 허브). 방금 플레이한 트랙이 마지막
 ## 선택 트랙으로 복원되므로 최고 기록 갱신을 확인하고 바로 다른 트랙을 고르거나 재도전할 수
 ## 있다. 완전한 메인 4버튼 화면으로는 맵 선택의 "뒤로"로 이어진다.
+## 에디터 테스트 플레이면 이 버튼은 "편집으로 돌아가기"다.
 func _on_menu_pressed() -> void:
+	if GameState.is_editor_test():
+		GameState.return_to_editor()
+		return
 	get_tree().change_scene_to_file("res://scenes/TrackSelect.tscn")
 
 

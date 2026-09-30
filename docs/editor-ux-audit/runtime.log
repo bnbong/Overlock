@@ -1,0 +1,15 @@
+Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
+
+AUDIT initial_zoom=1.0 min=0.15
+AUDIT fabric_count=8
+AUDIT imported_length=6000.0 validated=true exported_items=MISSING fabric=silk
+AUDIT fitted_length=3200.00012207031 validated=true
+AUDIT saved=true dirty=false
+AUDIT after_metadata_edit_dirty=false test_enabled=true
+AUDIT test_scene=res://scenes/Gameplay.tscn
+AUDIT pause_exit_scene=res://scenes/Main.tscn
+AUDIT result_exit_scene=res://scenes/TrackSelect.tscn
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 2 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

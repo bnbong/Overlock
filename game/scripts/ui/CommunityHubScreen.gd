@@ -158,7 +158,7 @@ func _exit_tree() -> void:
 	CommunityTrackClient.cancel_reads()
 
 
-## Esc(ui_cancel, 게임패드 B 포함): 확인 창 닫기 → 상세에서 목록 → 그 밖에는 트랙 선택으로.
+## Esc(ui_cancel, 게임패드 B 포함): 확인 창 닫기 → 상세에서 목록 → 그 밖에는 트랙 선택(유저 모드)으로.
 func _input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
 		return
@@ -195,6 +195,8 @@ func _go_back() -> void:
 	if _publish_req != 0:
 		return  # 업로드 중에는 화면을 떠나지 않는다(취소 버튼도 비활성).
 	CommunityTrackClient.cancel_reads()
+	# 허브는 유저 트랙 모드에서만 들어오므로 돌아갈 때도 유저 모드로 연다(받은 트랙이 바로 보인다).
+	TrackSelectScript.pending_mode = TrackSelectScript.MODE_USER
 	get_tree().change_scene_to_file(TRACK_SELECT_SCENE)
 
 

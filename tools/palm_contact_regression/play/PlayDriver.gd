@@ -540,9 +540,12 @@ func _menu_to_gameplay(prefix: String) -> bool:
 	await _cap(prefix + "02_main_menu")
 	if not await _activate(
 		func(): return _scene().get_node("Menu/StartButton"),
-		func(): return _scene_name() == "TrackSelect",
+		func(): return _scene_name() == "TrackKindSelect",
 		"Start"
 	):
+		return false
+	var official: Callable = func(): return _scene().get("_official_card")  # 트랙 종류: 공식
+	if not await _activate(official, func(): return _scene_name() == "TrackSelect", "Official"):
 		return false
 	await _wait(30)
 	# 2) 트랙 선택: → 키(또는 터치 모드에선 다음 버튼 클릭)로 tee_01까지 이동

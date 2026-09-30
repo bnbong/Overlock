@@ -1,0 +1,32 @@
+Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
+OpenGL API 4.1 Metal - 90.5 - Compatibility - Using Device: Apple - Apple M1 Pro
+
+UXBUTTON Main StartButton (380.0, 56.0)
+UXBUTTON Main SettingsButton (380.0, 56.0)
+UXBUTTON Main LeaderboardButton (380.0, 56.0)
+UXBUTTON Main QuitButton (380.0, 56.0)
+UXBUTTON Main @Button@21 (99.0, 32.0)
+UXBUTTON Main ProfileChip (114.0, 38.0)
+UXBUTTON TrackSelect PrevButton (48.0, 48.0)
+UXBUTTON TrackSelect NextButton (48.0, 48.0)
+UXBUTTON TrackSelect PlayButton (460.0, 56.0)
+UXBUTTON TrackSelect CreateButton (226.0, 48.0)
+UXBUTTON TrackSelect ImportButton (226.0, 48.0)
+UXBUTTON TrackSelect HubButton (460.0, 48.0)
+UXBUTTON TrackSelect BackButton (460.0, 48.0)
+UXBUTTON Settings SaveButton (500.0, 48.0)
+UXBUTTON Settings BackButton (500.0, 48.0)
+UXSET live_volume=0.37 persisted=
+UXBUTTON Leaderboard PrevButton (46.0, 46.0)
+UXBUTTON Leaderboard NextButton (46.0, 46.0)
+UXBUTTON Leaderboard BackButton (524.0, 48.0)
+UXBUTTON CommunityHub @Button@330 (130.0, 48.0)
+UXBUTTON CommunityHub @Button@331 (152.0, 48.0)
+UXBUTTON CommunityHub @Button@334 (148.0, 48.0)
+UXBUTTON CommunityHub @Button@340 (170.0, 48.0)
+UXBUTTON Result RetryButton (144.0, 56.0)
+UXBUTTON Result MenuButton (145.0, 56.0)
+WARNING: 2D MSAA is not yet supported for GLES3.
+     at: render_target_set_msaa (drivers/gles3/storage/texture_storage.cpp:2934)
+     GDScript backtrace (most recent call first):
+         [0] _ready (res://Survey.gd:8)
