@@ -27,7 +27,7 @@ signal submit_completed(success: bool, rank: int, status: String, message: Strin
 signal leaderboard_fetched(success: bool, entries: Array, message: String)
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "2.0.0"  # §13.3 game_version. 손 밀착·바늘 연출 개편, 부상 사전 연출·페널티 대사.
+const GAME_VERSION: String = "2.1.0"  # §13.3 game_version. 커스텀 트랙 공유 허브, 모바일 조향 버튼 확대.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
