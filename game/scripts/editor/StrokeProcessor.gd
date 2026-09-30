@@ -20,19 +20,30 @@ const SMOOTH_HALF: int = 2  # 이동평균 반창(창=5)
 const SMOOTH_PASSES: int = 2
 const RDP_EPS: float = 2.0  # 데시메이트 허용 편차(px)
 const CLOSE_GAP: float = 90.0  # 루프 닫기 시 시작점과 남길 갭(§9)
+# 줌아웃 정규화: 캔버스는 화면 4px마다 점을 받으므로 zoom 0.15에서는 원시 점 간격이 약 26.7 월드다.
+# 이 간격이 DENSIFY_TRIGGER를 넘으면 Catmull-Rom으로 DENSIFY_STEP 간격까지 채우고, 평활 창도 원시
+# 간격에 비례해 넓혀(손떨림 파장은 원시 점 간격 단위) zoom 1.0에서 그린 것과 같은 품질을 낸다.
+const DENSIFY_STEP: float = 4.0  # zoom 1.0의 원시 점 간격(4px = 4 월드)
+const DENSIFY_TRIGGER: float = 6.0
+const SMOOTH_HALF_MAX: int = 16
 
 
-## 원시 점 → polyline. closed면 끝을 시작 근처로(작은 갭) 트림한다.
+## 원시 점 → polyline. closed면 끝을 시작 근처로(작은 갭) 트림한다. raw_step은 원시 점의 월드
+## 간격(캔버스 MIN_SAMPLE_PX / zoom). 0이면 zoom 1.0과 같다고 본다(기존 동작).
 func process(
-	raw: PackedVector2Array, closed: bool = false, gap: float = CLOSE_GAP
+	raw: PackedVector2Array, closed: bool = false, gap: float = CLOSE_GAP, raw_step: float = 0.0
 ) -> PackedVector2Array:
 	if raw.size() < 2:
 		return raw.duplicate()
 	var n: PackedVector2Array = normalize(raw)
 	if n.size() < 2:
 		return n
+	var half: int = SMOOTH_HALF
+	if raw_step > DENSIFY_TRIGGER:
+		n = densify(n, DENSIFY_STEP)
+		half = clampi(roundi(SMOOTH_HALF * raw_step / DENSIFY_STEP), SMOOTH_HALF, SMOOTH_HALF_MAX)
 	var corners: Dictionary = detect_corners(n)  # index -> true
-	var s: PackedVector2Array = smooth(n, corners)
+	var s: PackedVector2Array = smooth(n, corners, half)
 	var dec: Dictionary = decimate(s, corners, RDP_EPS)
 	var r: PackedVector2Array = resample(dec["points"], dec["corners"], BAKE_INTERVAL)
 	if closed:
@@ -84,8 +95,43 @@ func detect_corners(pts: PackedVector2Array) -> Dictionary:
 	return corners
 
 
+## 0.5) 줌아웃 정규화: 간격이 DENSIFY_TRIGGER를 넘는 구간을 Catmull-Rom(원시 점을 지나는 곡선)으로
+## step 간격까지 채운다. 결정론 순수 함수.
+func densify(pts: PackedVector2Array, step: float) -> PackedVector2Array:
+	var n: int = pts.size()
+	if n < 2:
+		return pts.duplicate()
+	var out: PackedVector2Array = PackedVector2Array([pts[0]])
+	for i in range(n - 1):
+		var p1: Vector2 = pts[i]
+		var p2: Vector2 = pts[i + 1]
+		var d: float = p1.distance_to(p2)
+		if d > DENSIFY_TRIGGER:
+			var p0: Vector2 = pts[i - 1] if i > 0 else p1 * 2.0 - p2
+			var p3: Vector2 = pts[i + 2] if i + 2 < n else p2 * 2.0 - p1
+			var m: int = ceili(d / step)
+			for k in range(1, m):
+				out.append(_quantize(_catmull_rom(p0, p1, p2, p3, float(k) / float(m))))
+		out.append(p2)
+	return out
+
+
+static func _catmull_rom(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
+	var t2: float = t * t
+	var t3: float = t2 * t
+	return 0.5 * (
+		(2.0 * p1)
+		+ (p2 - p0) * t
+		+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+		+ (3.0 * p1 - p0 - 3.0 * p2 + p3) * t3
+	)
+
+
 ## 2) 평활: 코너를 넘지 않는 이동평균(코너·끝점은 고정). 곡률 측정이 의도를 반영하게 한다.
-func smooth(pts: PackedVector2Array, corners: Dictionary) -> PackedVector2Array:
+## half는 이동평균 반창(기본 SMOOTH_HALF, 줌아웃 스트로크는 원시 간격에 비례해 넓힌다).
+func smooth(
+	pts: PackedVector2Array, corners: Dictionary, half: int = SMOOTH_HALF
+) -> PackedVector2Array:
 	var n: int = pts.size()
 	var cur: PackedVector2Array = pts.duplicate()
 	for _pass in range(SMOOTH_PASSES):
@@ -95,13 +141,13 @@ func smooth(pts: PackedVector2Array, corners: Dictionary) -> PackedVector2Array:
 				continue
 			var acc: Vector2 = cur[i]
 			var cnt: int = 1
-			for w in range(1, SMOOTH_HALF + 1):
+			for w in range(1, half + 1):
 				var li: int = i - w
 				if li < 0 or corners.has(li):
 					break
 				acc += cur[li]
 				cnt += 1
-			for w in range(1, SMOOTH_HALF + 1):
+			for w in range(1, half + 1):
 				var ri: int = i + w
 				if ri >= n or corners.has(ri):
 					break
@@ -199,7 +245,56 @@ func relax_curvature(
 	return cur
 
 
-## 길이 맞추기(§6.4): centroid 기준 등방 스케일로 목표 길이에 맞춘다(곡률반경도 ×k).
+## 트랙 길이 조절(3단계): 경로 중심(점 평균) 기준 등방 스케일 후 BAKE_INTERVAL 등간격으로 재샘플하고,
+## 재샘플로 생긴 길이 오차를 목표 ±0.5 안에 들 때까지(최대 4회) 보정한다. 좌표는 0.1 격자. 반환 {path, pre_close, center, length}.
+## pre_close(루프 닫기 전 경로)도 같은 중심·배율로 옮겨 닫기 해제가 원래 배율로 돌아가지 않게 한다.
+func scale_to_length(
+	pts: PackedVector2Array, target: float, pre_close: PackedVector2Array = PackedVector2Array()
+) -> Dictionary:
+	var c: Vector2 = centroid(pts)
+	var cur: PackedVector2Array = pts
+	var total: float = 1.0
+	for _pass in range(4):
+		var length: float = _length(cur)
+		if length < 0.001 or (_pass > 0 and absf(length - target) < 0.5):
+			break
+		var f: float = target / length
+		total *= f
+		cur = _resample_run(scale_about(cur, c, f), BAKE_INTERVAL)
+	var q: PackedVector2Array = PackedVector2Array()
+	for p in cur:
+		q.append(_quantize(p))
+	var pre: PackedVector2Array = PackedVector2Array()
+	if pre_close.size() >= 2:
+		pre = _resample_run(scale_about(pre_close, c, total), BAKE_INTERVAL)
+	return {"path": q, "pre_close": pre, "center": c, "length": _length(q), "factor": total}
+
+
+static func centroid(pts: PackedVector2Array) -> Vector2:
+	var c: Vector2 = Vector2.ZERO
+	if pts.is_empty():
+		return c
+	for p in pts:
+		c += p
+	return c / float(pts.size())
+
+
+static func scale_about(pts: PackedVector2Array, c: Vector2, factor: float) -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	out.resize(pts.size())
+	for i in range(pts.size()):
+		out[i] = c + (pts[i] - c) * factor
+	return out
+
+
+static func _length(pts: PackedVector2Array) -> float:
+	var total: float = 0.0
+	for i in range(1, pts.size()):
+		total += pts[i - 1].distance_to(pts[i])
+	return total
+
+
+## centroid 기준 등방 스케일(곡률반경도 ×k). 재샘플하지 않는다(scale_to_length 사용 권장).
 func scale_about_centroid(pts: PackedVector2Array, factor: float) -> PackedVector2Array:
 	if pts.is_empty():
 		return pts.duplicate()

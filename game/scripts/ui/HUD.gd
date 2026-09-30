@@ -47,6 +47,7 @@ func _ready() -> void:
 	_apply_skin()
 	_build_effect_cards()
 	_build_touch_controls()
+	_apply_editor_test_pause()
 
 
 ## 좌하단 RISK 패널(offset_top=-186) 바로 위에 효과 타이머 카드 VBox를 동적 생성한다(씬 미수정 —
@@ -251,7 +252,9 @@ func _build_pause_touch_buttons() -> void:
 	row.offset_top = 6.0
 	row.offset_bottom = 86.0
 	_pause_overlay.add_child(row)
-	var defs: Array = [["계속", &"pause"], ["재시작", &"restart"], ["메인", &"to_menu"]]
+	# 에디터 테스트 플레이면 to_menu는 편집 화면 복귀다(RaceDirector._to_menu 분기).
+	var menu_label: String = "편집" if GameState.is_editor_test() else "메인"
+	var defs: Array = [["계속", &"pause"], ["재시작", &"restart"], [menu_label, &"to_menu"]]
 	for d in defs:
 		var btn: Button = Button.new()
 		btn.text = d[0]
@@ -260,6 +263,31 @@ func _build_pause_touch_buttons() -> void:
 		_style_touch_button(btn)
 		btn.pressed.connect(_tap_action.bind(d[1]))
 		row.add_child(btn)
+
+
+## 에디터 테스트 플레이의 일시정지 안내: 키 힌트를 "편집으로"로 바꾸고, 키보드 모드에는 마우스로 누를
+## 수 있는 "편집으로 돌아가기" 버튼을 붙인다(터치 모드는 터치 버튼 줄의 "편집"이 같은 역할).
+func _apply_editor_test_pause() -> void:
+	if not GameState.is_editor_test():
+		return
+	var hint: Label = $PauseOverlay/PauseHint
+	hint.text = "[Esc] 계속      [R] 다시 테스트      [M] 편집으로"
+	if _touch != null:
+		return
+	var btn: Button = Button.new()
+	btn.name = "EditorReturnButton"
+	btn.text = "편집으로 돌아가기"
+	btn.process_mode = Node.PROCESS_MODE_ALWAYS
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_anchors_preset(Control.PRESET_CENTER)
+	btn.offset_left = -130.0
+	btn.offset_right = 130.0
+	btn.offset_top = 62.0
+	btn.offset_bottom = 102.0
+	_style_touch_button(btn)
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.pressed.connect(_tap_action.bind(&"to_menu"))
+	_pause_overlay.add_child(btn)
 
 
 ## 일시정지 오버레이의 터치 버튼 룩. 시트 버튼(UiSkin small/large)은 세로로 늘리면 모서리 단추

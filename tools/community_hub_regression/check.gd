@@ -5,7 +5,8 @@ extends "res://community_hub_regression/check_fixes.gd"
 ##  fixtures : server/tests/fixtures/community_tracks/*.json 을 TrackData.bake +
 ##             TrackValidator.validate 로 판정해 expect·reject_reasons·expected_length 와
 ##             대조(허브 가져오기 판정도 같은지 확인).
-##  import   : 기존 import_custom_from_text 기본 동작 보존(경로가 같으면 duplicate).
+##  import   : import_custom_from_text 기본 동작(플레이 내용 지문이 같을 때만 duplicate, 경로가 같아도
+##             폭·재질·아이템이 다르면 새 트랙, items 보존).
 ##  hub      : 허브 가져오기(아이템 보존, 재다운로드 재저장 없음, 같은 경로·다른 폭/아이템, 로컬 삭제·
 ##             편집 후 매핑 정리, 손상 manifest, 저장 실패, 형식 오류 거부, 로컬 id 발급).
 ##  records  : 같은 경로·다른 내용 트랙의 로컬 기록 키 분리.
@@ -18,12 +19,14 @@ extends "res://community_hub_regression/check_fixes.gd"
 ##             목록 잘라내기·클램프, bidi 문자 제거, 201 형식 오류, 종류별 404·401·403, 저장하지 못한
 ##             토큰 재표시, 업로드 중 이탈 차단, 더 보기 offset, 작성자 Label 분리, 좌표 상한.
 ##  limited  : 게시 분당 1회 서버로 429 와 자동 재시도 없음 확인.
+##  editor_publish : 트랙 에디터에서 아이템 도구로 배치·저장한 트랙을 로컬 서버에 실제 게시 → 상세 →
+##             허브 가져오기로 다시 받아 아이템(s·type·lat)이 같은지 확인.
 ## 인자(-- 뒤): --fixtures=<dir> --api=<url> --api-limited=<url> --api-silent=<url>
 ## 실패한 assertion 이 하나라도 있으면 종료 코드 1, 모두 통과하면 0.
 
 const SECTIONS: Array[String] = [
 	"fixtures", "import", "hub", "records", "publish", "restart", "classify", "server", "fixes",
-	"limited"
+	"limited", "editor_publish"
 ]
 const MIN_PASSED: int = 120
 const ResultScene: PackedScene = preload("res://scenes/Result.tscn")
@@ -43,6 +46,7 @@ func _ready() -> void:
 	_check_restart()
 	_check_classify()
 	await _check_server()
+	await _check_editor_republish()
 	await _check_fixes()
 	await _check_limited()
 	for s in SECTIONS:
@@ -145,12 +149,21 @@ func _check_import_default() -> void:
 	t2["fabric"] = "silk"
 	var r3: Dictionary = TrackLoader.import_custom_from_text(JSON.stringify(t2), "stadium2")
 	_ok(
-		str(r3["status"]) == "duplicate",
-		"default import keeps path-only duplicate rule (width differs)"
+		str(r3["status"]) == "ok" and str(r3["track_id"]) != str(r1["track_id"]),
+		"default import: same path but different width/fabric -> new track (play fingerprint rule)"
 	)
-	var saved: Variant = JSON.parse_string(_file_text(str(r1["track_id"])))
+	var t3: Dictionary = (fx["track"] as Dictionary).duplicate(true)
+	t3["items"] = [{"s": 300.0, "type": "thimble", "lat": 5.0}]
+	var r4: Dictionary = TrackLoader.import_custom_from_text(JSON.stringify(t3), "stadium3")
+	var saved: Variant = JSON.parse_string(_file_text(str(r4["track_id"])))
 	_ok(
-		saved is Dictionary and not (saved as Dictionary).has("items"), "default import drops items"
+		(
+			str(r4["status"]) == "ok"
+			and saved is Dictionary
+			and (saved["items"] as Array).size() == 1
+			and float(saved["items"][0]["lat"]) == 5.0
+		),
+		"default import preserves items"
 	)
 	_done.append("import")
 
@@ -247,14 +260,24 @@ func _check_hub_import() -> void:
 	_ok(_custom_files().size() == files0 + 3, "3 files for A/B/C")
 	var saved_b: Dictionary = JSON.parse_string(_file_text(str(rb["track_id"])))
 	_ok(float(saved_b["width"]["fail"]) == 70.0, "B keeps its own width")
-	# 기존 기본 가져오기는 허브 트랙이 있어도 자기 규칙(재표본화 경로 체크섬)대로 중복 판정한다.
+	# 기본 가져오기는 양쪽을 같은 정규화(베이크 → 0.1 격자 조밀 점 열)에 통과시킨 플레이 내용 지문으로 중복을
+	# 판정한다. 허브 사본과 플레이 내용이 같으면 그 사본을 가리키고(새 파일 없음), 허브 사본은 건드리지 않는다.
+	var files_before: int = _custom_files().size()
 	var def1: Dictionary = TrackLoader.import_custom_from_text(JSON.stringify(t_c), "plain")
 	var def2: Dictionary = TrackLoader.import_custom_from_text(JSON.stringify(t_b), "plain2")
-	_ok(str(def1["status"]) == "ok", "default import of hub-shaped JSON saves its own copy")
 	_ok(
-		str(def2["status"]) == "duplicate" and def2["track_id"] == def1["track_id"],
-		"default import keeps path-only duplicate rule next to hub copies"
+		str(def1["status"]) == "duplicate" and str(def1["track_id"]) == str(rc["track_id"]),
+		"default import of hub-shaped JSON with same play content -> duplicate of hub copy C"
 	)
+	_ok(
+		(
+			str(def2["status"]) == "duplicate"
+			and str(def2["track_id"]) == str(rb["track_id"])
+			and def2["track_id"] != def1["track_id"]
+		),
+		"default import: same path, different width/items -> matches B, not C"
+	)
+	_ok(_custom_files().size() == files_before, "no new files for play-identical imports")
 	_ok(
 		TrackLoader.is_unmodified_hub_download(str(rc["track_id"])),
 		"hub copy C untouched by default import"
@@ -672,3 +695,59 @@ func _check_classify() -> void:
 	_done.append("classify")
 
 # --- 서버 연동 ---
+
+
+# --- 에디터에서 만든 트랙 재게시 ---
+
+
+func _check_editor_republish() -> void:
+	var ed: Control = load("res://scenes/TrackEditor.tscn").instantiate()
+	add_child(ed)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var t: Dictionary = _hub_track({}, [{"s": 500.0, "type": "autopilot", "lat": -12.0}])
+	t["name"] = "Editor Publish"
+	ed._import_from_text(JSON.stringify(t))
+	ed._validate()
+	ed._set_mode(DrawCanvas.Mode.ITEM)
+	ed._item_tool.place_type = "thimble"
+	_ok(ed._item_tool.place(900.0), "editor tool places thimble")
+	ed._item_tool.set_type("autopilot")
+	_ok(ed._item_tool.place(1700.0), "editor tool places autopilot")
+	_ok(ed._save(), "editor save for publish")
+	var id: String = str(ed._doc["local_id"])
+	var want: Array = (ed._doc["items"] as Array).duplicate(true)
+	ed.queue_free()
+	var built: Dictionary = TrackLoader.build_publish_track(id)
+	_ok(bool(built["ok"]), "editor track builds for publish: %s" % built.get("message", ""))
+	var r: Dictionary = await _wait_result(
+		CommunityTrackClient.publish("Editor Publish", "tester", "", built["track"], id)
+	)
+	_ok(bool(r.get("ok", false)) and int(r.get("code", 0)) == 201, "editor track published 201")
+	var post: String = str(r.get("data", {}).get("id", ""))
+	var dr: Dictionary = await _wait_result(CommunityTrackClient.detail(post))
+	_ok(bool(dr.get("ok", false)), "editor post detail ok")
+	var imp: Dictionary = TrackLoader.import_hub_track(
+		{
+			"post_id": post,
+			"title": dr["data"]["title"],
+			"content_hash": dr["data"]["content_hash"],
+			"track": dr["data"]["track"],
+		}
+	)
+	_ok(bool(imp["ok"]), "editor post re-downloaded: %s" % imp.get("message", ""))
+	var got: Array = JSON.parse_string(_file_text(str(imp["track_id"])))["items"]
+	var same: bool = got.size() == want.size() and want.size() == 3
+	var by_s: Callable = func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["s"]) < float(b["s"])
+	got.sort_custom(by_s)
+	want.sort_custom(by_s)
+	for i in range(mini(got.size(), want.size())):
+		if (
+			absf(float(got[i]["s"]) - float(want[i]["s"])) > 0.01
+			or absf(float(got[i]["lat"]) - float(want[i]["lat"])) > 0.001
+			or str(got[i]["type"]) != str(want[i]["type"])
+		):
+			same = false
+	_ok(same, "re-downloaded items match editor items %s vs %s" % [got, want])
+	_done.append("editor_publish")

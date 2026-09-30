@@ -10,6 +10,16 @@ extends Control
 ##
 ## 마지막 선택 트랙은 LeaderboardClient.remember_last_track로 user://settings.json에
 ## 기록하고 재진입 시 복원한다.
+##
+## 모드: 메인 Start → 트랙 종류 선택(TrackKindSelect)에서 고른 모드로 연다.
+##  - 공식(MODE_OFFICIAL): 공식 트랙만 보여 주고 커스텀 전용 버튼(만들기·불러오기·내보내기·삭제·
+##    허브 게시·공유 허브)을 숨긴다. 리더보드 버튼은 기존 조건 그대로 보인다.
+##  - 유저(MODE_USER): 로컬 커스텀 트랙(직접 만든 것 + 허브에서 받은 것)만 보여 주고, Play 옆에
+##    "공유 허브" 진입 버튼을 같은 크기로 둔다. 목록이 비면 안내 문구를 띄우고 허브 버튼에 포커스를 준다.
+## 모드는 GameState를 거치지 않고 static 변수(pending_mode)로 넘겨받는다. 이 화면을 떠날 때
+## (_remember_current) 현재 모드를 pending_mode에 남겨 리더보드·에디터·허브에서 돌아오면 그대로
+## 복원하고, Play로 떠난 경우에는 비워 둬서 결과 화면에서 돌아올 때 GameState.track_id가
+## custom_ 로 시작하면 유저 모드, 아니면 공식 모드로 연다.
 
 const DEFAULT_TRACK: String = "cotton_01"
 const MAIN_SCENE: String = "res://scenes/Main.tscn"
@@ -17,6 +27,16 @@ const EDITOR_SCENE: String = "res://scenes/TrackEditor.tscn"
 const LEADERBOARD_SCENE: String = "res://scenes/Leaderboard.tscn"
 const SELF_SCENE: String = "res://scenes/TrackSelect.tscn"
 const HUB_SCENE: String = "res://scenes/CommunityHub.tscn"
+const KIND_SELECT_SCENE: String = "res://scenes/TrackKindSelect.tscn"
+
+const MODE_OFFICIAL: String = "official"
+const MODE_USER: String = "user"
+const HEADER_OFFICIAL: String = "공식 트랙"
+const HEADER_USER: String = "유저 트랙"
+const EMPTY_USER_TEXT: String = "아직 유저 트랙이 없습니다.\n공유 허브에서 받거나 직접 만들어 보세요."
+# 허브에서 받은 트랙(CommunityStore 다운로드 기록이 있는 custom_)의 정보 줄 표식.
+const HUB_BADGE: String = "허브 · "
+const CUSTOM_BADGE: String = "CUSTOM · "
 
 ## 원단 재질 한국어 라벨. FabricSurface.FABRIC_BASE(presentation/FabricSurface.gd)가
 ## 실제로 렌더 지원하는 재질 목록과 맞춘다 — 목록에 없는 값(미지 재질)은 원문 그대로 노출.
@@ -51,8 +71,15 @@ const _SWATCH_STITCH_COLOR: Color = Color(0.97, 0.93, 0.85, 0.5)
 const _SWATCH_UNKNOWN_COLOR: Color = Color(0.5, 0.5, 0.5, 1.0)
 const _SWATCH_MAX_COUNT: int = 3
 
+## 다음 진입 때 열 모드(한 번 쓰고 비운다). 트랙 종류 선택·공유 허브·이 화면이 떠나기 직전에 채운다.
+## 비어 있으면 GameState.track_id로 판단한다(결과 화면에서 돌아오는 경우).
+static var pending_mode: String = ""
+## 마지막으로 연 모드. 트랙 종류 선택 화면이 뒤로 돌아왔을 때 이 모드의 선택지에 포커스를 둔다.
+static var last_mode: String = MODE_OFFICIAL
+
 var _tracks: Array = []
 var _index: int = 0
+var _mode: String = MODE_OFFICIAL
 var _confirm: ConfirmationDialog
 var _toast: Toast
 # 현재 선택 트랙의 원단 토큰(스와치 draw 핸들러가 참조 — _update_fabric_row가 채운다).
@@ -65,7 +92,11 @@ var _web_bridge: WebFileBridge
 var _export_id: String = ""
 var _export_disp: String = ""
 
+@onready var _header_label: Label = $Panel/HeaderLabel
 @onready var _preview: Control = $Panel/Preview
+@onready var _empty_label: Label = $Panel/EmptyLabel
+@onready var _selector: HBoxContainer = $Panel/Selector
+@onready var _hint_label: Label = $Panel/HintLabel
 @onready var _track_label: Label = $Panel/Selector/TrackLabel
 @onready var _prev_button: Button = $Panel/Selector/PrevButton
 @onready var _next_button: Button = $Panel/Selector/NextButton
@@ -74,20 +105,24 @@ var _export_disp: String = ""
 @onready var _swatch_row: Control = $Panel/FabricRow/SwatchRow
 @onready var _fabric_text_label: Label = $Panel/FabricRow/FabricTextLabel
 @onready var _best_time_label: Label = $Panel/BestTimeLabel
-@onready var _play_button: Button = $Panel/PlayButton
+@onready var _play_button: Button = $Panel/PlayRow/PlayButton
+@onready var _action_row: HBoxContainer = $Panel/ActionRow
 @onready var _create_button: Button = $Panel/ActionRow/CreateButton
+@onready var _edit_button: Button = $Panel/HubRow/EditButton
 @onready var _import_button: Button = $Panel/ActionRow/ImportButton
 @onready var _export_button: Button = $Panel/ActionRow/ExportButton
 @onready var _delete_button: Button = $Panel/ActionRow/DeleteButton
+@onready var _hub_row: HBoxContainer = $Panel/HubRow
 @onready var _leaderboard_button: Button = $Panel/HubRow/LeaderboardButton
 @onready var _publish_button: Button = $Panel/HubRow/PublishButton
-@onready var _hub_button: Button = $Panel/HubRow/HubButton
+@onready var _hub_button: Button = $Panel/PlayRow/HubButton
 @onready var _back_button: Button = $Panel/BackButton
 @onready var _import_dialog: FileDialog = $ImportDialog
 @onready var _export_dialog: FileDialog = $ExportDialog
 
 
 func _ready() -> void:
+	_mode = _take_pending_mode()
 	_rebuild_tracks()
 	_index = _index_of(LeaderboardClient.last_track_id)
 	_preview.draw.connect(_on_preview_draw)
@@ -107,6 +142,7 @@ func _ready() -> void:
 	_next_button.pressed.connect(_cycle.bind(1))
 	_play_button.pressed.connect(_on_play_pressed)
 	_create_button.pressed.connect(_on_create_pressed)
+	_edit_button.pressed.connect(_on_edit_pressed)
 	_delete_button.pressed.connect(_on_delete_pressed)
 	_leaderboard_button.pressed.connect(_on_leaderboard_pressed)
 	_publish_button.pressed.connect(_on_publish_pressed)
@@ -129,17 +165,51 @@ func _ready() -> void:
 	_confirm.confirmed.connect(_do_delete)
 	add_child(_confirm)
 	_apply_skin()
+	_apply_mode()
 	_refresh()
-	_play_button.grab_focus()
+	_focus_default()
 	_play_menu_bgm()
+
+
+## 이번 진입의 모드를 정하고 pending_mode를 비운다. pending_mode가 없으면(결과 화면 복귀 등)
+## 방금 플레이한 트랙 id가 custom_ 로 시작하는지로 판단한다.
+static func _take_pending_mode() -> String:
+	var m: String = pending_mode
+	pending_mode = ""
+	if m == MODE_OFFICIAL or m == MODE_USER:
+		return m
+	return MODE_USER if GameState.track_id.begins_with(TrackLoader.CUSTOM_PREFIX) else MODE_OFFICIAL
+
+
+## 현재 모드(검사·외부 참조용).
+func current_mode() -> String:
+	return _mode
+
+
+## 모드별 고정 표시(제목, 모드 전용 버튼 줄). 트랙마다 달라지는 가시성은 _refresh가 정한다.
+func _apply_mode() -> void:
+	var user: bool = _mode == MODE_USER
+	_header_label.text = HEADER_USER if user else HEADER_OFFICIAL
+	_empty_label.text = EMPTY_USER_TEXT
+	_action_row.visible = user
+	_hub_button.visible = user
+	last_mode = _mode
+
+
+## 진입 포커스: 트랙이 있으면 Play, 유저 모드인데 목록이 비었으면 공유 허브.
+func _focus_default() -> void:
+	if _tracks.is_empty():
+		_hub_button.grab_focus()
+	else:
+		_play_button.grab_focus()
 
 
 ## 사용자 제공 시트 스킨. 대형/소형 필 + 정사각 나브 버튼 + 의미별 아이콘.
 ## 미리보기는 절차적 유지(트랙 실루엣 가독성 — 다크 패널 장식이 작은 미리보기를 가림).
 func _apply_skin() -> void:
 	var small: Array = [
-		_create_button, _import_button, _export_button, _delete_button, _leaderboard_button,
-		_publish_button, _hub_button,
+		_create_button, _edit_button, _import_button, _export_button, _delete_button,
+		_leaderboard_button, _publish_button,
 	]
 	if not UiSkin.has_skin():
 		for b in small:
@@ -150,6 +220,8 @@ func _apply_skin() -> void:
 	UiSkin.skin_button(_back_button, "small")
 	for b in small:
 		UiSkin.skin_button(b, "small", 15)
+	# 유저 모드의 공유 허브 진입 버튼은 Play와 같은 대형 필로 눈에 띄게 둔다.
+	UiSkin.skin_button(_hub_button, "large", 22)
 	# 트랙 변경 화살표: 정사각 단추 바탕을 제거하고 화살표 아이콘만 남긴다(투명 히트 영역
 	# 48x48 유지, hover/pressed는 아이콘 틴트). focus_mode는 씬에서 0(순환 제외)이라 그대로.
 	for b in [_prev_button, _next_button]:
@@ -192,11 +264,13 @@ static func _box(bg: Color, border: Color, bw: int = 2) -> StyleBoxFlat:
 	return sb
 
 
-## 공식(res://) + 커스텀(user:// 디렉토리 스캔) 트랙 목록을 합친다. 커스텀 항목은
-## is_custom=true 태그가 붙어 있어 기존 ◀▶ 셀렉터가 그대로 순환한다(§7.5).
+## 모드별 트랙 목록. 공식 모드는 res:// 공식 트랙만(비면 기본 트랙 하나), 유저 모드는 user://
+## 커스텀 트랙만(is_custom=true, 직접 만든 것 + 허브에서 받은 것) 담는다. 유저 목록은 빌 수 있다.
 func _rebuild_tracks() -> void:
+	if _mode == MODE_USER:
+		_tracks = TrackLoader.list_custom_tracks()
+		return
 	_tracks = TrackLoader.list_tracks().duplicate(true)
-	_tracks += TrackLoader.list_custom_tracks()
 	if _tracks.is_empty():
 		_tracks = [{"track_id": DEFAULT_TRACK, "name": "Cotton Warm-up", "difficulty": "normal"}]
 
@@ -224,8 +298,9 @@ func _input(event: InputEvent) -> void:
 			_cycle(1)
 			get_viewport().set_input_as_handled()
 		KEY_ESCAPE:
-			_on_back_pressed()
+			# 씬 전환이 이 노드를 트리에서 떼기 전에 입력을 소비 처리한다.
 			get_viewport().set_input_as_handled()
+			_on_back_pressed()
 
 
 func _cycle(dir: int) -> void:
@@ -242,6 +317,8 @@ func _current_id() -> String:
 
 
 func _current_difficulty() -> String:
+	if _tracks.is_empty():
+		return "normal"
 	var entry: Dictionary = _tracks[_index]
 	var diff: String = str(entry.get("difficulty", "normal"))
 	# 트랙 JSON의 난이도를 우선(권위 있는 값).
@@ -252,6 +329,16 @@ func _current_difficulty() -> String:
 
 
 func _refresh() -> void:
+	_set_empty_state(_tracks.is_empty())
+	if _tracks.is_empty():
+		_update_fabric_row("")
+		_edit_button.visible = false
+		_delete_button.visible = false
+		_export_button.visible = false
+		_leaderboard_button.visible = false
+		_publish_button.visible = false
+		_hub_row.visible = false
+		return
 	var entry: Dictionary = _tracks[_index]
 	var id: String = str(entry.get("track_id", DEFAULT_TRACK))
 	var track: TrackData = TrackLoader.load_track(id)
@@ -266,7 +353,9 @@ func _refresh() -> void:
 		length_px = int(round(track.length))
 	var is_custom: bool = bool(entry.get("is_custom", false))
 	_track_label.text = disp_name
-	var badge: String = "CUSTOM · " if is_custom else ""
+	var badge: String = ""
+	if is_custom:
+		badge = HUB_BADGE if not CommunityStore.post_for_local(id).is_empty() else CUSTOM_BADGE
 	var info_parts: PackedStringArray = PackedStringArray()
 	info_parts.append("%s%s" % [badge, diff.to_upper()])
 	info_parts.append("%d px" % length_px)
@@ -274,6 +363,8 @@ func _refresh() -> void:
 	_info_label.text = "    ".join(info_parts)
 	_update_fabric_row(track.fabric if track != null else "")
 	_delete_button.visible = is_custom
+	# 편집은 로컬 커스텀 트랙만(허브에서 받고 편집하지 않은 트랙은 에디터가 사본으로 연다).
+	_edit_button.visible = is_custom
 	# 내보내기는 커스텀 트랙만(공식은 저장소에 있으니 공유 불필요 — §8).
 	_export_button.visible = is_custom
 	# 리더보드는 공식 트랙 + 온라인 활성일 때만(커스텀 트랙은 서버 제출/조회 대상 아님).
@@ -281,8 +372,21 @@ func _refresh() -> void:
 	# 공유 허브 게시는 로컬 커스텀 트랙만. 공식 트랙과, 허브에서 받은 뒤 편집하지 않은 트랙에는
 	# 게시 버튼을 두지 않는다(편집해 내용이 달라진 사본은 새 게시물로 올릴 수 있다).
 	_publish_button.visible = is_custom and not TrackLoader.is_unmodified_hub_download(id)
+	# 보이는 버튼이 하나도 없으면 줄 자체를 접는다(빈 줄의 간격이 남지 않게).
+	_hub_row.visible = (
+		_leaderboard_button.visible or _publish_button.visible or _edit_button.visible
+	)
 	_update_best(id, diff)
 	_preview.queue_redraw()
+
+
+## 유저 모드 빈 목록: 미리보기·셀렉터·정보 줄·Play를 숨기고 안내 문구를 보인다.
+func _set_empty_state(empty: bool) -> void:
+	_empty_label.visible = empty
+	for c in [_preview, _selector, _info_label, _best_time_label, _hint_label, _play_button]:
+		(c as Control).visible = not empty
+	if empty:
+		_fabric_row.visible = false
 
 
 func _update_best(id: String, diff: String) -> void:
@@ -297,7 +401,11 @@ func _update_best(id: String, diff: String) -> void:
 
 
 func _on_play_pressed() -> void:
+	if _tracks.is_empty():
+		return
 	_remember_current()
+	# 결과 화면에서 돌아올 때는 플레이한 트랙 id로 모드를 정한다(pending_mode를 남기지 않는다).
+	pending_mode = ""
 	GameState.start_run(_current_id(), _current_difficulty())
 
 
@@ -306,9 +414,20 @@ func _on_create_pressed() -> void:
 	get_tree().change_scene_to_file(EDITOR_SCENE)
 
 
+## "편집": 선택한 커스텀 트랙을 에디터로 연다(저장하면 같은 파일에 기록). 돌아오면 유저 모드 그대로.
+func _on_edit_pressed() -> void:
+	if _tracks.is_empty() or not bool(_tracks[_index].get("is_custom", false)):
+		return
+	var id: String = _current_id()
+	_remember_current()
+	GameState.open_editor(id)
+
+
 ## 선택 트랙을 조회 대상으로 넘기고 리더보드 화면으로 전환한다(공식 트랙 전용).
 ## 복귀 씬을 이 화면으로 지정해 리더보드 뒤로가기가 맵 선택으로 돌아오게 한다.
 func _on_leaderboard_pressed() -> void:
+	if _tracks.is_empty():
+		return
 	var entry: Dictionary = _tracks[_index]
 	var id: String = _current_id()
 	var disp_name: String = str(entry.get("name", id))
@@ -321,9 +440,11 @@ func _on_leaderboard_pressed() -> void:
 	get_tree().change_scene_to_file(LEADERBOARD_SCENE)
 
 
+## 뒤로(버튼·Esc): 트랙 종류 선택 화면으로. 그 화면은 방금 쓰던 모드의 선택지에 포커스를 둔다.
 func _on_back_pressed() -> void:
 	_remember_current()
-	get_tree().change_scene_to_file(MAIN_SCENE)
+	pending_mode = ""
+	get_tree().change_scene_to_file(KIND_SELECT_SCENE)
 
 
 ## "공유 허브" 버튼: 허브 목록 화면으로 전환한다.
@@ -336,6 +457,8 @@ func _on_hub_pressed() -> void:
 ## "허브에 게시" 버튼(로컬 커스텀 트랙 전용). 저장본이 로드·검증을 통과할 때만 허브 게시 화면으로
 ## 넘어가고, 아니면 사유를 토스트로 알린다(허브 화면이 게시 직전에 한 번 더 검사한다).
 func _on_publish_pressed() -> void:
+	if _tracks.is_empty():
+		return
 	var entry: Dictionary = _tracks[_index]
 	if not bool(entry.get("is_custom", false)):
 		return
@@ -352,7 +475,11 @@ func _on_publish_pressed() -> void:
 
 
 ## 현재 선택 트랙을 마지막 선택 트랙으로 기록(재진입 복원용). 화면을 떠날 때만 호출한다.
+## 돌아올 때 같은 모드로 열리도록 현재 모드도 pending_mode에 남긴다(Play·뒤로는 호출 뒤 비운다).
 func _remember_current() -> void:
+	pending_mode = _mode
+	if _tracks.is_empty():
+		return
 	LeaderboardClient.remember_last_track(_current_id())
 
 
@@ -368,6 +495,8 @@ func _on_delete_pressed() -> void:
 
 
 func _do_delete() -> void:
+	if _tracks.is_empty():
+		return
 	var entry: Dictionary = _tracks[_index]
 	var id: String = str(entry.get("track_id", ""))
 	if not TrackLoader.delete_custom_track(id):
@@ -375,10 +504,10 @@ func _do_delete() -> void:
 		return
 	RecordStore.purge(id)
 	_rebuild_tracks()
-	_index = clampi(_index, 0, _tracks.size() - 1)
-	# 삭제 후 포커스가 사라진 버튼에 남지 않게 안전한 곳으로 옮긴다.
-	_play_button.grab_focus()
+	_index = clampi(_index, 0, maxi(_tracks.size() - 1, 0))
 	_refresh()
+	# 삭제 후 포커스가 사라진 버튼에 남지 않게 안전한 곳으로 옮긴다(마지막 트랙이면 공유 허브).
+	_focus_default()
 
 
 # --- 불러오기 (import) ---
@@ -432,8 +561,16 @@ func _run_import(text: String, suggested_name: String) -> void:
 	var res: Dictionary = TrackLoader.import_custom_from_text(text, suggested_name)
 	_toast.push(str(res["message"]))
 	if bool(res["ok"]):
+		# 불러온 트랙은 커스텀이므로 공식 모드(불러오기 버튼이 없어 드래그드롭으로만 도달)라면
+		# 목록에 없다. 이때는 유저 모드로 바꿔 방금 불러온 트랙을 보여 준다.
+		if _mode != MODE_USER:
+			_mode = MODE_USER
+			_apply_mode()
+		var was_empty: bool = _tracks.is_empty()
 		_rebuild_tracks()
 		_select_track(str(res["track_id"]))
+		if was_empty:
+			_focus_default()
 
 
 ## 파일 텍스트 읽기. {error, text} 반환(성공 시 error="").
@@ -453,6 +590,8 @@ func _read_file_text(path: String) -> Dictionary:
 
 ## "내보내기" 버튼(커스텀 트랙 전용). 웹은 Blob 다운로드, 데스크톱은 저장 다이얼로그를 연다.
 func _on_export_pressed() -> void:
+	if _tracks.is_empty():
+		return
 	var entry: Dictionary = _tracks[_index]
 	if not bool(entry.get("is_custom", false)):
 		return
@@ -511,6 +650,8 @@ func _select_track(track_id: String) -> void:
 ## Preview 컨트롤의 draw 시그널 핸들러. 선택 트랙의 베이크 폴리라인을 패널에
 ## 맞춰 축소해 실루엣으로 그린다(시작점은 초록 마커).
 func _on_preview_draw() -> void:
+	if _tracks.is_empty():
+		return
 	var track: TrackData = TrackLoader.load_track(_current_id())
 	var pts: PackedVector2Array = track.points if track != null else PackedVector2Array()
 	draw_track_preview(_preview, pts)

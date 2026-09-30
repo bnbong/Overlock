@@ -582,7 +582,7 @@ func _main() -> void:
 	get_tree().quit(0)
 
 
-## 메인 메뉴에서 hold 프레임 머문 뒤 Start → 트랙 선택에서 steps(+1=다음, -1=이전)대로 캐러셀을
+## 메인 메뉴에서 hold 프레임 머문 뒤 Start → 트랙 종류 선택(공식 트랙) → 트랙 선택에서 steps(+1=다음, -1=이전)대로 캐러셀을
 ## 넘기고(각 dwell 프레임), 목표 트랙이면 Play 를 누른다.
 func _menu_to_track(track_id: String, hold: int, steps: Array, dwell: int) -> bool:
 	await _wait_until(func(): return _scene_name() == "Main", 600, "Main")
@@ -591,6 +591,11 @@ func _menu_to_track(track_id: String, hold: int, steps: Array, dwell: int) -> bo
 	await _wait(hold)
 	var start_btn: Control = _scene().get_node("Menu/StartButton")
 	await _click_control(start_btn)
+	if not await _wait_until(func(): return _scene_name() == "TrackKindSelect", 120, "TrackKind"):
+		return false
+	_park_mouse()
+	await _wait(dwell)
+	await _click_control(_scene().get("_official_card"))
 	if not await _wait_until(func(): return _scene_name() == "TrackSelect", 120, "TrackSelect"):
 		return false
 	_park_mouse()

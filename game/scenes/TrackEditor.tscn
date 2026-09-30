@@ -27,6 +27,10 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 100.0
+offset_right = -8.0
+offset_bottom = -136.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("2_canvas")
@@ -47,7 +51,7 @@ corner_radius = 10.0
 stitch_inset = 6.0
 corner_buttons = false
 
-[node name="Toolbar" type="HBoxContainer" parent="."]
+[node name="Toolbar" type="HFlowContainer" parent="."]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -56,43 +60,57 @@ offset_top = 14.0
 offset_right = -20.0
 offset_bottom = 50.0
 grow_horizontal = 2
-theme_override_constants/separation = 8
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
 
 [node name="ModeDraw" type="Button" parent="Toolbar"]
 layout_mode = 2
+tooltip_text = "왼쪽 드래그로 경로를 그립니다. 이어 그리기는 끝점에서 시작합니다."
 toggle_mode = true
 button_pressed = true
 text = "그리기"
 
-[node name="ModeErase" type="Button" parent="Toolbar"]
+[node name="ModePan" type="Button" parent="Toolbar"]
 layout_mode = 2
+tooltip_text = "드래그로 화면을 옮깁니다(경로는 바뀌지 않습니다)."
 toggle_mode = true
-text = "지우기"
+text = "화면 이동"
+
+[node name="ModeTrim" type="Button" parent="Toolbar"]
+layout_mode = 2
+tooltip_text = "경로를 누른 지점부터 끝까지 잘라 냅니다. 잘릴 구간은 빨간색으로 미리 보입니다."
+toggle_mode = true
+text = "끝부분 자르기"
+
+[node name="ModeItem" type="Button" parent="Toolbar"]
+layout_mode = 2
+tooltip_text = "골무·엄마 찬스를 경로에 놓고, 눌러 선택하고, 끌어서 옮깁니다."
+toggle_mode = true
+text = "아이템"
 
 [node name="CloseToggle" type="CheckButton" parent="Toolbar"]
 layout_mode = 2
 text = "루프 닫기"
 
-[node name="Spacer" type="Control" parent="Toolbar"]
-layout_mode = 2
-size_flags_horizontal = 3
-
 [node name="UndoButton" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "실행취소"
 
-[node name="ClearButton" type="Button" parent="Toolbar"]
+[node name="RedoButton" type="Button" parent="Toolbar"]
 layout_mode = 2
-text = "전체 지우기"
+disabled = true
+text = "다시 실행"
 
 [node name="AutoFixButton" type="Button" parent="Toolbar"]
 layout_mode = 2
+tooltip_text = "너무 급한 곡선을 둥글게 고친 결과를 미리 보고 적용합니다."
 disabled = true
-text = "자동 수정"
+text = "자동 수정…"
 
-[node name="LengthFitButton" type="Button" parent="Toolbar"]
+[node name="LengthButton" type="Button" parent="Toolbar"]
 layout_mode = 2
-text = "길이 맞추기"
+tooltip_text = "목표 길이를 정해 경로 전체를 같은 비율로 늘리거나 줄입니다(미리보기 후 적용)."
+text = "트랙 길이 조절…"
 
 [node name="ValidateButton" type="Button" parent="Toolbar"]
 layout_mode = 2
@@ -103,7 +121,7 @@ layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_left = 20.0
-offset_top = 66.0
+offset_top = 64.0
 offset_right = -20.0
 offset_bottom = 96.0
 grow_horizontal = 2
@@ -111,8 +129,159 @@ theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
 theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
 theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 18
-text = "좌클릭 드래그로 트랙을 그리세요. 중클릭 드래그=이동, 휠=줌."
+text = "왼쪽 드래그로 트랙을 그리세요."
 horizontal_alignment = 1
+text_overrun_behavior = 3
+
+[node name="ViewBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -330.0
+offset_top = -186.0
+offset_right = -20.0
+offset_bottom = -146.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 6
+alignment = 2
+
+[node name="ZoomOutButton" type="Button" parent="ViewBar"]
+custom_minimum_size = Vector2(44, 36)
+layout_mode = 2
+tooltip_text = "축소"
+text = "−"
+
+[node name="ZoomLabel" type="Label" parent="ViewBar"]
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "15%"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ZoomInButton" type="Button" parent="ViewBar"]
+custom_minimum_size = Vector2(44, 36)
+layout_mode = 2
+tooltip_text = "확대"
+text = "+"
+
+[node name="FitButton" type="Button" parent="ViewBar"]
+layout_mode = 2
+tooltip_text = "경로 전체가 보이게 화면을 맞춥니다(경로는 바뀌지 않습니다)."
+text = "전체 보기"
+
+[node name="ReviewRow" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -186.0
+offset_right = 560.0
+offset_bottom = -146.0
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="ReviewLabel" type="Label" parent="ReviewRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.55, 0.5, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "검토 필요 아이템 0개"
+vertical_alignment = 1
+
+[node name="ReviewConfirmButton" type="Button" parent="ReviewRow"]
+layout_mode = 2
+tooltip_text = "빨간 테두리 아이템을 지금 위치로 확정합니다."
+text = "지금 위치로 확정"
+
+[node name="ItemBar" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 20.0
+offset_top = 108.0
+offset_right = 900.0
+offset_bottom = 144.0
+theme_override_constants/separation = 6
+
+[node name="ThimbleType" type="Button" parent="ItemBar"]
+layout_mode = 2
+tooltip_text = "놓을 종류(선택 아이템이 있으면 그 종류도 바뀝니다)"
+toggle_mode = true
+button_pressed = true
+text = "골무"
+expand_icon = true
+
+[node name="AutopilotType" type="Button" parent="ItemBar"]
+layout_mode = 2
+tooltip_text = "놓을 종류(선택 아이템이 있으면 그 종류도 바뀝니다)"
+toggle_mode = true
+text = "엄마 찬스"
+expand_icon = true
+
+[node name="ItemInfo" type="Label" parent="ItemBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.968, 0.929, 0.847, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 15
+text = "경로 가까이를 눌러 놓으세요"
+vertical_alignment = 1
+
+[node name="ItemConfirm" type="Button" parent="ItemBar"]
+visible = false
+layout_mode = 2
+text = "이 위치로 확정"
+
+[node name="ItemDelete" type="Button" parent="ItemBar"]
+layout_mode = 2
+disabled = true
+text = "삭제"
+
+[node name="IssuePanel" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 880.0
+offset_top = 108.0
+offset_right = 1262.0
+offset_bottom = 330.0
+
+[node name="Box" type="VBoxContainer" parent="IssuePanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Head" type="HBoxContainer" parent="IssuePanel/Box"]
+layout_mode = 2
+
+[node name="IssueTitle" type="Label" parent="IssuePanel/Box/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "검증 결과"
+vertical_alignment = 1
+
+[node name="IssueToggle" type="Button" parent="IssuePanel/Box/Head"]
+layout_mode = 2
+text = "접기"
+
+[node name="Scroll" type="ScrollContainer" parent="IssuePanel/Box"]
+custom_minimum_size = Vector2(360, 170)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="IssueList" type="VBoxContainer" parent="IssuePanel/Box/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
 
 [node name="HintLabel" type="Label" parent="."]
 layout_mode = 1
@@ -121,17 +290,18 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 20.0
-offset_top = -128.0
+offset_top = -132.0
 offset_right = -20.0
-offset_bottom = -110.0
+offset_bottom = -112.0
 grow_horizontal = 2
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.62, 0.58, 0.7, 1)
 theme_override_colors/font_outline_color = Color(0.16, 0.11, 0.09, 1)
 theme_override_constants/outline_size = 3
 theme_override_font_sizes/font_size = 13
-text = "Ctrl+Z 실행취소   C 루프닫기   Backspace 끝 지우기   Delete 전체   Enter 검증   Esc 나가기"
+text = "Ctrl/Cmd+Z 실행취소   Ctrl/Cmd+Shift+Z 다시 실행   C 루프닫기   Backspace 끝 자르기   Delete 새로 그리기   +/− 확대·축소   F 전체 보기   Enter 검증   Esc 나가기"
 horizontal_alignment = 1
+text_overrun_behavior = 3
 
 [node name="MetaBg" type="Control" parent="."]
 layout_mode = 1
@@ -166,14 +336,16 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_constants/separation = 8
 
-[node name="Row1" type="HBoxContainer" parent="MetaPanel"]
+[node name="Row1" type="HFlowContainer" parent="MetaPanel"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 6
 
 [node name="NameLabel" type="Label" parent="MetaPanel/Row1"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
 text = "이름"
+vertical_alignment = 1
 
 [node name="NameEdit" type="LineEdit" parent="MetaPanel/Row1"]
 custom_minimum_size = Vector2(220, 0)
@@ -185,14 +357,30 @@ placeholder_text = "My Track"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
 text = "난이도"
+vertical_alignment = 1
 
 [node name="DifficultyOption" type="OptionButton" parent="MetaPanel/Row1"]
 layout_mode = 2
+
+[node name="WidthLabel" type="Label" parent="MetaPanel/Row1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.66, 0.56, 1)
+theme_override_font_sizes/font_size = 14
+text = "폭 18/42/90"
+vertical_alignment = 1
 
 [node name="FabricLabel" type="Label" parent="MetaPanel/Row1"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
 text = "원단"
+vertical_alignment = 1
+
+[node name="FabricSwatch" type="TextureRect" parent="MetaPanel/Row1"]
+custom_minimum_size = Vector2(34, 34)
+layout_mode = 2
+tooltip_text = "선택한 원단 견본"
+expand_mode = 1
+stretch_mode = 6
 
 [node name="FabricOption" type="OptionButton" parent="MetaPanel/Row1"]
 layout_mode = 2
@@ -215,9 +403,19 @@ text = "테스트 플레이"
 layout_mode = 2
 text = "불러오기"
 
-[node name="Spacer2" type="Control" parent="MetaPanel/Row2"]
+[node name="NewDrawButton" type="Button" parent="MetaPanel/Row2"]
+layout_mode = 2
+tooltip_text = "현재 경로와 아이템을 지우고 새로 그립니다(확인 후 실행, 실행취소 가능)."
+text = "새로 그리기…"
+
+[node name="DocStateLabel" type="Label" parent="MetaPanel/Row2"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.86, 0.79, 0.66, 1)
+theme_override_font_sizes/font_size = 15
+text = "새 트랙"
+vertical_alignment = 1
+text_overrun_behavior = 3
 
 [node name="BackButton" type="Button" parent="MetaPanel/Row2"]
 layout_mode = 2

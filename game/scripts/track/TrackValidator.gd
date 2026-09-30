@@ -248,6 +248,7 @@ func _dedupe_pairs(viol: Array) -> Array:
 	return best.values()
 
 
+## 한 줄 요약 메시지. 길이·반경은 월드 단위(트랙 길이 표기와 같게 단위 표기 없이) 적는다.
 func _build_messages(result: Dictionary) -> void:
 	var msgs: Array = result["messages"]
 	var hard_curv: int = 0
@@ -255,7 +256,7 @@ func _build_messages(result: Dictionary) -> void:
 		if str(v["kind"]) == "hard":
 			hard_curv += 1
 	if hard_curv > 0:
-		msgs.append("곡률 위반 %d곳 (반경 < %dpx)" % [hard_curv, int(MIN_RADIUS)])
+		msgs.append("곡률 위반 %d곳 (반경 < %d)" % [hard_curv, int(MIN_RADIUS)])
 	var hard_prox: int = 0
 	var soft_prox: int = 0
 	for p in result["proximity"]:
@@ -269,10 +270,10 @@ func _build_messages(result: Dictionary) -> void:
 		msgs.append("자기근접 경고 %d곳 (코리도 겹침)" % soft_prox)
 	match str(result["length_status"]):
 		"too_short":
-			msgs.append("길이 %dpx — 하한 %dpx 미만" % [int(result["length"]), int(LEN_HARD_MIN)])
+			msgs.append("트랙 길이 %d — 하한 %d 미만" % [int(result["length"]), int(LEN_HARD_MIN)])
 		"too_long":
-			msgs.append("길이 %dpx — 상한 %dpx 초과" % [int(result["length"]), int(LEN_HARD_MAX)])
+			msgs.append("트랙 길이 %d — 상한 %d 초과" % [int(result["length"]), int(LEN_HARD_MAX)])
 		"short_warn":
-			msgs.append("길이 %dpx — 권장 %d~%dpx 보다 짧음" % [int(result["length"]), int(LEN_MIN), int(LEN_MAX)])
+			msgs.append("트랙 길이 %d — 권장 %d~%d보다 짧음" % [int(result["length"]), int(LEN_MIN), int(LEN_MAX)])
 		"long_warn":
-			msgs.append("길이 %dpx — 권장 %d~%dpx 보다 김" % [int(result["length"]), int(LEN_MIN), int(LEN_MAX)])
+			msgs.append("트랙 길이 %d — 권장 %d~%d보다 김" % [int(result["length"]), int(LEN_MIN), int(LEN_MAX)])

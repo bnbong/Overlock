@@ -2,6 +2,8 @@ extends Control
 ## 메인 메뉴(2단 네비게이션 1단). 타이틀 플라크 + 세로 4버튼(Start / Settings /
 ## Leaderboard / Quit)만 둔다. 트랙 캐러셀·미리보기·에디터/불러오기/삭제는 Start로
 ## 진입하는 맵 선택 화면(TrackSelect)으로 이관했다(아키텍처 §2.1 갱신).
+## Start는 먼저 트랙 종류 선택 화면(TrackKindSelect: 공식 트랙 / 유저 트랙)을 열고, 거기서 고른
+## 모드로 TrackSelect가 열린다(유저 트랙 쪽에서 공유 허브로 바로 이어진다).
 ##
 ## 키보드: ↑↓(ui_up/ui_down)로 버튼 포커스 이동, Enter(ui_accept)로 실행 — Godot
 ## 기본 GUI 포커스 순환을 그대로 쓰고 초기 포커스만 Start에 준다. 포커스 표시는
@@ -15,7 +17,7 @@ extends Control
 ## 열과 겹치지 않게 우하단 모서리에 고정한다. 마우스 클릭 전용(FOCUS_NONE)이라 기존
 ## 키보드 포커스 순환에 끼지 않으며, 클릭하면 개발자 프로필 팝업(ProfileDialog)을 연다.
 
-const TRACK_SELECT_SCENE: String = "res://scenes/TrackSelect.tscn"
+const KIND_SELECT_SCENE: String = "res://scenes/TrackKindSelect.tscn"
 const SETTINGS_SCENE: String = "res://scenes/Settings.tscn"
 const LEADERBOARD_SCENE: String = "res://scenes/Leaderboard.tscn"
 
@@ -234,7 +236,7 @@ static func _tag_box(bg: Color, border: Color) -> StyleBoxFlat:
 
 
 func _on_start_pressed() -> void:
-	get_tree().change_scene_to_file(TRACK_SELECT_SCENE)
+	get_tree().change_scene_to_file(KIND_SELECT_SCENE)
 
 
 func _on_settings_pressed() -> void:

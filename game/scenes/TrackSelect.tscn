@@ -178,9 +178,9 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -230.0
+offset_left = -290.0
 offset_top = -320.0
-offset_right = 230.0
+offset_right = 290.0
 offset_bottom = 320.0
 grow_horizontal = 2
 grow_vertical = 2
@@ -198,6 +198,20 @@ horizontal_alignment = 1
 [node name="Preview" type="Control" parent="Panel"]
 custom_minimum_size = Vector2(360, 168)
 layout_mode = 2
+
+[node name="EmptyLabel" type="Label" parent="Panel"]
+visible = false
+custom_minimum_size = Vector2(360, 168)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.97, 0.93, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "아직 유저 트랙이 없습니다.
+공유 허브에서 받거나 직접 만들어 보세요."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
 
 [node name="Selector" type="HBoxContainer" parent="Panel"]
 layout_mode = 2
@@ -288,8 +302,13 @@ theme_override_constants/outline_size = 3
 text = "◀ ▶  or  ← →  change track      Enter  play      Esc  back"
 horizontal_alignment = 1
 
-[node name="PlayButton" type="Button" parent="Panel"]
+[node name="PlayRow" type="HBoxContainer" parent="Panel"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PlayButton" type="Button" parent="Panel/PlayRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
 theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
 theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
@@ -300,6 +319,20 @@ theme_override_styles/hover = SubResource("btn_hover")
 theme_override_styles/pressed = SubResource("btn_pressed")
 theme_override_styles/focus = SubResource("btn_focus")
 text = "▶  Play"
+
+[node name="HubButton" type="Button" parent="Panel/PlayRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.278, 0.203, 0.153, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_pressed_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.2, 0.14, 0.1, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("btn_normal")
+theme_override_styles/hover = SubResource("btn_hover")
+theme_override_styles/pressed = SubResource("btn_pressed")
+theme_override_styles/focus = SubResource("btn_focus")
+text = "공유 허브"
 
 [node name="ActionRow" type="HBoxContainer" parent="Panel"]
 layout_mode = 2
@@ -329,6 +362,11 @@ text = "삭제"
 layout_mode = 2
 theme_override_constants/separation = 8
 
+[node name="EditButton" type="Button" parent="Panel/HubRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "편집"
+
 [node name="LeaderboardButton" type="Button" parent="Panel/HubRow"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -338,11 +376,6 @@ text = "이 트랙 리더보드"
 layout_mode = 2
 size_flags_horizontal = 3
 text = "허브에 게시"
-
-[node name="HubButton" type="Button" parent="Panel/HubRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "공유 허브"
 
 [node name="BackButton" type="Button" parent="Panel"]
 layout_mode = 2

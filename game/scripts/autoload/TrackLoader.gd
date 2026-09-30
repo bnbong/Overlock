@@ -25,6 +25,12 @@ const HUB_DIFFICULTIES: Array = ["beginner", "normal", "expert", "master"]
 const HUB_FABRICS: Array = ["cotton", "denim", "silk", "knit", "wool", "felt", "satin", "leather"]
 # 아이템 s 허용 여유(px). 서버는 float64, Godot 베이크는 float32 라 끝점 부근에서 미세하게 다르다.
 const HUB_S_SLACK: float = 1.0
+# 게시 payload 아이템 s 여유(서버: s ≤ 베이크 길이 − 0.5). float32/float64 베이크 차이와 0.001 격자
+# 반올림을 덮으려고 0.02를 더 둔다.
+const PUBLISH_S_MARGIN: float = 0.52
+# 일반·에디터 가져오기의 베이크 전 원시 길이 상한. 하드 길이 상한(8000)의 2배로, bezier 제어 다각형이
+# 실제 호길이보다 길게 나오는 공식 파일과 에디터에서 줄여 쓸 긴 파일은 받되 베이크 점 폭증은 막는다.
+const PLAIN_RAW_LEN_MAX: float = 16000.0
 
 # 매니페스트 로드 실패 시에도 게임이 동작하도록 두는 최소 폴백(기본 트랙).
 const FALLBACK_TRACKS: Array = [
@@ -172,14 +178,19 @@ func find_by_checksum(checksum: String) -> String:
 
 
 ## 외부 트랙 JSON 텍스트를 커스텀 트랙으로 들여온다(§8). 데스크톱 파일 다이얼로그/드래그드롭과
-## 웹 업로드가 공유하는 단일 진입점. 흐름: 크기 상한 → JSON 파싱 → 폴리라인 베이크 →
-## TrackValidator 검증 → 폴리라인 정규화 + 로컬 새 custom id → user:// 저장(중복이면 스킵).
-## 반환 dict: {ok(bool), status(String), track_id(String), name(String), message(String)}.
+## 웹 업로드가 공유하는 단일 진입점. 흐름: 크기 상한 → JSON 파싱 → 폭·아이템·modifiers 검사 →
+## 폴리라인 베이크 → TrackValidator 검증 → 폴리라인 정규화 + 로컬 새 custom id → user:// 저장.
+## items·사용자 지정 width·closed는 보존한다(조용한 손실 금지). modifiers는 게임이 소비하지 않고
+## 서버도 빈 배열만 받으므로 비어 있지 않으면 빼고 가져오되 message·dropped로 명시한다.
+## 중복 판정은 경로 체크섬이 아니라 플레이 내용 지문(play_fingerprint: difficulty·fabric·width·
+## path·items)이 같은 커스텀 트랙이 있을 때만이다. 경로가 같아도 폭·재질·아이템이 다르면 새로 저장한다.
+## 반환 dict: {ok(bool), status(String), track_id(String), name(String), message(String),
+##   dropped(Array[String], 제외한 필드 이름)}.
 ##   status: "ok" | "duplicate" | "too_large" | "parse_error" | "empty_path"
 ##           | "validation_error" | "save_failed"  (실패 사유를 구분해 UI가 사유별 안내 가능).
 func import_custom_from_text(text: String, suggested_name: String = "") -> Dictionary:
 	var out: Dictionary = {
-		"ok": false, "status": "", "track_id": "", "name": "", "message": "",
+		"ok": false, "status": "", "track_id": "", "name": "", "message": "", "dropped": [],
 	}
 	# 1) 파싱·검증·정규화(실패 사유는 status로 구분). 저장은 아래에서 별도 처리한다.
 	var prepared: Dictionary = _prepare_import(text, suggested_name)
@@ -189,13 +200,15 @@ func import_custom_from_text(text: String, suggested_name: String = "") -> Dicti
 		out["message"] = str(prepared["message"])
 		return out
 	var track_dict: Dictionary = prepared["track_dict"]
-	# 2) 중복(checksum) 감지 — 동일 경로면 재저장 스킵하고 기존 트랙을 가리킨다.
-	var existing: String = find_by_checksum(compute_checksum(track_dict["path"]))
+	out["dropped"] = prepared.get("dropped", [])
+	var note: String = str(prepared.get("note", ""))
+	# 2) 중복(플레이 내용 지문) 감지 — 내용이 모두 같으면 재저장 스킵하고 기존 트랙을 가리킨다.
+	var existing: String = find_by_fingerprint(import_fingerprint(track_dict))
 	if not existing.is_empty():
 		out["ok"] = true
 		out["status"] = "duplicate"
 		out["track_id"] = existing
-		out["message"] = "이미 있는 트랙: " + str(out["name"])
+		out["message"] = "이미 있는 트랙: " + str(out["name"]) + note
 		return out
 	# 3) 저장(새 id 발급).
 	var id: String = save_custom_track(track_dict)
@@ -206,20 +219,70 @@ func import_custom_from_text(text: String, suggested_name: String = "") -> Dicti
 	out["ok"] = true
 	out["status"] = "ok"
 	out["track_id"] = id
-	out["message"] = "'%s' 트랙을 가져왔습니다" % str(out["name"])
+	out["message"] = "'%s' 트랙을 가져왔습니다" % str(out["name"]) + note
 	return out
 
 
+## 에디터 불러오기용 파싱·정규화. import_custom_from_text와 같은 형식 검사(폭·아이템·modifiers)와
+## 정규화를 거치지만 기하 검증으로 거부하지 않는다(에디터에서 고쳐 쓸 수 있어야 한다). 저장하지 않는다.
+## 성공 시 {ok=true, name, track_dict, dropped, note}, 실패 시 {ok=false, status, message, name=""}.
+func prepare_edit_import(text: String) -> Dictionary:
+	return _prepare_import(text, "", false, false)
+
+
+## 일반 가져오기 중복 비교용 지문. 트랙 dict를 일반 가져오기와 같은 정규화(베이크 → 0.1 격자 조밀 점 열,
+## 폭 실수화, 아이템 정규화, modifiers 제외)에 통과시킨 뒤 play_fingerprint를 계산한다. 가져오는 쪽과
+## 기존 파일 쪽에 같은 정규화를 적용해, 예전 버전이 저장한 파일(점 간격 6 초과, items 없음 등)을 다시
+## 가져와도 같은 트랙으로 판정한다. 허브 매핑이 쓰는 custom_track_fingerprint(fp1 원본 지문)와는 별개다.
+## 정규화에 실패하면 빈 문자열.
+func import_fingerprint(track: Dictionary) -> String:
+	var prep: Dictionary = _prepare_import(JSON.stringify(track), "", false, false)
+	if not bool(prep["ok"]):
+		return ""
+	return play_fingerprint(prep["track_dict"])
+
+
+## 정규화 지문(import_fingerprint)이 같은 커스텀 트랙 id(없으면 빈 문자열). 일반 가져오기 중복 판정용.
+func find_by_fingerprint(fingerprint: String) -> String:
+	if fingerprint.is_empty():
+		return ""
+	_ensure_custom_dir()
+	var dir: DirAccess = DirAccess.open(CUSTOM_DIR)
+	if dir == null:
+		return ""
+	for f in dir.get_files():
+		if not f.ends_with(".json") or not f.begins_with(CUSTOM_PREFIX):
+			continue
+		var id: String = f.get_basename()
+		var parsed: Variant = JSON.parse_string(read_custom_track_text(id))
+		if parsed is Dictionary and import_fingerprint(parsed) == fingerprint:
+			return id
+	return ""
+
+
 ## import_custom_from_text의 파싱·검증·정규화 단계(반환 수 분리 겸 가독성). 성공 시
-## {ok=true, name, track_dict}, 실패 시 {ok=false, status, message, name=""}를 반환한다.
+## {ok=true, name, track_dict, dropped, note}, 실패 시 {ok=false, status, message, name=""}를 반환한다.
 ## hub=true(공유 허브 가져오기 전용, import_hub_track)면 베이크 전에 경로·폭·아이템 형식과
 ## 크기를 검사하고, 폴리라인을 재표본화하지 않고 0.1 격자 좌표 그대로 보존하며, items를
-## 검사해 보존한다. 기본값(false)의 동작은 기존과 같다.
-func _prepare_import(text: String, suggested_name: String, hub: bool = false) -> Dictionary:
+## 검사해 보존한다. hub=false(일반 파일·에디터)는 폭·아이템·modifiers를 검사해 보존하고(modifiers는
+## 제외 후 안내), 경로는 베이크 결과를 0.1 격자 폴리라인 1개로 정규화하며 closed를 보존한다.
+## validate_geometry=false(에디터 불러오기)면 TrackValidator 기하 검증으로 거부하지 않는다.
+func _prepare_import(
+	text: String, suggested_name: String, hub: bool = false, validate_geometry: bool = true
+) -> Dictionary:
 	var parsed: Dictionary = _parse_import_text(text, hub)
 	if not bool(parsed["ok"]):
 		return parsed
 	var dict: Dictionary = parsed["dict"]
+	var dropped: Array = []
+	if not hub:
+		var bad: String = _plain_precheck(dict)
+		if not bad.is_empty():
+			return {"ok": false, "status": "validation_error", "name": "",
+				"message": "검증 실패: " + bad}
+		var mods: Variant = dict.get("modifiers", [])
+		if not (mods is Array) or not (mods as Array).is_empty():
+			dropped.append("modifiers")
 	# 폴리라인 베이크(공식 bezier 파일도 여기서 폴리라인으로 표본화된다).
 	var td: TrackData = TrackData.new()
 	td.bake(dict.get("path", []))
@@ -227,16 +290,24 @@ func _prepare_import(text: String, suggested_name: String, hub: bool = false) ->
 		return {"ok": false, "status": "empty_path", "name": "", "message": "경로가 비어있음"}
 	# 검증(추적 불가 기하 거부). fail 폭은 파일 값 우선, 없으면 Normal 프리셋.
 	var width: Dictionary = dict.get("width", {})
-	var res: Dictionary = TrackValidator.new().validate(td.points, float(width.get("fail", 90.0)))
-	if not bool(res["ok"]):
-		var msgs: Array = res["messages"]
-		var first: String = str(msgs[0]) if not msgs.is_empty() else "기하 부적합"
-		return {"ok": false, "status": "validation_error", "name": "",
-			"message": "검증 실패: " + first}
+	if validate_geometry:
+		var res: Dictionary = TrackValidator.new().validate(
+			td.points, float(width.get("fail", 90.0))
+		)
+		if not bool(res["ok"]):
+			var msgs: Array = res["messages"]
+			var first: String = str(msgs[0]) if not msgs.is_empty() else "기하 부적합"
+			return {"ok": false, "status": "validation_error", "name": "",
+				"message": "검증 실패: " + first}
 	# 폴리라인 정규화(커스텀은 polyline 세그먼트 1개로 저장) + 로컬 새 id는 저장 시 부여.
+	# 허브는 서버 경로를 그대로 쓰므로(_hub_finish_import) 기존 스냅만, 일반·에디터는 스냅 후에도
+	# 베이크가 점을 더 넣지 않게 맞춘 점 열(snapped_dense_points)을 쓴다(재가져오기 라운드트립 안정).
 	var pts: Array = []
-	for p in td.points:
-		pts.append([snappedf(p.x, 0.1), snappedf(p.y, 0.1)])
+	if hub:
+		for p in td.points:
+			pts.append([snappedf(p.x, 0.1), snappedf(p.y, 0.1)])
+	else:
+		pts = snapped_dense_points(td.points)
 	var name: String = str(dict.get("name", "")).strip_edges()
 	if name.is_empty():
 		name = suggested_name.strip_edges()
@@ -247,13 +318,136 @@ func _prepare_import(text: String, suggested_name: String, hub: bool = false) ->
 		"name": name,
 		"difficulty": str(dict.get("difficulty", "normal")),
 		"fabric": str(dict.get("fabric", "cotton")),
-		"width": width if not width.is_empty() else {"perfect": 18, "safe": 42, "fail": 90},
+		"width": width if not width.is_empty() else {"perfect": 18.0, "safe": 42.0, "fail": 90.0},
 		"path": [{"type": "polyline", "points": pts, "closed": false}],
 		"modifiers": [],
 	}
 	if hub:
 		return _hub_finish_import(track_dict, dict, td.length)
-	return {"ok": true, "name": name, "track_dict": track_dict}
+	return _plain_finish_import(track_dict, dict, dropped)
+
+
+## 점 열을 0.1 격자로 맞추고, 격자 스냅 때문에 BAKE_INTERVAL(6px)을 넘은 구간에는 격자 위 중간점을
+## 넣어 [[x, y], ...]로 반환한다. 이렇게 저장한 폴리라인은 TrackData.bake가 점을 더 넣지 않으므로
+## 저장 → 불러오기 → 저장이 같은 점 열·같은 플레이 지문을 낸다(에디터 저장·일반 가져오기 공용).
+static func snapped_dense_points(points: PackedVector2Array) -> Array:
+	var out: Array = []
+	var prev: Vector2 = Vector2.INF
+	for p in points:
+		var q: Vector2 = Vector2(snappedf(p.x, 0.1), snappedf(p.y, 0.1))
+		if prev != Vector2.INF:
+			if prev.distance_to(q) < 0.01:
+				continue
+			_append_dense(out, prev, q, 0)
+		out.append([q.x, q.y])
+		prev = q
+	return out
+
+
+## a→b 구간이 베이크 간격을 넘으면 격자 위 중간점을 재귀로 넣는다(a·b 자체는 넣지 않음).
+static func _append_dense(out: Array, a: Vector2, b: Vector2, depth: int) -> void:
+	if depth > 8 or ceili(a.distance_to(b) / TrackData.BAKE_INTERVAL) <= 1:
+		return
+	var m: Vector2 = Vector2(snappedf((a.x + b.x) * 0.5, 0.1), snappedf((a.y + b.y) * 0.5, 0.1))
+	if m.is_equal_approx(a) or m.is_equal_approx(b):
+		return
+	_append_dense(out, a, m, depth + 1)
+	out.append([m.x, m.y])
+	_append_dense(out, m, b, depth + 1)
+
+
+## 일반(비허브) 가져오기 마무리: 폭을 실수로 정규화해 보존하고, closed(어느 세그먼트든 true면
+## true)를 보존하며, items를 정규화한 경로 길이 기준으로 검사해 보존한다. 제외한 필드는 note로 안내.
+func _plain_finish_import(track_dict: Dictionary, dict: Dictionary, dropped: Array) -> Dictionary:
+	if dict.has("width"):
+		var w: Dictionary = dict["width"]
+		track_dict["width"] = {
+			"perfect": float(w["perfect"]), "safe": float(w["safe"]), "fail": float(w["fail"]),
+		}
+	var closed: bool = false
+	for seg in dict.get("path", []):
+		if seg is Dictionary and (seg as Dictionary).get("closed", false) == true:
+			closed = true
+	var path: Array = track_dict["path"]
+	path[0]["closed"] = closed
+	var length: float = _path_length(path)
+	var fail: float = float(track_dict["width"]["fail"])
+	var items: Dictionary = _check_items(dict.get("items", []), length, fail)
+	if not bool(items["ok"]):
+		return {"ok": false, "status": "validation_error", "name": "",
+			"message": "검증 실패: " + str(items["message"])}
+	track_dict["items"] = items["items"]
+	var note: String = ""
+	if dropped.has("modifiers"):
+		var mods: Variant = dict.get("modifiers", [])
+		var n: int = (mods as Array).size() if mods is Array else 1
+		note = " (게임이 쓰지 않는 modifiers %d개는 지원하지 않아 제외했습니다)" % n
+	return {
+		"ok": true, "name": str(track_dict["name"]), "track_dict": track_dict,
+		"dropped": dropped, "note": note,
+	}
+
+
+## 일반 가져오기 형식 검사(베이크 전 방어): 경로(_plain_path_problem), width가 있으면
+## 0 < perfect < safe < fail ≤ 1000, items는 배열이고 최대 HUB_MAX_ITEMS개. 문제가 없으면 빈 문자열.
+func _plain_precheck(dict: Dictionary) -> String:
+	var path_bad: String = _plain_path_problem(dict.get("path", null))
+	if not path_bad.is_empty():
+		return path_bad
+	if dict.has("width"):
+		var bad: String = _hub_width_problem(dict["width"])
+		if not bad.is_empty():
+			return bad
+	var items: Variant = dict.get("items", [])
+	if not (items is Array) or (items as Array).size() > HUB_MAX_ITEMS:
+		return "아이템 형식 오류"
+	return ""
+
+
+## 일반·에디터 가져오기 경로의 베이크 전 형식 검사. 허브 검사(_hub_path_problem)와 같은 상한(세그먼트
+## HUB_MAX_SEGMENTS, 점 HUB_MAX_POINTS, 좌표 유한수·절댓값 HUB_MAX_COORD)을 쓰되 공식 파일의 bezier 세그먼트
+## (p0~p3, type 생략 시 bezier)도 받는다. 원시 길이(폴리라인은 점 사이 거리, bezier는 제어 다각형 길이로
+## 호길이의 상한)는 PLAIN_RAW_LEN_MAX 이하여야 한다(베이크 점 수 폭증 방지). 문제가 없으면 빈 문자열.
+func _plain_path_problem(path: Variant) -> String:
+	if not (path is Array) or (path as Array).is_empty() or (path as Array).size() > HUB_MAX_SEGMENTS:
+		return "경로 형식 오류"
+	var total: int = 0
+	var raw_len: float = 0.0
+	var prev: Vector2 = Vector2.INF
+	for seg in path:
+		var got: Variant = _plain_seg_points(seg)
+		if got is String:
+			return got
+		var pts: Array = got
+		total += pts.size()
+		if total > HUB_MAX_POINTS:
+			return "경로 점이 너무 많음"
+		for pt in pts:
+			var v: Vector2 = _hub_point(pt)
+			if v == Vector2.INF:
+				return "경로 좌표 형식 오류"
+			if prev != Vector2.INF:
+				raw_len += prev.distance_to(v)
+			prev = v
+	if raw_len > PLAIN_RAW_LEN_MAX:
+		return "경로가 너무 김(원시 길이 %d, 상한 %d)" % [int(raw_len), int(PLAIN_RAW_LEN_MAX)]
+	return ""
+
+
+## 세그먼트 하나의 점(폴리라인 points 또는 bezier 제어점 p0~p3) 배열. 형식이 틀리면 사유 문자열.
+func _plain_seg_points(seg: Variant) -> Variant:
+	if not (seg is Dictionary):
+		return "경로 형식 오류"
+	var d: Dictionary = seg
+	match str(d.get("type", "bezier")):
+		"polyline":
+			var raw: Variant = d.get("points", null)
+			if not (raw is Array) or (raw as Array).size() < 2:
+				return "경로 점 형식 오류"
+			return raw
+		"bezier":
+			return [d.get("p0", null), d.get("p1", null), d.get("p2", null), d.get("p3", null)]
+	return "지원하지 않는 경로 형식"
 
 
 ## _prepare_import의 크기 상한·JSON 파싱 단계. hub=true면 베이크 전 형식 검사(_hub_precheck)와
@@ -283,7 +477,7 @@ func _parse_import_text(text: String, hub: bool) -> Dictionary:
 ## 베이크 결과에 적용했고, 로컬 로드도 같은 경로를 같은 방식으로 베이크한다). items는 검사해 보존한다.
 func _hub_finish_import(track_dict: Dictionary, dict: Dictionary, length: float) -> Dictionary:
 	var width: Dictionary = dict["width"]
-	var items: Dictionary = _hub_items(dict.get("items", []), length, float(width["fail"]))
+	var items: Dictionary = _check_items(dict.get("items", []), length, float(width["fail"]))
 	if not bool(items["ok"]):
 		return {"ok": false, "status": "validation_error", "name": "",
 			"message": "검증 실패: " + str(items["message"])}
@@ -491,10 +685,15 @@ func build_publish_track(track_id: String) -> Dictionary:
 		var msgs: Array = res["messages"]
 		fail_out["message"] = "검증 실패: " + (str(msgs[0]) if not msgs.is_empty() else "기하 부적합")
 		return fail_out
-	var items: Dictionary = _hub_items(dict.get("items", []), td.length, fail)
+	var items: Dictionary = _check_items(dict.get("items", []), td.length, fail)
 	if not bool(items["ok"]):
 		fail_out["message"] = "게시할 수 없는 트랙: " + str(items["message"])
 		return fail_out
+	# 서버는 s ≤ 베이크 길이 − 0.5 만 받는다. 끝점 0.5px 안의 아이템은 게시 payload에서만 그 값으로
+	# 맞춰 422를 피한다(로컬 파일·허브 다운로드 보존 동작은 그대로).
+	var s_max: float = maxf(0.0, td.length - PUBLISH_S_MARGIN)
+	for it in items["items"]:
+		it["s"] = minf(float(it["s"]), s_max)
 	var track: Dictionary = {
 		"difficulty": str(dict.get("difficulty", "normal")),
 		"fabric": str(dict.get("fabric", "cotton")),
@@ -595,10 +794,10 @@ func _hub_snapped_path(path: Array) -> Array:
 	return out
 
 
-## 아이템 검사·정규화: {s, type, lat}만 남긴다. type은 HUB_ITEM_TYPES, s는 0..length(float32 베이크
-## 길이와 서버 float64 길이 차이는 HUB_S_SLACK 안에서만 length로 맞춤), |lat| ≤ fail.
-## 반환 {ok, message, items}.
-func _hub_items(raw: Variant, length: float, fail: float) -> Dictionary:
+## 아이템 검사·정규화(허브·일반 가져오기·게시 공용): {s, type, lat}만 남긴다. type은 HUB_ITEM_TYPES,
+## s는 0..length(float32 베이크 길이와 서버 float64 길이 차이는 HUB_S_SLACK 안에서만 length로 맞춤),
+## |lat| ≤ fail. 반환 {ok, message, items}.
+func _check_items(raw: Variant, length: float, fail: float) -> Dictionary:
 	var out: Array = []
 	if not (raw is Array):
 		return {"ok": false, "message": "아이템 형식 오류", "items": []}
