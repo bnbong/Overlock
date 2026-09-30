@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./game/assets/gfx/overlock_logo.png" width="60%" alt="overlock"/>
+  <img src="./docs/promo/overlock_key_visual_16x9_1280.jpg">
 </p>
 <p align="center">
 <em><b>Overlock(오버로크):</b> 재봉틀 레이싱</em>
@@ -13,7 +13,7 @@
 
 원단 위에서 벌어지는 손떨리는 레이싱, 삐끗하면 아야해요
 
-[게임 설명](docs/promo/press.md)
+https://github.com/user-attachments/assets/0ee61159-e50c-428c-826b-0044d17632a8
 
 ## 게임 하기
 
