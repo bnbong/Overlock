@@ -10,6 +10,10 @@ extends Control
 ## 제출/조회 대상이 아니라 제외). 뒤로가기는 진입한 곳(return_scene)으로 돌아간다.
 ##
 ## 조회 대상(track_id·difficulty·name)은 LeaderboardClient.view_* 에서 읽고 쓴다.
+##
+## 조회마다 LeaderboardClient가 돌려준 조회 번호를 기억하고, 결과(leaderboard_result)의 번호·트랙·난이도가
+## 지금 보고 있는 것과 같을 때만 그린다(빠른 ◀▶ 전환·재진입 때 늦게 온 이전 응답이 섞이지 않게).
+## 실패·시간 초과면 뒤로 버튼 옆에 "다시 시도"를 보인다. 터치 기기에서는 MenuTouch 배치를 쓴다.
 
 const _INK: Color = Color(0.278, 0.203, 0.153)
 const _INK_SOFT: Color = Color(0.435, 0.337, 0.267)
@@ -36,6 +40,12 @@ var _index: int = 0
 # 텍스트 색(기본 잉크). 다크 패널 스킨 적용 시 밝은 크림으로 전환해 가독성 유지.
 var _c_main: Color = _INK
 var _c_soft: Color = _INK_SOFT
+# 목록 칸 폭 배율·글자(터치 배치에서 키운다).
+var _col_scale: float = 1.0
+var _cell_font: int = 16
+# 지금 기다리는 조회 번호(0 = 없음). 이 번호의 결과만 그린다.
+var _req: int = 0
+var _retry_button: Button
 
 @onready var _title_label: Label = $Panel/TitleLabel
 @onready var _sub_label: Label = $Panel/TrackNav/SubLabel
@@ -54,7 +64,9 @@ func _ready() -> void:
 	_official = TrackLoader.list_tracks().duplicate(true)
 	# 조회 대상이 비었거나(메인 직접 진입) 목록에 없으면 첫 공식 트랙으로 자체 초기화한다.
 	_apply_track(_official_index_of(LeaderboardClient.view_track_id))
+	_build_retry()
 	_apply_skin()
+	_apply_touch_layout()
 	_fill_header()
 	_my_record_panel.add_theme_stylebox_override("panel", _mine_box())
 	_update_my_record()
@@ -64,16 +76,60 @@ func _ready() -> void:
 	_prev_button.pressed.connect(_cycle_track.bind(-1))
 	_next_button.pressed.connect(_cycle_track.bind(1))
 	_back_button.pressed.connect(_on_back_pressed)
-	LeaderboardClient.leaderboard_fetched.connect(_on_fetched)
+	LeaderboardClient.leaderboard_result.connect(_on_result)
 	_back_button.grab_focus()
 	_refetch()
+
+
+func _exit_tree() -> void:
+	# 떠나는 화면의 조회는 취소한다(다음 화면이 이 조회의 늦은 응답을 받지 않게).
+	LeaderboardClient.cancel_leaderboard(_req)
+	_req = 0
+
+
+## 뒤로 버튼을 가로 줄(BottomRow)로 옮기고 그 옆에 "다시 시도"를 둔다(평소에는 숨김이라 뒤로 버튼이
+## 전과 같은 폭·위치를 쓴다).
+func _build_retry() -> void:
+	var row: HBoxContainer = HBoxContainer.new()
+	row.name = "BottomRow"
+	row.add_theme_constant_override("separation", 10)
+	var panel: Node = $Panel
+	var idx: int = _back_button.get_index()
+	panel.add_child(row)
+	panel.move_child(row, idx)
+	_back_button.reparent(row, false)
+	_back_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_retry_button = Button.new()
+	_retry_button.name = "RetryButton"
+	_retry_button.text = "다시 시도"
+	_retry_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_retry_button.visible = false
+	_retry_button.pressed.connect(_refetch)
+	row.add_child(_retry_button)
+
+
+## 터치 기기: 패널을 넓히고 ◀▶·뒤로·다시 시도를 손가락 크기로, 목록·상태 글자를 읽을 수 있게 키운다.
+func _apply_touch_layout() -> void:
+	if not MenuTouch.active():
+		return
+	MenuTouch.set_box(get_node("PanelBg"), Vector2(560.0, 354.0))
+	MenuTouch.set_box($Panel, Vector2(500.0, 320.0))
+	for b in [_prev_button, _next_button]:
+		b.custom_minimum_size = Vector2(MenuTouch.MIN_H, MenuTouch.MIN_H)
+	MenuTouch.buttons([_prev_button, _next_button, _back_button, _retry_button])
+	MenuTouch.texts([_sub_label, _status_label, _my_record_label])
+	MenuTouch.ellipsis(_sub_label)
+	MenuTouch.ellipsis(_my_record_label)
+	($Panel/Scroll as Control).custom_minimum_size.y = 180.0
+	_col_scale = 1.45
+	_cell_font = MenuTouch.TEXT_FONT
 
 
 ## 사용자 제공 시트 스킨(있으면): 다크 패널을 리더보드 목록 배경으로 깔고 텍스트를
 ## 밝은 크림으로 전환(가독성). ◀▶는 정사각 나브 버튼, 뒤로는 소형 필. 없으면 절차 폴백.
 func _apply_skin() -> void:
 	if not UiSkin.has_skin():
-		for b in [_prev_button, _next_button, _back_button]:
+		for b in [_prev_button, _next_button, _back_button, _retry_button]:
 			_skin_button(b)
 		return
 	UiSkin.skin_panel(get_node("PanelBg"), "dark")
@@ -88,6 +144,7 @@ func _apply_skin() -> void:
 	UiSkin.set_icon(_prev_button, "prev", 24, true)
 	UiSkin.set_icon(_next_button, "next", 24, true)
 	UiSkin.skin_button(_back_button, "small", 16)
+	UiSkin.skin_button(_retry_button, "small", 16)
 
 
 ## 현재 조회 대상을 공식 트랙 idx로 맞춘다(view_* 갱신 + 부제 갱신). 목록에 없으면
@@ -131,9 +188,21 @@ func _refetch() -> void:
 	_clear_list()
 	_status_label.text = "불러오는 중..."
 	_status_label.visible = true
-	LeaderboardClient.fetch_leaderboard(
+	_show_retry(false)
+	_req = LeaderboardClient.fetch_leaderboard(
 		LeaderboardClient.view_track_id, LeaderboardClient.view_difficulty
 	)
+
+
+## 실패·시간 초과일 때만 "다시 시도"를 보인다. 뒤로 버튼에 있던 포커스는 다시 시도로(키보드 ←→는
+## 트랙 전환이라 포커스 이동에 쓸 수 없다), 숨길 때는 뒤로 버튼으로 돌려준다.
+func _show_retry(show: bool) -> void:
+	var had_focus: bool = _retry_button.has_focus()
+	_retry_button.visible = show
+	if show and _back_button.has_focus():
+		_retry_button.grab_focus()
+	elif not show and had_focus:
+		_back_button.grab_focus()
 
 
 ## ←/→로 트랙 전환, Esc로 진입한 곳으로 복귀. GUI 포커스 이동보다 먼저 소비한다.
@@ -155,11 +224,28 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
-func _on_fetched(success: bool, entries: Array, message: String) -> void:
+## 조회 결과. 지금 기다리는 조회 번호이고 트랙·난이도도 현재 선택과 같을 때만 그린다.
+func _on_result(
+	request_id: int,
+	track_id: String,
+	difficulty: String,
+	success: bool,
+	entries: Array,
+	message: String
+) -> void:
+	if request_id != _req:
+		return
+	if (
+		track_id != LeaderboardClient.view_track_id
+		or difficulty != LeaderboardClient.view_difficulty
+	):
+		return
+	_req = 0
 	_clear_list()
 	if not success:
 		_status_label.text = message
 		_status_label.visible = true
+		_show_retry(true)
 		return
 	if entries.is_empty():
 		_status_label.text = "아직 기록이 없습니다."
@@ -276,10 +362,10 @@ func _add_cell(
 ) -> void:
 	var label: Label = Label.new()
 	label.text = text
-	label.custom_minimum_size = Vector2(min_w, 0)
 	label.horizontal_alignment = align
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_font_size_override("font_size", _cell_font)
+	label.custom_minimum_size = Vector2(min_w * _col_scale, 0)
 	label.clip_text = true
 	if expand:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -64,16 +64,16 @@ case "$MODE" in
 		mkdir -p "$OUT/movie"
 		caffeinate -d -i "$GODOT" --path "$PROJ" --resolution "$RES" --position 0,0 --always-on-top \
 			--write-movie "$OUT/movie/f.${MOVIE_EXT:-avi}" --fixed-fps 60 \
-			-- --out="$OUT" --scenario="$SCEN" > "$OUT/console.log" 2>&1
+			-- --out="$OUT" --scenario="$SCEN" --no-focus-pause > "$OUT/console.log" 2>&1
 		;;
 	stills)
 		rm -rf "$OUT/stills"
 		caffeinate -d -i "$GODOT" --path "$PROJ" --resolution "$RES" --position 0,0 --always-on-top \
-			--fixed-fps 60 -- --out="$OUT" --scenario="$SCEN" --stills > "$OUT/console.log" 2>&1
+			--fixed-fps 60 -- --out="$OUT" --scenario="$SCEN" --stills --no-focus-pause > "$OUT/console.log" 2>&1
 		;;
 	headless)
 		"$GODOT" --headless --path "$PROJ" --fixed-fps 60 \
-			-- --out="$OUT" --scenario="$SCEN" > "$OUT/console.log" 2>&1
+			-- --out="$OUT" --scenario="$SCEN" --no-focus-pause > "$OUT/console.log" 2>&1
 		;;
 	*)
 		echo "unknown mode $MODE" >&2

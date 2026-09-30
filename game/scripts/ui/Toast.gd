@@ -54,6 +54,10 @@ const _PORTRAIT_OFFSET: Vector2 = Vector2(-12.0, 4.0)
 # 꼬리: 말풍선 윗변의 밑변 구간(말풍선 왼쪽 기준 x)과 꼭짓점(엄마 얼굴 쪽 왼쪽 위).
 const _TAIL_BASE_X: Vector2 = Vector2(200.0, 232.0)
 const _TAIL_TIP: Vector2 = Vector2(188.0, -21.0)
+# 터치 모드 말풍선 배치(v2.2.1). 조향 버튼(144)이 커져 가운데 정렬한 초상화 왼쪽(288)이 ▶ 오른쪽 끝
+# (320)과 겹치므로, 초상화 왼쪽을 ▶ 오른쪽 끝 + _TOUCH_CLEAR에 맞추고 말풍선 오른쪽은 DRIFT 왼쪽 끝 -
+# _TOUCH_CLEAR 안으로 줄인다(TouchControls.bottom_free_span). 높이·세로 위치·글자 크기는 그대로다.
+const _TOUCH_CLEAR: float = 12.0
 
 var _queue: Array[Dictionary] = []  # {"text": String, "portrait": Texture2D 또는 null}
 var _busy: bool = false
@@ -70,10 +74,12 @@ var _normal_box: StyleBoxFlat
 var _scold_box: StyleBoxEmpty
 var _scold_font: FontVariation
 var _scold: bool = false  # 현재 표시 중인 항목이 말풍선 스타일인지(꼬리·박음질 그리기)
+var _touch_layout: bool = false  # 터치 버튼이 보이는 모드인지(_ready에서 1회 판정)
 
 
 func _ready() -> void:
 	layer = 128  # 항상 최상단.
+	_touch_layout = TouchControls.should_show()
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -231,7 +237,7 @@ func _apply_style(portrait: Texture2D) -> void:
 	_scold = portrait != null
 	if _scold:
 		_panel.add_theme_stylebox_override("panel", _scold_box)
-		_panel.custom_minimum_size = _SCOLD_SIZE
+		_panel.custom_minimum_size = scold_size()
 		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_label.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -262,6 +268,9 @@ func _reposition() -> void:
 	var ps: Vector2 = _panel.size
 	var margin: float = _SCOLD_BOTTOM_MARGIN if _scold else _BOTTOM_MARGIN
 	_panel.position = Vector2((view.x - ps.x) * 0.5, view.y - ps.y - margin)
+	if _scold and _touch_layout:
+		var span: Vector2 = TouchControls.bottom_free_span(view.x)
+		_panel.position.x = span.x + _TOUCH_CLEAR - _PORTRAIT_OFFSET.x
 	if _scold:
 		# 초상화: 말풍선 왼쪽 아래에 붙이고 머리는 말풍선 위로 올라오게(정사각 유지).
 		_portrait.size = Vector2(_PORTRAIT_SIDE, _PORTRAIT_SIDE)
@@ -269,6 +278,17 @@ func _reposition() -> void:
 			_panel.position
 			+ Vector2(_PORTRAIT_OFFSET.x, ps.y + _PORTRAIT_OFFSET.y - _PORTRAIT_SIDE)
 		)
+
+
+## 말풍선 본체 최소 크기. 터치 모드에서는 조향 버튼과 DRIFT 사이 구간에 맞춰 폭을 줄인다.
+func scold_size() -> Vector2:
+	if not _touch_layout:
+		return _SCOLD_SIZE
+	var view_w: float = _root.size.x if _root != null and _root.size.x > 0.0 else 1280.0
+	var span: Vector2 = TouchControls.bottom_free_span(view_w)
+	var left: float = span.x + _TOUCH_CLEAR - _PORTRAIT_OFFSET.x
+	var width: float = minf(_SCOLD_SIZE.x, span.y - _TOUCH_CLEAR - left)
+	return Vector2(width, _SCOLD_SIZE.y)
 
 
 func _make_box() -> StyleBoxFlat:

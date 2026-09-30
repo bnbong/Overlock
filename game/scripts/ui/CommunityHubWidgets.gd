@@ -1,6 +1,8 @@
 extends RefCounted
 ## 공유 허브 화면(CommunityHubScreen)의 위젯·스타일 도우미. 재봉 스킨(UiSkin/SewingSkin) 톤을
 ## 따르는 라벨·버튼·입력 칸·행 박스를 만든다. 텍스트는 모두 일반 텍스트(Label/LineEdit)다.
+## 터치 기기(MenuTouch.active)에서는 여기서 만드는 버튼·입력 칸·목록 행을 손가락 크기로, 글자를 하한
+## 이상으로 만든다(허브 화면과 트랙 종류 선택 화면이 함께 쓴다). 데스크톱에서는 전과 같다.
 
 const INK: Color = Color(0.278, 0.203, 0.153)
 const CREAM: Color = Color(0.968, 0.929, 0.847)
@@ -12,7 +14,7 @@ const BUTTON_CAP_PAD: float = 46.0
 static func label(text: String, size: int, color: Color, wrap: bool = false) -> Label:
 	var l: Label = Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", touch_font(size))
 	l.add_theme_color_override("font_color", color)
 	if wrap:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -46,7 +48,14 @@ static func button(text: String, font_size: int = 16, min_w: float = 0.0) -> But
 		b.add_theme_stylebox_override(
 			"disabled", flat_box(Color(0.6, 0.55, 0.47, 0.6), SewingSkin.KNOT)
 		)
+	if MenuTouch.active():
+		MenuTouch.button(b)
 	return b
+
+
+## 터치 배치면 글자를 본문 하한(MenuTouch.TEXT_FONT) 이상으로 올린다. 데스크톱은 size 그대로.
+static func touch_font(size: int) -> int:
+	return maxi(size, MenuTouch.TEXT_FONT) if MenuTouch.active() else size
 
 
 static func flat_box(bg: Color, border: Color, bw: int = 2) -> StyleBoxFlat:
@@ -89,6 +98,8 @@ static func style_edit(c: Control) -> void:
 	c.add_theme_color_override("font_placeholder_color", Color(0.45, 0.38, 0.32))
 	c.add_theme_color_override("caret_color", INK)
 	c.add_theme_font_size_override("font_size", 17)
+	if MenuTouch.active():
+		MenuTouch.edit(c)
 
 
 static func center(c: Control, half: Vector2) -> void:
@@ -122,7 +133,7 @@ static func spacer() -> Control:
 ## Label 을 따로 두어, 작성자가 입력한 문자열이 다른 정보의 표시 순서에 끼어들지 못하게 한다.
 static func post_row(item: Dictionary, meta_text: String) -> Button:
 	var b: Button = Button.new()
-	b.custom_minimum_size = Vector2(0, 66)
+	b.custom_minimum_size = Vector2(0, 104 if MenuTouch.active() else 66)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.focus_mode = Control.FOCUS_ALL
 	b.set_meta("post_id", str(item["id"]))
@@ -188,7 +199,7 @@ static func confirm_overlay(fabric: Color, border: Color, ink: Color, btn_w: flo
 	var v: VBoxContainer = vbox(18)
 	panel.add_child(v)
 	var text: Label = label("", 18, ink, true)
-	text.custom_minimum_size = Vector2(600, 0)
+	text.custom_minimum_size = Vector2(820 if MenuTouch.active() else 600, 0)
 	v.add_child(text)
 	var row: HBoxContainer = hbox(14)
 	var no: Button = button("취소", 17, btn_w)

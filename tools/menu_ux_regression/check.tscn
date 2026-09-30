@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://menu_ux_regression/check.gd" id="1_menu_ux_check"]
+
+[node name="MenuUxRegression" type="Node"]
+script = ExtResource("1_menu_ux_check")

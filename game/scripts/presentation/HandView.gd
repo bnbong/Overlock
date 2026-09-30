@@ -54,10 +54,13 @@ const CONTACT_SHADOW_FAR_COLOR: Color = Color(0.10, 0.03, 0.16, 0.18)
 ## 확대율은 조향(PRESS_SCALE)·이완(RELAX_SCALE)·드리프트(DRIFT_SCALE)를 따로 둬 독립적으로 조절한다
 ## (press_scale 참조). 최대 조향 1+PRESS_SCALE, 최대 드리프트 1+PRESS_SCALE+DRIFT_SCALE,
 ## 반대(이완) 손 최소 1-RELAX_SCALE.
-const PRESS_SCALE: float = 0.07  # 누르는 손(조향 방향) 확대 비율(최대 조향 기준)
-const RELAX_SCALE: float = 0.03  # 이완 손(조향 반대) 축소 비율. 확대보다 작게 둬 과하게 줄지 않게 한다.
+## v2.2.1: 플레이 중 확대가 잘 안 보인다는 피드백으로 0.07/0.03/0.05에서 키웠다(최대 1.22배). 기준점이
+## 손끝 쪽이라 늘어난 확대는 주로 바깥·위로 퍼지고, 손끝 안쪽 이동은 최대 드리프트에서 약 34px로
+## 노루발 간격 예산(40px) 안이다(tools/palm_contact_regression 검사).
+const PRESS_SCALE: float = 0.13  # 누르는 손(조향 방향) 확대 비율(최대 조향 기준)
+const RELAX_SCALE: float = 0.05  # 이완 손(조향 반대) 축소 비율. 확대보다 작게 둬 과하게 줄지 않게 한다.
 ## 드리프트 방향 손 추가 확대 비율(_drift_amt=1 기준). 반대 손에는 더하지 않는다.
-const DRIFT_SCALE: float = 0.05
+const DRIFT_SCALE: float = 0.09
 ## 확대 기준점(표시 사각형 크기 대비 비율, 사각형 중심 기준, mirror=false 우측 손 로컬). x는 손끝
 ## 쪽(안쪽, 음수), y는 손끝보다 조금 아래(손가락 중간 높이)다. 중심 기준으로 키우면 손끝(중심에서
 ## 폭의 약 0.4배 안쪽)이 확대율×폭×0.4만큼 노루발 쪽으로 다가가, 최대 드리프트(아이 손)와 최대

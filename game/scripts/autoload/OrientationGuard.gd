@@ -9,8 +9,20 @@ extends CanvasLayer
 ## `screen.orientation.lock("landscape")`를 한 번 시도한다. Android Chrome은 전체 화면이거나
 ## 설치된 PWA일 때만 lock을 허용하므로 전체 화면을 먼저 요청한다. 실패는 모두 무시한다.
 ##
-## 순수 표현용이다. 게임을 일시정지하지 않고 시뮬레이션·판정·입력 액션에도 관여하지 않는다.
-## 오버레이는 GUI 클릭만 막는다(터치 버튼은 `_input`으로 받으므로 영향 없음).
+## 이 노드는 게임을 직접 일시정지하지 않고 시뮬레이션·판정·입력 액션에도 관여하지 않는다. 세로/가로가
+## 바뀔 때 portrait_changed 신호만 보내고, 주행 중이면 RaceDirector가 이 신호로 자동 일시정지한다
+## (docs/mobile.md §4.4). 오버레이는 GUI 클릭만 막는다(터치 버튼은 `_input`으로 받으므로 영향 없음).
+
+## 웹에서는 탭 숨김·창 blur도 page_focus_lost 신호로 알린다(v2.2.1 보강). 엔진은 캔버스 focus/blur만
+## 창 포커스 알림으로 바꾸고, window blur는 눌린 입력 해제에만 쓰며, visibilitychange는 듣지 않는다
+## (4.6.1 웹 템플릿 godot.js). 캔버스가 포커스를 갖지 않은 모바일 탭 환경 등에서는 엔진 알림이 오지
+## 않을 수 있어 document visibilitychange(hidden)·window blur·pagehide를 직접 듣는다. 웹이 아니면
+## 아무것도 등록하지 않는다.
+
+## 세로 여부가 바뀔 때마다 보낸다(true=세로 안내 표시). 처음 상태는 is_portrait()로 읽는다.
+signal portrait_changed(portrait: bool)
+## (웹 한정) 페이지가 숨겨지거나 창이 포커스를 잃었다. RaceDirector가 포커스 상실처럼 자동 정지한다.
+signal page_focus_lost
 
 ## Toast(128)보다 위.
 const _LAYER: int = 1000
@@ -50,10 +62,40 @@ const _ANDROID_LOCK_JS: String = """
 })();
 """
 
+## (웹 한정) 페이지 숨김·blur 리스너 등록/해제 스크립트. 전역 플래그로 중복 등록을 막는다.
+const _PAGE_HOOK_JS: String = """
+(function () {
+	if (window.__overlockPageHooks) { return; }
+	var fire = function () {
+		try { if (window.__overlock_page_cb) { window.__overlock_page_cb(); } } catch (e) {}
+	};
+	var onVis = function () { if (document.hidden) { fire(); } };
+	window.__overlockPageHooks = { vis: onVis, blur: fire, hide: fire };
+	document.addEventListener('visibilitychange', onVis, false);
+	window.addEventListener('blur', fire, false);
+	window.addEventListener('pagehide', fire, false);
+})();
+"""
+const _PAGE_UNHOOK_JS: String = """
+(function () {
+	var h = window.__overlockPageHooks;
+	if (!h) { return; }
+	document.removeEventListener('visibilitychange', h.vis, false);
+	window.removeEventListener('blur', h.blur, false);
+	window.removeEventListener('pagehide', h.hide, false);
+	window.__overlockPageHooks = null;
+	window.__overlock_page_cb = null;
+})();
+"""
+
 var _root: Control
 var _icon: _RotateIcon
 var _title: Label
 var _subtitle: Label
+var _portrait: bool = false
+# 웹 보강 콜백. create_callback 결과를 멤버로 붙잡아 두지 않으면 GC되어 JS에서 부를 수 없다
+# (WebFileBridge와 같은 관례). 웹이 아니면 null로 남는다.
+var _page_cb: JavaScriptObject = null
 
 
 func _ready() -> void:
@@ -64,6 +106,39 @@ func _ready() -> void:
 	_refresh()
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval(_ANDROID_LOCK_JS, true)
+		_install_page_listeners()
+
+
+func _exit_tree() -> void:
+	if _page_cb != null and OS.has_feature("web"):
+		JavaScriptBridge.eval(_PAGE_UNHOOK_JS, true)
+		_page_cb = null
+
+
+## (웹) visibilitychange(hidden)·window blur·pagehide 리스너를 한 번만 등록한다. 리스너는 전역
+## window.__overlock_page_cb(아래에서 매단 GDScript 콜백)를 부른다. 이미 등록돼 있으면(전역 플래그)
+## 다시 등록하지 않는다.
+func _install_page_listeners() -> void:
+	if _page_cb != null:
+		return
+	_page_cb = JavaScriptBridge.create_callback(_on_page_event)
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window == null:
+		_page_cb = null
+		return
+	window.__overlock_page_cb = _page_cb
+	JavaScriptBridge.eval(_PAGE_HOOK_JS, true)
+
+
+func _on_page_event(_args: Array) -> void:
+	page_focus_lost.emit()
+
+
+## (웹) 지금 문서가 숨겨져 있는가(document.hidden). 웹이 아니면 false.
+func is_page_hidden() -> bool:
+	if not OS.has_feature("web"):
+		return false
+	return bool(JavaScriptBridge.eval("document.hidden === true", true))
 
 
 ## 현재 창이 세로인지(높이 > 너비). 창 크기가 0이면(헤드리스) false.
@@ -96,10 +171,28 @@ func _make_label(text: String, color: Color) -> Label:
 	return label
 
 
+## 지금 세로 안내가 떠 있는가.
+func is_portrait() -> bool:
+	return _portrait
+
+
 func _refresh() -> void:
-	visible = is_portrait_size(get_tree().root.size)
-	if not visible:
-		return
+	_apply_portrait(is_portrait_size(get_tree().root.size))
+
+
+## 세로 여부를 반영한다(안내 표시·배치 + 바뀌었을 때만 신호). 헤드리스 회귀 검사도 이 함수로 회전을
+## 흉내 낸다(헤드리스는 창 크기가 0이라 실제 회전을 만들 수 없다).
+func _apply_portrait(portrait: bool) -> void:
+	var changed: bool = portrait != _portrait
+	_portrait = portrait
+	visible = portrait
+	if portrait:
+		_layout()
+	if changed:
+		portrait_changed.emit(portrait)
+
+
+func _layout() -> void:
 	# 기준 캔버스(1280x720) 좌표로 배치한다. stretch(canvas_items, keep)에서는 루트 뷰포트가
 	# 16:9 영역만 그리므로(나머지는 창의 검은 레터박스) 이 영역을 꽉 채우고, 글자는 세로 폰의
 	# 축소 배율(390px 폭 기준 약 0.3배)에서도 읽히도록 크게 잡는다.

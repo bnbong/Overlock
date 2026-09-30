@@ -1,4 +1,4 @@
-extends "res://track_editor_regression/check_review.gd"
+extends "res://track_editor_regression/check_erase.gd"
 ## 트랙 에디터 회귀 검사(사본 프로젝트 전용, run.sh 가 실행한다).
 ##
 ## 구획:
@@ -32,6 +32,9 @@ extends "res://track_editor_regression/check_review.gd"
 ##  fix_*      : 교차 리뷰 수정(일괄 확정 lat 클램프·실제 제약 게이트, undo/redo 선택 해제·진행 중 제스처
 ##               취소, 가져오기 베이크 전 방어, 루프 닫기와 자동 수정·길이 조절, 예전 저장본 중복, 긴 트랙
 ##               전체 보기·최저 배율 0.04, 저장될 경로 기준 검증).
+##  erase_*    : v2.2.1 구간 지우기(끝쪽·시작쪽·중간, 틈 상태 저장·테스트·검증 차단, 양방향 이어 그리기, 닿지 않은
+##               스트로크, 직선으로 잇기, 뒤쪽 버리기, 아이템 동반 제거·재계산, undo 한 단위, dirty, 닫힌 루프,
+##               줌별 브러시 반경, 취소 시 문서 불변, 라운드트립 지문, 테스트 복귀 스냅샷).
 ##  test_flow  : 테스트 출발 조건(미검증·미저장 취소·저장 실패), editor_test 출처 진입, 일시정지 복귀,
 ##               재시작 출처 유지, 완주 시 기록·제출 미발생, 결과 화면 복귀·다시 테스트, 스냅샷 복원,
 ##               에디터 나가기 후 출처 정리, 일반 플레이 기록 유지.
@@ -69,6 +72,15 @@ const SECTIONS: Array[String] = [
 	"fix_dup_legacy",
 	"fix_fit_zoom",
 	"fix_saved_path",
+	"erase_end_start",
+	"erase_mid_gap",
+	"erase_join",
+	"erase_loop_zoom",
+	"erase_cancel",
+	"erase_roundtrip",
+	"erase_session",
+	"erase_guard",
+	"erase_view_jump",
 ]
 const MIN_PASSED: int = 400
 
@@ -88,6 +100,8 @@ func _ready() -> void:
 	await _check_import()
 	await _check_roundtrip()
 	await _check_open()
+	# 구간 지우기 검사는 테스트 주행을 한 번 거치므로, 주행 오디오가 종료 시점까지 남지 않게 앞쪽에서 돈다.
+	await _check_erase()
 	await _check_test_flow()
 	await _check_view()
 	await _check_hit_zoom()

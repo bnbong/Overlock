@@ -15,6 +15,15 @@ extends Node2D
 ## 그 동안 FinishView 오버레이가 전체 서킷 모양과 재봉 자국을 줌아웃으로 보여주고,
 ## FINISH_VIEW_DURATION 경과 또는 아무 키 입력(스킵) 시 Result로 넘어간다.
 
+## 아이템 슬롯(v2.2.1, docs/architecture.md §6.6): 필드 아이템을 밟으면 효과를 바로 내지 않고
+## ITEM_SLOT_CAPACITY칸 FIFO 슬롯에 담는다. use_item 눌림 엣지(InputFrame.use_item)가 들어온 틱에
+## 가장 먼저 담긴 아이템의 기존 효과(_apply_item)를 낸다. 슬롯이 가득 차면 밟은 아이템은 획득하지
+## 않고 필드에 그대로 남는다. 한 틱 안의 순서는 사용(시뮬 전) → 시뮬 → 트랙 질의 → 획득이다.
+
+## 자동 일시정지(v2.2.1, docs/mobile.md §4.4): 카운트다운·주행 중 세로 전환(OrientationGuard)이나
+## 창·앱 포커스 상실 때 수동 일시정지와 같은 정지를 걸고 입력을 뗀다. 복귀해도 자동으로 풀지 않고
+## "계속"(pause 액션)을 눌러야 재개한다. 이미 정지(수동) 중이면 아무것도 바꾸지 않는다.
+
 enum State { COUNTDOWN, RUNNING, FINISH_VIEW, FINISHED }
 
 const FINISH_MARGIN: float = 1.0
@@ -32,6 +41,16 @@ const FINISH_VIEW_SKIP_GRACE: float = 0.4
 const RESET_ABS: float = 300.0
 const RESET_FAIL_MULT: float = 3.5
 const RESET_DWELL: float = 0.12
+
+## 아이템 슬롯 칸 수(FIFO).
+const ITEM_SLOT_CAPACITY: int = 2
+## 데스크톱 개발·캡처 자동화용 인자(`godot -- --no-focus-pause`). 창 포커스 상실 자동 일시정지만
+## 끈다(세로 전환 자동 일시정지는 유지). 비-headless 드라이버가 포커스 없는 창에서 돌 때 쓴다.
+const NO_FOCUS_PAUSE_ARG: String = "--no-focus-pause"
+## 자동 일시정지 때 떼는 게임 입력 액션(키가 눌린 채 재개되지 않게).
+const GAME_ACTIONS: Array[StringName] = [
+	&"steer_left", &"steer_right", &"speed_up", &"speed_down", &"drift", &"use_item"
+]
 
 const TutorialDialogScene = preload("res://scenes/TutorialDialog.tscn")
 
@@ -57,8 +76,19 @@ var _collected: Array = []
 var _autopilot_s: float = 0.0
 var _autopilot_grace_used: float = 0.0
 
+# 아이템 슬롯(v2.2.1). _slots는 담긴 아이템 type 문자열의 FIFO(앞이 다음 사용), _full_touch는 인덱스별
+# "가득 참으로 못 먹은 채 반경 안에 있음" 래치(반경 진입 1회만 피드백), _last_s는 직전 틱 진행 아크길이
+# (시뮬 전에 쓰는 엄마 찬스 시작점). 전부 고정 틱에서만 갱신한다(결정론).
+var _slots: Array[String] = []
+var _full_touch: Array = []
+var _last_s: float = 0.0
+
+# 자동 일시정지(세로 전환·포커스 상실)로 멈춘 상태인가. 수동 일시정지와 구분해 안내 문구만 바꾼다.
+var _auto_paused: bool = false
+
 # 이산 입력 버퍼 (_unhandled_input에서 세팅, 물리 틱에서 소비).
 var _buf_speed_delta: int = 0
+var _buf_use_item: bool = false  # use_item 눌림 엣지(주행 중·비정지일 때만 세팅, 1틱 1회로 합친다).
 var _buf_restart: bool = false
 var _buf_pause: bool = false
 var _buf_to_menu: bool = false  # 일시정지 중 M(메인 메뉴 복귀) 버퍼. 일시정지 상태에서만 세팅한다.
@@ -92,11 +122,19 @@ func _ready() -> void:
 	_init_player()
 	_hud.setup(_track)
 	_hud.set_pause_visible(false)
+	_hud.set_item_slots(_slots)
+	var guard: Node = get_node_or_null("/root/OrientationGuard")
+	if guard != null and guard.has_signal("portrait_changed"):
+		guard.portrait_changed.connect(_on_portrait_changed)
+	# 웹 보강: 탭 숨김·창 blur는 엔진 알림으로 오지 않을 수 있어 OrientationGuard가 JS 이벤트를 신호로 전달한다.
+	if guard != null and guard.has_signal("page_focus_lost"):
+		guard.page_focus_lost.connect(_on_page_focus_lost)
 	# 설치 후 첫 플레이(전역 1회)면 튜토리얼을 먼저 띄우고, 닫힌 뒤 카운트다운을 표시한다.
 	if not LeaderboardClient.tutorial_seen:
 		_open_tutorial()
 	else:
 		_hud.show_countdown(ceili(_countdown_time))
+		_pause_if_unavailable()
 
 
 ## 최초 1회 튜토리얼 모달을 HUD(CanvasLayer) 위에 띄우고 카운트다운을 홀드한다.
@@ -112,6 +150,101 @@ func _on_tutorial_closed() -> void:
 	_tutorial_open = false
 	LeaderboardClient.save_tutorial_seen()
 	_hud.show_countdown(ceili(_countdown_time))
+	_pause_if_unavailable()
+
+
+# --- 자동 일시정지(세로 전환·포커스 상실) ---
+
+
+## 창·앱 포커스 상실(탭 전환·앱 전환·화면 잠금 등)이면 자동 일시정지한다. 포커스 복귀는 무시한다
+## (자동 재개 없음). --no-focus-pause 인자가 있으면 포커스 경로만 끈다.
+func _notification(what: int) -> void:
+	if (
+		what == NOTIFICATION_APPLICATION_FOCUS_OUT
+		or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT
+		or what == NOTIFICATION_APPLICATION_PAUSED
+	):
+		if not focus_pause_disabled():
+			request_auto_pause()
+
+
+static func focus_pause_disabled() -> bool:
+	return (
+		NO_FOCUS_PAUSE_ARG in OS.get_cmdline_user_args()
+		or NO_FOCUS_PAUSE_ARG in OS.get_cmdline_args()
+	)
+
+
+## OrientationGuard 신호: 세로가 되면 자동 일시정지, 가로 복귀는 무시한다(자동 재개 없음).
+func _on_portrait_changed(portrait: bool) -> void:
+	if portrait:
+		request_auto_pause()
+
+
+## OrientationGuard 웹 보강 신호(document 숨김·window blur). 포커스 상실과 같게 취급한다.
+func _on_page_focus_lost() -> void:
+	if not focus_pause_disabled():
+		request_auto_pause()
+
+
+## 카운트다운 시작 시점(진입·재시작·튜토리얼 해제)에 이미 세로이거나 화면을 볼 수 없는 상태(창 포커스
+## 없음·웹 탭 숨김)면 곧바로 멈춘다. 포커스 판정은 --no-focus-pause면 건너뛴다.
+func _pause_if_unavailable() -> void:
+	if _is_portrait() or (not focus_pause_disabled() and _is_unfocused_at_start()):
+		request_auto_pause()
+
+
+## 시작 시 포커스 판정. 헤드리스는 창이 없어 판정하지 않는다. 웹은 캔버스 포커스 이벤트가 사용자
+## 조작 전에는 오지 않을 수 있어 창 포커스 대신 document.hidden만 본다(OrientationGuard.is_page_hidden).
+func _is_unfocused_at_start() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return false
+	if OS.has_feature("web"):
+		var guard: Node = get_node_or_null("/root/OrientationGuard")
+		return guard != null and guard.has_method("is_page_hidden") and bool(guard.is_page_hidden())
+	return not get_window().has_focus()
+
+
+func _is_portrait() -> bool:
+	var guard: Node = get_node_or_null("/root/OrientationGuard")
+	return guard != null and guard.has_method("is_portrait") and bool(guard.is_portrait())
+
+
+## 자동 일시정지 요청. 카운트다운·주행 중이고 튜토리얼이 닫혀 있으며 아직 멈추지 않았을 때만 건다.
+## 수동 일시정지 중이면 그대로 두고(회전 복구가 수동 정지를 풀지 않음), 완주 줌아웃·결과·메뉴에서는
+## 아무것도 하지 않는다. 멈추면서 눌린 게임 입력과 이산 입력 버퍼를 비운다. 반환: 새로 멈췄는가.
+func request_auto_pause() -> bool:
+	if _track == null or _tutorial_open or not is_inside_tree():
+		return false
+	if _state != State.COUNTDOWN and _state != State.RUNNING:
+		return false
+	var tree: SceneTree = get_tree()
+	if tree.paused:
+		return false
+	_auto_paused = true
+	tree.paused = true
+	_release_game_input()
+	_hud.set_pause_visible(true, true)
+	return true
+
+
+## 자동 일시정지로 멈춰 있는가(수동 일시정지·비정지면 false).
+func is_auto_paused() -> bool:
+	return _auto_paused and is_inside_tree() and get_tree().paused
+
+
+## 눌린 게임 입력 액션을 떼고, 아직 소비하지 않은 이산 입력을 모두 버린다(속도·아이템 사용과 일시정지·
+## 재시작·메뉴 복귀 메타 입력). 메타 버퍼가 남으면 다음 틱의 재시작이 자동 정지를 풀어 버린다.
+## 키보드는 다음 실제 눌림부터 다시 인정되고, 터치 버튼은 HUD가 숨기면서 TouchControls가 뗀다.
+func _release_game_input() -> void:
+	for a in GAME_ACTIONS:
+		if InputMap.has_action(a):
+			Input.action_release(a)
+	_buf_speed_delta = 0
+	_buf_use_item = false
+	_buf_pause = false
+	_buf_restart = false
+	_buf_to_menu = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -136,6 +269,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_buf_speed_delta += 1
 	elif event.is_action_pressed("speed_down"):
 		_buf_speed_delta -= 1
+	elif event.is_action_pressed("use_item"):
+		# 눌림 엣지만(키 반복 echo 제외) 받는다. 카운트다운·일시정지 중 누름은 버린다(재개 후 뒤늦게
+		# 쓰이지 않게). 한 틱 안의 여러 누름은 1회로 합친다.
+		if _state == State.RUNNING and not get_tree().paused:
+			_buf_use_item = true
 
 
 func _physics_process(delta: float) -> void:
@@ -198,7 +336,12 @@ func _toggle_pause() -> void:
 	if _state == State.FINISHED:
 		return
 	var tree: SceneTree = get_tree()
+	# 세로 안내가 덮고 있는 동안은 재개하지 않는다(가로로 돌린 뒤 "계속"을 눌러야 재개).
+	if tree.paused and _is_portrait():
+		return
 	tree.paused = not tree.paused
+	_auto_paused = false
+	_buf_use_item = false
 	_hud.set_pause_visible(tree.paused)
 
 
@@ -228,12 +371,16 @@ func _tick_countdown(delta: float) -> void:
 
 func _tick_running(delta: float) -> void:
 	_elapsed += delta
+	var input: InputFrame = _sample_input()
+	# 아이템 사용(v2.2.1)은 시뮬 전에 처리한다: 누른 틱의 시뮬부터 효과가 반영되고(부상 대기 중 골무로
+	# 그 틱의 부상을 막을 수 있음), 엄마 찬스는 아래 자동주행 주입이 같은 틱에 이어받는다.
+	if input.use_item:
+		_use_item()
 	# 오토파일럿 활성 중에는 simulate 전에 중심선 타깃을 주입한다(PlayerController._autopilot_update가
 	# 소비). 진행 아크길이를 speed*delta 만큼 전진시키고, 만료 임박 틱에는 곡률 게이트로 급코너
 	# 한복판 핸드오프를 grace 한도 내에서 지연한다.
 	if _player.autopilot_timer > 0.0:
 		_advance_autopilot(delta)
-	var input: InputFrame = _sample_input()
 	_player.simulate(input, delta)
 	# 이번 틱 부상 발생 여부는 simulate 직후 바로 소비한다. 아래 이탈 리셋 분기가 조기 return해도
 	# 그 틱의 부상이 누락되거나 다음 틱으로 밀려 집계되지 않게 한다(부상 1회당 정확히 1회).
@@ -242,8 +389,9 @@ func _tick_running(delta: float) -> void:
 	_hint = int(probe["idx"])
 	var err: float = float(probe["error"])
 	var band: int = _classify(err)
-	# 아이템 픽업 판정(query 후, 고정 틱에서만 — 결정론). 획득 시 효과를 즉시 적용한다.
-	_check_item_pickups(float(probe["s"]))
+	_last_s = float(probe["s"])
+	# 아이템 픽업 판정(query 후, 고정 틱에서만 — 결정론). 획득한 아이템은 슬롯에 담는다(효과는 사용 시).
+	_check_item_pickups()
 	# 맵 이탈 소프트 리셋(설계 §B): 정상 밴드(PERFECT/GOOD)에서만 복귀 기준점을 기억하고,
 	# 오차가 임계를 RESET_DWELL 이상 지속 초과하면 마지막 정상 지점으로 되돌린 뒤 그 틱을 끝낸다.
 	if band == RunStats.Band.PERFECT or band == RunStats.Band.GOOD:
@@ -291,11 +439,15 @@ func _advance_autopilot(delta: float) -> void:
 
 
 ## 아이템 픽업 판정(고정 틱). 미획득 아이템의 월드 좌표(point_at_s + lat*접선법선)와 노루발 위치의
-## 거리가 item_pickup_radius 이하이면 획득 처리: 표현 노드 통지(null-safe) + type별 효과 적용.
-func _check_item_pickups(probe_s: float) -> void:
+## 거리가 item_pickup_radius 이하이면 획득 처리: 슬롯 맨 뒤에 담고 표현 노드에 통지한다(null-safe).
+## 슬롯이 가득 차 있으면 획득하지 않고 아이템을 필드에 그대로 둔다. 이때 반경에 들어온 첫 틱에만
+## HUD에 "가득 참" 피드백을 보내고(_full_touch 래치), 반경을 벗어나면 래치를 푼다. 반경 안에 있는
+## 동안 슬롯이 비면 다음 틱에 정상 획득한다. 한 틱에 여러 개가 겹치면 인덱스 순서로 담는다.
+func _check_item_pickups() -> void:
 	if _items.is_empty():
 		return
 	var ppos: Vector2 = _player.position
+	var changed: bool = false
 	for i in _items.size():
 		if bool(_collected[i]):
 			continue
@@ -306,16 +458,45 @@ func _check_item_pickups(probe_s: float) -> void:
 			_track.point_at_s(item_s) + _track.tangent_at_s(item_s).orthogonal() * lat
 		)
 		if ppos.distance_to(world) > Tuning.item_pickup_radius:
+			_full_touch[i] = false
+			continue
+		if _slots.size() >= ITEM_SLOT_CAPACITY:
+			if not bool(_full_touch[i]):
+				_full_touch[i] = true
+				_hud.on_item_slots_full()
 			continue
 		_collected[i] = true
+		_full_touch[i] = false
+		_slots.append(str(item.get("type", "")))
+		changed = true
 		if _item_field != null and _item_field.has_method("on_collected"):
 			_item_field.on_collected(i)
-		_apply_item(item, probe_s)
+	if changed:
+		_hud.set_item_slots(_slots)
+
+
+## 아이템 사용(use_item 엣지가 든 틱, 시뮬 전). 슬롯 맨 앞 아이템을 꺼내 기존 효과(_apply_item)를 낸다.
+## 부상 스턴·원단 이탈 복귀 잠금 중에는 속도 입력처럼 조작 잠금으로 보고 무시한다(슬롯 유지). 빈
+## 슬롯이면 아무 일도 없다. 두 경우 모두 HUD에 거절 피드백만 보낸다. 부상 대기(손 미끄러짐) 중에는
+## 사용할 수 있고, 골무·엄마 찬스의 기존 grant가 대기 중인 부상을 해제한다.
+func _use_item() -> void:
+	if _slots.is_empty() or _player.stun_timer > 0.0 or _player.offfabric_timer > 0.0:
+		_hud.on_item_use_rejected()
+		return
+	var type: String = _slots.pop_front()
+	_apply_item({"type": type}, _last_s)
+	_hud.set_item_slots(_slots)
+
+
+## 현재 슬롯 내용(앞이 다음 사용, 복사본). HUD·회귀 검사용 읽기 전용.
+func item_slots() -> Array[String]:
+	return _slots.duplicate()
 
 
 ## 아이템 type별 효과 적용. thimble→골무(부상 봉인), autopilot(엄마찬스)→오토파일럿 자동주행.
-## 엄마찬스는 현재 진행 아크길이(probe_s)에서 자동주행을 시작하도록 _autopilot_s를 맞추고 grace를
-## 리셋한다. 미지원 type은 무시한다(가산적 확장 여지).
+## 엄마찬스는 현재 진행 아크길이(probe_s, 사용 시점에는 직전 틱 트랙 질의 값)에서 자동주행을 시작하도록
+## _autopilot_s를 맞추고 grace를 리셋한다. 미지원 type은 무시한다(가산적 확장 여지). 이미 같은 효과가
+## 활성이면 grant가 타이머를 전체 지속으로 갱신한다(연장·누적 아님, 슬롯 도입 전 재획득과 같은 규칙).
 func _apply_item(item: Dictionary, probe_s: float) -> void:
 	match str(item.get("type", "")):
 		"thimble":
@@ -337,6 +518,7 @@ func _soft_reset_off_fabric() -> void:
 		reset_pos = _track.points[_last_good_hint]
 	_player.off_fabric_reset(reset_pos, _heading_at(_last_good_hint))
 	_hint = _last_good_hint
+	_last_s = _last_good_s
 	_stats.add_reset_penalty()
 	_offfabric_dwell = 0.0
 
@@ -359,7 +541,9 @@ func _sample_input() -> InputFrame:
 	var speed_delta: int = _buf_speed_delta
 	_buf_speed_delta = 0
 	var drift: bool = Input.is_action_pressed("drift")
-	return InputFrame.new(steer, speed_delta, false, drift)
+	var use_item: bool = _buf_use_item
+	_buf_use_item = false
+	return InputFrame.new(steer, speed_delta, false, drift, use_item)
 
 
 func _classify(err: float) -> int:
@@ -397,11 +581,15 @@ func _finish() -> void:
 	_finish_view_time = 0.0
 	# 잔여 이산 입력 버퍼를 비워 줌아웃 진입 후 스킵/재시작이 섞이지 않게 한다.
 	_buf_speed_delta = 0
+	_buf_use_item = false
 	_buf_restart = false
 	_buf_pause = false
 	_buf_to_menu = false
 	_buf_finish_skip = false
+	# 완주 시 슬롯에 남은 아이템은 효과 없이 사라진다(기록·점수와 무관, 위에서 결과는 이미 확정).
+	_slots.clear()
 	if _hud != null:
+		_hud.set_item_slots(_slots)
 		_hud.enter_finish_view()
 	if _finish_view != null:
 		var trail: PackedVector2Array = PackedVector2Array()
@@ -433,8 +621,12 @@ func _init_player() -> void:
 	# 셋업을 통지한다(null-safe). 표현 노드는 track.items로 시각을 구성한다.
 	_items = _track.items
 	_collected.clear()
+	_full_touch.clear()
 	for _i in _items.size():
 		_collected.append(false)
+		_full_touch.append(false)
+	_slots.clear()
+	_last_s = 0.0
 	_autopilot_s = 0.0
 	_autopilot_grace_used = 0.0
 	if _item_field != null and _item_field.has_method("setup"):

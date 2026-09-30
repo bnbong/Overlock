@@ -80,12 +80,8 @@ func _ready() -> void:
 	)
 	_events = FileAccess.open(out_dir + "/events.txt", FileAccess.WRITE)
 	_cut_pts = R.load_cut_points(FACE_CUT_TEX)
-	_ev(
-		(
-			"start scenario=%s touch=%s window=%s"
-			% [scenario, touch_mode, DisplayServer.window_get_size()]
-		)
-	)
+	var info: Array = [scenario, touch_mode, DisplayServer.window_get_size()]
+	_ev("start scenario=%s touch=%s window=%s" % info)
 	_main.call_deferred()
 
 
@@ -473,6 +469,10 @@ func _cap_later(name: String, delay: int) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# v2.2.1 아이템 슬롯: 담긴 아이템을 곧바로 Space로 써서 예전 즉시 발동 흐름을 유지한다.
+	var gpu: Node = _gp()
+	var use_ok: bool = gpu != null and gpu.has_method("item_slots") and _state() == 1
+	_key(KEY_SPACE, use_ok and not _held.get(KEY_SPACE, false) and not gpu.item_slots().is_empty())
 	if not auto_steer or manual_override:
 		return
 	var gp: Node = _gp()

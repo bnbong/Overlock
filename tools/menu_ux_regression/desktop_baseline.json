@@ -1,0 +1,404 @@
+{
+	"hub_confirm|~게시하기": [
+		770.0,
+		408.0,
+		170.0,
+		48.0
+	],
+	"hub_confirm|~취소": [
+		340.0,
+		408.0,
+		170.0,
+		48.0
+	],
+	"hub_detail|~다운로드": [
+		779.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_detail|~다운로드 후 플레이": [
+		961.0,
+		618.0,
+		219.0,
+		48.0
+	],
+	"hub_detail|~목록으로": [
+		100.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_done|~게시물 보기": [
+		1010.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_done|~다시 저장": [
+		506.0,
+		363.0,
+		152.0,
+		48.0
+	],
+	"hub_done|~보관했습니다": [
+		1005.0,
+		363.0,
+		175.0,
+		48.0
+	],
+	"hub_done|~토큰 복사": [
+		1028.0,
+		307.0,
+		152.0,
+		48.0
+	],
+	"hub_done|~트랙 선택으로": [
+		100.0,
+		618.0,
+		185.0,
+		48.0
+	],
+	"hub_form|~게시하기": [
+		1010.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_form|~취소": [
+		100.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_list_fail|~검색": [
+		888.0,
+		101.0,
+		130.0,
+		48.0
+	],
+	"hub_list_fail|~다시 시도": [
+		1032.0,
+		159.0,
+		148.0,
+		48.0
+	],
+	"hub_list_fail|~뒤로": [
+		100.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_list_fail|~전체 보기": [
+		1028.0,
+		101.0,
+		152.0,
+		48.0
+	],
+	"hub_list|~검색": [
+		888.0,
+		101.0,
+		130.0,
+		48.0
+	],
+	"hub_list|~더 보기": [
+		1010.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_list|~뒤로": [
+		100.0,
+		618.0,
+		170.0,
+		48.0
+	],
+	"hub_list|~전체 보기": [
+		1028.0,
+		101.0,
+		152.0,
+		48.0
+	],
+	"kind|BackButton": [
+		520.0,
+		524.0,
+		240.0,
+		48.0
+	],
+	"kind|OfficialCard": [
+		148.0,
+		168.0,
+		470.0,
+		330.0
+	],
+	"kind|UserCard": [
+		662.0,
+		168.0,
+		470.0,
+		330.0
+	],
+	"leaderboard_fail|BackButton": [
+		378.0,
+		602.0,
+		524.0,
+		48.0
+	],
+	"leaderboard_fail|NextButton": [
+		856.0,
+		117.0,
+		46.0,
+		46.0
+	],
+	"leaderboard_fail|PrevButton": [
+		378.0,
+		117.0,
+		46.0,
+		46.0
+	],
+	"leaderboard|BackButton": [
+		378.0,
+		594.0,
+		524.0,
+		48.0
+	],
+	"leaderboard|NextButton": [
+		856.0,
+		125.0,
+		46.0,
+		46.0
+	],
+	"leaderboard|PrevButton": [
+		378.0,
+		125.0,
+		46.0,
+		46.0
+	],
+	"main|LeaderboardButton": [
+		450.0,
+		480.0,
+		380.0,
+		56.0
+	],
+	"main|ProfileChip": [
+		1150.0,
+		666.0,
+		114.0,
+		38.0
+	],
+	"main|QuitButton": [
+		450.0,
+		550.0,
+		380.0,
+		56.0
+	],
+	"main|SettingsButton": [
+		450.0,
+		410.0,
+		380.0,
+		56.0
+	],
+	"main|StartButton": [
+		450.0,
+		340.0,
+		380.0,
+		56.0
+	],
+	"main|~·  WWWWWWWWWWWWWWWW": [
+		16.0,
+		14.0,
+		271.0,
+		32.0
+	],
+	"nick_edit|ConfirmButton": [
+		440.0,
+		392.0,
+		400.0,
+		48.0
+	],
+	"nick_first|ConfirmButton": [
+		440.0,
+		392.0,
+		400.0,
+		48.0
+	],
+	"profile|CloseButton": [
+		440.0,
+		519.5,
+		400.0,
+		48.0
+	],
+	"profile|ReportButton": [
+		440.0,
+		399.5,
+		400.0,
+		48.0
+	],
+	"profile|SupportButton": [
+		440.0,
+		459.5,
+		400.0,
+		48.0
+	],
+	"result_test|MenuButton": [
+		461.0,
+		438.0,
+		367.0,
+		56.0
+	],
+	"result_test|RetryButton": [
+		840.0,
+		438.0,
+		368.0,
+		56.0
+	],
+	"result|MenuButton": [
+		890.5,
+		472.0,
+		144.0,
+		56.0
+	],
+	"result|RetryButton": [
+		734.5,
+		472.0,
+		144.0,
+		56.0
+	],
+	"result|SubmitButton": [
+		734.5,
+		408.0,
+		300.0,
+		56.0
+	],
+	"select_empty|BackButton": [
+		350.0,
+		391.0,
+		580.0,
+		48.0
+	],
+	"select_empty|CreateButton": [
+		350.0,
+		333.0,
+		286.0,
+		48.0
+	],
+	"select_empty|HubButton": [
+		350.0,
+		267.0,
+		580.0,
+		56.0
+	],
+	"select_empty|ImportButton": [
+		644.0,
+		333.0,
+		286.0,
+		48.0
+	],
+	"select_official|BackButton": [
+		350.0,
+		570.0,
+		580.0,
+		48.0
+	],
+	"select_official|LeaderboardButton": [
+		350.0,
+		512.0,
+		580.0,
+		48.0
+	],
+	"select_official|NextButton": [
+		882.0,
+		267.0,
+		48.0,
+		48.0
+	],
+	"select_official|PlayButton": [
+		350.0,
+		446.0,
+		580.0,
+		56.0
+	],
+	"select_official|PrevButton": [
+		350.0,
+		267.0,
+		48.0,
+		48.0
+	],
+	"select_user|BackButton": [
+		262.0,
+		628.0,
+		756.0,
+		48.0
+	],
+	"select_user|CreateButton": [
+		262.0,
+		512.0,
+		183.0,
+		48.0
+	],
+	"select_user|DeleteButton": [
+		835.0,
+		512.0,
+		183.0,
+		48.0
+	],
+	"select_user|EditButton": [
+		262.0,
+		570.0,
+		374.0,
+		48.0
+	],
+	"select_user|ExportButton": [
+		644.0,
+		512.0,
+		183.0,
+		48.0
+	],
+	"select_user|HubButton": [
+		645.0,
+		446.0,
+		373.0,
+		56.0
+	],
+	"select_user|ImportButton": [
+		453.0,
+		512.0,
+		183.0,
+		48.0
+	],
+	"select_user|NextButton": [
+		970.0,
+		267.0,
+		48.0,
+		48.0
+	],
+	"select_user|PlayButton": [
+		262.0,
+		446.0,
+		373.0,
+		56.0
+	],
+	"select_user|PrevButton": [
+		262.0,
+		267.0,
+		48.0,
+		48.0
+	],
+	"select_user|PublishButton": [
+		644.0,
+		570.0,
+		374.0,
+		48.0
+	],
+	"settings|BackButton": [
+		390.0,
+		528.0,
+		500.0,
+		48.0
+	],
+	"settings|SaveButton": [
+		390.0,
+		466.0,
+		500.0,
+		48.0
+	]
+}

@@ -77,7 +77,7 @@ func press(world: Vector2) -> void:
 	_dragging = false
 	_moved = false
 	var hit: int = pick(world)
-	if hit >= 0:
+	if hit >= 0 and not EditorDoc.has_gap(_ed._doc):
 		_ed._selected_item = hit
 		_press_snapshot = EditorDoc.copy(_ed._doc)
 		_dragging = true
@@ -88,6 +88,8 @@ func press(world: Vector2) -> void:
 	if path.size() < 2:
 		_ed._set_status("아이템을 놓으려면 먼저 트랙을 그리세요.", _ed.WARN_COLOR)
 		return
+	if _ed._erase_tool.blocked("아이템을 놓을 수 없습니다"):
+		return  # 틈이 있는 동안은 틈 선분 위에 놓이지 않게 배치를 막는다
 	var pr: Dictionary = EditorDoc.project_on_path(path, world)
 	if float(pr["dist"]) > _ed._canvas.world_radius(PLACE_PX, PLACE_MIN):
 		_ed._selected_item = -1
@@ -146,6 +148,7 @@ func release() -> void:
 
 
 func delete_selected() -> bool:
+	_ed._cancel_gestures()
 	var i: int = selected()
 	if i < 0:
 		return false
@@ -162,6 +165,7 @@ func delete_selected() -> bool:
 func set_type(t: String) -> void:
 	if not EditorDoc.ITEM_TYPES.has(t):
 		return
+	_ed._cancel_gestures()
 	place_type = t
 	var i: int = selected()
 	if i >= 0 and str(_items()[i]["type"]) != t:
@@ -173,6 +177,7 @@ func set_type(t: String) -> void:
 
 ## 선택 아이템을 지금 위치로 확정(검토 해결, undo 한 단위).
 func confirm_selected() -> void:
+	_ed._cancel_gestures()
 	var i: int = selected()
 	if i < 0 or not EditorDoc.needs_review(_items()[i]):
 		return

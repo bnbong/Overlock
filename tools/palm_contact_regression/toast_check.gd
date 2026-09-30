@@ -377,12 +377,12 @@ func _check_penalty_layout(t: Toast) -> void:
 	_ok(not alert.intersects(FOOT_RECT), "alert avoids presser foot (%s)" % alert)
 	_ok(alert.position.x > RISK_MAX_X, "alert right of RISK panel")
 	_ok(not alert.intersects(SPEED_RECT), "alert avoids speed panel")
-	_check_hud_clearance(br, pr, tip)
+	_check_hud_clearance(t, br, pr, tip)
 	_done.append("penalty_layout")
 
 
 ## Gameplay 씬 HUD 요소(상태 글·조작 안내·터치 버튼)와 말풍선의 겹침 검사.
-func _check_hud_clearance(br: Rect2, pr: Rect2, tip: Vector2) -> void:
+func _check_hud_clearance(t: Toast, br: Rect2, pr: Rect2, tip: Vector2) -> void:
 	var gp: Node = GameplayScene.instantiate()
 	var status: Label = gp.get_node("HUD/StatusLabel")
 	var hint: Label = gp.get_node("HUD/SteerHint")
@@ -407,13 +407,13 @@ func _check_hud_clearance(br: Rect2, pr: Rect2, tip: Vector2) -> void:
 	)
 	_ok(br.end.y + 2.0 <= h_rect.position.y, "bubble above steer hint %s" % h_rect)
 	_ok(pr.end.y <= h_rect.position.y + 4.0, "portrait above steer hint")
-	# 터치 버튼(1280×720, TouchControls 배치식과 같은 상수).
+	# 터치 버튼(1280×720)은 v2.2.1부터 터치 모드 말풍선 배치(_touch_alert)로 검사한다.
 	var tc: TouchControls = TouchControls.new()
 	tc.size = Vector2(1280.0, 720.0)
-	var alert: Rect2 = br.merge(pr)
-	for b in [0, 1, 2, 3, 4, 5]:
+	var alert: Rect2 = ToastSpy.touch_alert(t)
+	for b in TouchControls.ACTIONS.keys():
 		var r: Rect2 = tc.button_rect(b)
-		_ok(not alert.intersects(r), "alert avoids touch button %d %s" % [b, r])
+		_ok(not alert.intersects(r), "touch alert avoids touch button %d %s" % [b, r])
 	tc.free()
 	gp.free()
 	_done.append("hud_clearance")
