@@ -116,6 +116,12 @@ func is_online_enabled() -> bool:
 	return not _effective_base_url().is_empty()
 
 
+## 실제 요청에 쓰는 base URL(트레일링 슬래시 제거, 웹 origin 폴백 반영). 공유 허브 클라이언트
+## (CommunityTrackClient)가 같은 서버 설정을 재사용할 때 쓴다.
+func api_base_url() -> String:
+	return _base()
+
+
 ## 닉네임이 1~16자로 설정돼 있으면 true(제출 가능 조건).
 func has_nickname() -> bool:
 	var trimmed: String = nickname.strip_edges()

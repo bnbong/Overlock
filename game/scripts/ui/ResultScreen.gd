@@ -186,6 +186,10 @@ func _setup_submit(result: Dictionary) -> void:
 	_submit_button.visible = can_submit
 	if can_submit:
 		_submit_button.pressed.connect(_on_submit_pressed)
+	elif is_custom and not CommunityStore.post_for_local(track_id).is_empty():
+		# 공유 허브에서 받은 트랙: 기록은 로컬에만 남고 공식 리더보드에는 제출하지 않는다.
+		_submit_status.visible = true
+		_submit_status.text = "커뮤니티 트랙은 로컬 기록만 저장됩니다 (공식 리더보드 미제출)"
 
 
 func _on_submit_pressed() -> void:

@@ -325,9 +325,24 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "삭제"
 
-[node name="LeaderboardButton" type="Button" parent="Panel"]
+[node name="HubRow" type="HBoxContainer" parent="Panel"]
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LeaderboardButton" type="Button" parent="Panel/HubRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "이 트랙 리더보드"
+
+[node name="PublishButton" type="Button" parent="Panel/HubRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "허브에 게시"
+
+[node name="HubButton" type="Button" parent="Panel/HubRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "공유 허브"
 
 [node name="BackButton" type="Button" parent="Panel"]
 layout_mode = 2

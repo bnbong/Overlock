@@ -189,6 +189,16 @@ OVERLOCK_CORS_ORIGINS=https://overlock.example.com
 
 > **게임 HTTPS ↔ API HTTPS** 정합. 한쪽만 HTTP면 mixed content 차단.
 
+### 5-4. 커스텀 트랙 공유 허브
+
+공유 허브는 같은 `server/` 의 `/api/community/` 경로에서 동작하므로 별도 서비스를 띄울 필요가 없습니다. 엔드포인트, 업로드 검증 규칙, 환경변수의 상세 내용은 `server/README.md` 의 "커스텀 트랙 공유 허브 API" 절을 참고합니다. 배포할 때는 다음 항목을 확인합니다.
+
+- CORS: 웹 export 는 게시물을 삭제할 때 `DELETE` 메서드와 `Authorization` 헤더를 씁니다. 서버 기본값(`OVERLOCK_CORS_ALLOW_METHODS=GET,POST,DELETE`, `OVERLOCK_CORS_ALLOW_HEADERS=Content-Type,Accept,Authorization`)이 이를 허용하므로, 이 두 변수를 직접 지정해 운영한다면 두 값을 빠뜨리지 않아야 합니다.
+- 본문 크기: 게시 본문은 최대 1MiB이고 앱이 실제 수신 바이트를 셉니다. 앞단 프록시의 본문 상한은 `/api/community/` 경로에서 1MiB 이상이어야 합니다.
+- 레이트리밋: 게시(IP당 분당 3회, 24시간 30회), 조회(분당 120회), 삭제(분당 10회) 제한은 프로세스 메모리 기준이며 기록 제출과 별도로 셉니다. uvicorn 워커 하나를 전제로 하므로, 워커나 인스턴스를 늘린다면 프록시에서 공통 제한을 함께 둡니다. 프록시 뒤에서는 `OVERLOCK_TRUST_FORWARDED_FOR=true` 를 켜야 실제 클라이언트 IP로 셉니다.
+- DB: 게시물은 기존 SQLite 파일의 `community_tracks` 테이블에 저장됩니다. 처음 배포할 때 서버가 이 테이블만 새로 만들고 기존 기록은 바꾸지 않지만, 배포 전에 DB 백업을 받아 둡니다.
+- 운영자 비공개 처리: 공개 관리자 API는 없습니다. 서버에서 `python -m app.community_admin hide <id>` 를 실행하며(Docker 는 `docker exec <컨테이너>` 로 실행), 절차는 `server/README.md` 의 "공유 허브 운영자 비공개 처리" 절에 정리했습니다.
+
 ---
 
 ## 6. 문제 해결

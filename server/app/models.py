@@ -3,6 +3,9 @@
 기본 컬럼은 기획서 DDL과 1:1 대응하며, ``tracks`` 에 물리 하한 필터(§18)에 쓰는
 ``length_px``·``min_final_time_ms`` 두 컬럼만 확장으로 추가했다. SQLite/PostgreSQL
 양쪽에서 동일 코드로 동작하도록 SQLAlchemy 2.0 타입만 사용한다.
+
+``community_tracks`` 는 커스텀 트랙 공유 허브 전용 독립 테이블이다(공식 Track/Run 과
+외래키·컬럼을 공유하지 않는다). 기존 DB 에는 create_all 이 이 테이블만 새로 만든다.
 """
 
 from __future__ import annotations
@@ -70,4 +73,38 @@ class Run(Base):
             "accuracy",
             "cuts",
         ),
+    )
+
+
+class CommunityTrack(Base):
+    """공유 허브에 게시된 커스텀 트랙 한 건(불변 게시, 소프트 삭제).
+
+    track_json 은 서버가 검증·정규화한 허용 필드만 담은 JSON 문자열이다. 삭제 토큰은
+    원문을 저장하지 않고 SHA-256 hex 만 보관한다(delete_token_hash). deleted_at 이
+    채워진 행은 게시자 삭제 또는 운영자 비공개 처리된 것으로 목록·상세에서 제외한다.
+    """
+
+    __tablename__ = "community_tracks"
+
+    # 서버 발급 UUID4 문자열(공개 식별자).
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    author_name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 목록 표시·필터용 컬럼(track_json 에서 복사).
+    difficulty: Mapped[str] = mapped_column(Text, nullable=False)
+    fabric: Mapped[str] = mapped_column(Text, nullable=False)
+    length_px: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    track_json: Mapped[str] = mapped_column(Text, nullable=False)
+    # 정규화 플레이 데이터(path·width·difficulty·fabric·items)의 "sha256:<hex>".
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # UTC ISO-8601 문자열(기존 테이블의 created_at 관례와 동일).
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    delete_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    __table_args__ = (
+        # 공개 목록: deleted_at IS NULL + created_at DESC, id DESC 정렬.
+        Index("idx_community_tracks_list", "deleted_at", "created_at", "id"),
+        Index("idx_community_tracks_content_hash", "content_hash"),
     )

@@ -22,6 +22,11 @@ def make_settings(tmp_path: Path, **overrides: object) -> Settings:
         "db_url": f"sqlite:///{db_path}",
         "tracks_dir": TRACKS_DIR,
         "rate_limit_per_minute": 100000,  # 기본은 사실상 무제한(레이트리밋 테스트만 낮춤)
+        # 공유 허브 버킷도 기본은 사실상 무제한(레이트리밋 테스트만 낮춤).
+        "community_post_per_minute": 100000,
+        "community_post_per_day": 100000,
+        "community_read_per_minute": 100000,
+        "community_delete_per_minute": 100000,
         "cors_origins": "*",
     }
     kwargs.update(overrides)
@@ -73,6 +78,43 @@ def make_payload() -> Callable[..., dict]:
             "off_seam_ms": 840,
             "game_version": "0.1.0",
             "track_checksum": checksum,
+        }
+        payload.update(overrides)
+        return payload
+
+    return _make
+
+
+# ---------------------------------------------------------------------------
+# 공유 허브(/api/community) 공용 헬퍼
+# ---------------------------------------------------------------------------
+COMMUNITY_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "community_tracks"
+
+
+def load_community_fixture(name: str) -> dict:
+    """공통 fixture 파일 하나를 읽는다(파일명은 확장자 제외)."""
+    import json
+
+    return json.loads((COMMUNITY_FIXTURES_DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def community_track() -> dict:
+    """수락되는 작은 커스텀 트랙(성긴 S 곡선, 저장 포맷 그대로)."""
+    return load_community_fixture("accept_sparse_s_curve")["track"]
+
+
+@pytest.fixture
+def make_community_payload(community_track: dict) -> Callable[..., dict]:
+    """유효한 POST /api/community/tracks 바디 생성기. overrides 로 최상위 필드를 바꾼다."""
+    import copy
+
+    def _make(**overrides: object) -> dict:
+        payload: dict[str, object] = {
+            "title": "My Track",
+            "author_name": "tester",
+            "description": "",
+            "track": copy.deepcopy(community_track),
         }
         payload.update(overrides)
         return payload

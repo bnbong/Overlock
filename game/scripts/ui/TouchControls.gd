@@ -37,7 +37,7 @@ const HOLD_BUTTONS: Array = [Btn.STEER_LEFT, Btn.STEER_RIGHT, Btn.DRIFT]
 #  - 좌측: ◀ ▶를 왼쪽 끝·바닥에 나란히 → 그 위에 RISK 패널, 다시 그 위에 효과 카드 스택.
 #  - 우측: ▲ ▼를 오른쪽 끝 열에 세로로 쌓고 DRIFT는 그 왼쪽 열 바닥 정렬 → ▲ 위에 SPEED 패널.
 #  - 우상단 TIME 패널(오른쪽에서 238~8, 위 6~92) → 일시정지는 그 왼쪽.
-const STEER_SIZE: float = 112.0
+const STEER_SIZE: float = 128.0
 const SPEED_SIZE: float = 112.0
 const DRIFT_SIZE: float = 132.0
 const PAUSE_SIZE: float = 80.0

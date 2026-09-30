@@ -16,6 +16,7 @@ const MAIN_SCENE: String = "res://scenes/Main.tscn"
 const EDITOR_SCENE: String = "res://scenes/TrackEditor.tscn"
 const LEADERBOARD_SCENE: String = "res://scenes/Leaderboard.tscn"
 const SELF_SCENE: String = "res://scenes/TrackSelect.tscn"
+const HUB_SCENE: String = "res://scenes/CommunityHub.tscn"
 
 ## 원단 재질 한국어 라벨. FabricSurface.FABRIC_BASE(presentation/FabricSurface.gd)가
 ## 실제로 렌더 지원하는 재질 목록과 맞춘다 — 목록에 없는 값(미지 재질)은 원문 그대로 노출.
@@ -78,7 +79,9 @@ var _export_disp: String = ""
 @onready var _import_button: Button = $Panel/ActionRow/ImportButton
 @onready var _export_button: Button = $Panel/ActionRow/ExportButton
 @onready var _delete_button: Button = $Panel/ActionRow/DeleteButton
-@onready var _leaderboard_button: Button = $Panel/LeaderboardButton
+@onready var _leaderboard_button: Button = $Panel/HubRow/LeaderboardButton
+@onready var _publish_button: Button = $Panel/HubRow/PublishButton
+@onready var _hub_button: Button = $Panel/HubRow/HubButton
 @onready var _back_button: Button = $Panel/BackButton
 @onready var _import_dialog: FileDialog = $ImportDialog
 @onready var _export_dialog: FileDialog = $ExportDialog
@@ -106,6 +109,8 @@ func _ready() -> void:
 	_create_button.pressed.connect(_on_create_pressed)
 	_delete_button.pressed.connect(_on_delete_pressed)
 	_leaderboard_button.pressed.connect(_on_leaderboard_pressed)
+	_publish_button.pressed.connect(_on_publish_pressed)
+	_hub_button.pressed.connect(_on_hub_pressed)
 	_back_button.pressed.connect(_on_back_pressed)
 	_toast = ToastScene.instantiate()
 	add_child(_toast)
@@ -132,14 +137,18 @@ func _ready() -> void:
 ## 사용자 제공 시트 스킨. 대형/소형 필 + 정사각 나브 버튼 + 의미별 아이콘.
 ## 미리보기는 절차적 유지(트랙 실루엣 가독성 — 다크 패널 장식이 작은 미리보기를 가림).
 func _apply_skin() -> void:
+	var small: Array = [
+		_create_button, _import_button, _export_button, _delete_button, _leaderboard_button,
+		_publish_button, _hub_button,
+	]
 	if not UiSkin.has_skin():
-		for b in [_create_button, _import_button, _export_button, _delete_button, _leaderboard_button]:
+		for b in small:
 			_skin_button(b)
 		return
 	UiSkin.skin_button(_play_button, "large")
 	_play_button.text = "Play"
 	UiSkin.skin_button(_back_button, "small")
-	for b in [_create_button, _import_button, _export_button, _delete_button, _leaderboard_button]:
+	for b in small:
 		UiSkin.skin_button(b, "small", 15)
 	# 트랙 변경 화살표: 정사각 단추 바탕을 제거하고 화살표 아이콘만 남긴다(투명 히트 영역
 	# 48x48 유지, hover/pressed는 아이콘 틴트). focus_mode는 씬에서 0(순환 제외)이라 그대로.
@@ -269,6 +278,9 @@ func _refresh() -> void:
 	_export_button.visible = is_custom
 	# 리더보드는 공식 트랙 + 온라인 활성일 때만(커스텀 트랙은 서버 제출/조회 대상 아님).
 	_leaderboard_button.visible = not is_custom and LeaderboardClient.is_online_enabled()
+	# 공유 허브 게시는 로컬 커스텀 트랙만. 공식 트랙과, 허브에서 받은 뒤 편집하지 않은 트랙에는
+	# 게시 버튼을 두지 않는다(편집해 내용이 달라진 사본은 새 게시물로 올릴 수 있다).
+	_publish_button.visible = is_custom and not TrackLoader.is_unmodified_hub_download(id)
 	_update_best(id, diff)
 	_preview.queue_redraw()
 
@@ -312,6 +324,31 @@ func _on_leaderboard_pressed() -> void:
 func _on_back_pressed() -> void:
 	_remember_current()
 	get_tree().change_scene_to_file(MAIN_SCENE)
+
+
+## "공유 허브" 버튼: 허브 목록 화면으로 전환한다.
+func _on_hub_pressed() -> void:
+	_remember_current()
+	CommunityTrackClient.pending_publish_track_id = ""
+	get_tree().change_scene_to_file(HUB_SCENE)
+
+
+## "허브에 게시" 버튼(로컬 커스텀 트랙 전용). 저장본이 로드·검증을 통과할 때만 허브 게시 화면으로
+## 넘어가고, 아니면 사유를 토스트로 알린다(허브 화면이 게시 직전에 한 번 더 검사한다).
+func _on_publish_pressed() -> void:
+	var entry: Dictionary = _tracks[_index]
+	if not bool(entry.get("is_custom", false)):
+		return
+	var id: String = _current_id()
+	if TrackLoader.is_unmodified_hub_download(id):
+		return
+	var built: Dictionary = TrackLoader.build_publish_track(id)
+	if not bool(built["ok"]):
+		_toast.push(str(built["message"]))
+		return
+	_remember_current()
+	CommunityTrackClient.pending_publish_track_id = id
+	get_tree().change_scene_to_file(HUB_SCENE)
 
 
 ## 현재 선택 트랙을 마지막 선택 트랙으로 기록(재진입 복원용). 화면을 떠날 때만 호출한다.
@@ -474,12 +511,18 @@ func _select_track(track_id: String) -> void:
 ## Preview 컨트롤의 draw 시그널 핸들러. 선택 트랙의 베이크 폴리라인을 패널에
 ## 맞춰 축소해 실루엣으로 그린다(시작점은 초록 마커).
 func _on_preview_draw() -> void:
-	var rect: Vector2 = _preview.size
-	var patch_rect: Rect2 = Rect2(Vector2.ZERO, rect)
-	SewingSkin.draw_patch(_preview, patch_rect, _PREVIEW_BG_COLOR, _PREVIEW_RADIUS, false)
 	var track: TrackData = TrackLoader.load_track(_current_id())
-	if track != null and track.points.size() >= 2:
-		var pts: PackedVector2Array = track.points
+	var pts: PackedVector2Array = track.points if track != null else PackedVector2Array()
+	draw_track_preview(_preview, pts)
+
+
+## 트랙 실루엣 미리보기 그리기(어두운 패치 + 폴리라인 + 시작점 + 박음질 테두리). canvas의 draw
+## 시그널 안에서 호출한다. 공유 허브 상세·게시 화면(CommunityHubScreen)도 이 함수를 재사용한다.
+static func draw_track_preview(canvas: Control, pts: PackedVector2Array) -> void:
+	var rect: Vector2 = canvas.size
+	var patch_rect: Rect2 = Rect2(Vector2.ZERO, rect)
+	SewingSkin.draw_patch(canvas, patch_rect, _PREVIEW_BG_COLOR, _PREVIEW_RADIUS, false)
+	if pts.size() >= 2:
 		var mn: Vector2 = pts[0]
 		var mx: Vector2 = pts[0]
 		for p in pts:
@@ -494,10 +537,10 @@ func _on_preview_draw() -> void:
 		var mapped: PackedVector2Array = PackedVector2Array()
 		for p in pts:
 			mapped.append(p * sc + off)
-		_preview.draw_polyline(mapped, Color(0.80, 0.62, 1.0, 0.95), 2.0)
-		_preview.draw_circle(pts[0] * sc + off, 4.0, Color(0.42, 0.86, 0.42, 1.0))
+		canvas.draw_polyline(mapped, Color(0.80, 0.62, 1.0, 0.95), 2.0)
+		canvas.draw_circle(pts[0] * sc + off, 4.0, Color(0.42, 0.86, 0.42, 1.0))
 	SewingSkin.draw_stitch_border(
-		_preview, patch_rect, SewingSkin.THREAD_PURPLE, _PREVIEW_STITCH_INSET, _PREVIEW_RADIUS
+		canvas, patch_rect, SewingSkin.THREAD_PURPLE, _PREVIEW_STITCH_INSET, _PREVIEW_RADIUS
 	)
 
 
