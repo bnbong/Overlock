@@ -42,7 +42,7 @@ signal leaderboard_result(
 )
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "2.2.1"  # §13.3 game_version. 아이템 슬롯, 구간 지우기, 모바일 메뉴 터치 배치.
+const GAME_VERSION: String = "2.3.0"  # §13.3 game_version. 개인 고스트, 원단별 주행 특성.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -277,6 +277,9 @@ func submit_run(result: Dictionary) -> void:
 	if not has_nickname():
 		submit_completed.emit(false, -1, "", "닉네임을 먼저 설정하세요")
 		return
+	if is_practice_run():
+		submit_completed.emit(false, -1, "", "튜닝을 바꾼 연습 기록은 제출하지 않습니다")
+		return
 	var body: String = JSON.stringify(_build_submit_body(result))
 	var resp: Dictionary = await _request(HTTPClient.METHOD_POST, _base() + "/api/runs", body)
 	if not bool(resp["ok"]):
@@ -294,6 +297,13 @@ func submit_run(result: Dictionary) -> void:
 		status = str((data as Dictionary).get("verification_status", ""))
 	_cache_submitted_rank(str(result.get("track_id", "")), str(result.get("difficulty", "")), rank)
 	submit_completed.emit(true, rank, status, "")
+
+
+## 개발용 튜닝 오버라이드(res://data/tuning.json)로 달린 연습 실행인지(RecordStore.is_practice). 연습 기록은
+## 정식 기록과 섞이지 않도록 리더보드에 제출하지 않는다. RecordStore에 판정 함수가 없으면 false.
+func is_practice_run() -> bool:
+	var store: Node = get_node_or_null("/root/RecordStore")
+	return store != null and store.has_method("is_practice") and bool(store.call("is_practice"))
 
 
 ## GET /api/leaderboard?track_id=&difficulty=&limit=. 조회 번호를 돌려주고 결과는 leaderboard_result

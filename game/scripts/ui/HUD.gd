@@ -33,6 +33,8 @@ var _autopilot_card: EffectTimerCard = null
 
 # 아이템 슬롯 2칸 위젯(v2.2.1). RISK 패널 오른쪽에 붙고, 터치 모드에서는 RISK와 함께 위로 옮긴다.
 var _item_slots: ItemSlots = null
+# 개인 고스트 구간 시간차·안내 배너(v2.3.0, 화면 위 가운데). 재생할 고스트가 없어도 안내용으로 만든다.
+var _ghost_banner: GhostSplitBanner = null
 # 자동 일시정지 안내 라벨(일시정지 오버레이 제목 아래). 자동 정지일 때만 보인다.
 var _auto_pause_label: Label = null
 
@@ -59,6 +61,7 @@ func _ready() -> void:
 	_apply_skin()
 	_build_effect_cards()
 	_build_item_slots()
+	_build_ghost_banner()
 	_build_touch_controls()
 	_build_auto_pause_label()
 	_apply_editor_test_pause()
@@ -104,6 +107,38 @@ func _build_item_slots() -> void:
 	add_child(_item_slots)
 	# 일시정지 딤 아래에 그려지도록 오버레이 앞에 둔다.
 	move_child(_item_slots, _pause_overlay.get_index())
+
+
+## 화면 위 가운데 고스트 배너(GhostSplitBanner.RECT)를 동적 생성한다. 일시정지 딤 아래에 그린다.
+func _build_ghost_banner() -> void:
+	_ghost_banner = GhostSplitBanner.new()
+	add_child(_ghost_banner)
+	move_child(_ghost_banner, _pause_overlay.get_index())
+
+
+# --- 개인 고스트 (v2.3.0) ---
+
+
+## 런 시작 시 RaceDirector가 부른다. active=false면 미니맵 마커를 숨긴다.
+func setup_ghost(active: bool) -> void:
+	if not active:
+		_minimap.set_ghost({})
+
+
+## 고스트 재생 상태(GhostRun.state_at)를 미니맵에 넘긴다. update_frame 전에 같은 틱에서 부른다.
+func set_ghost_state(state: Dictionary) -> void:
+	_minimap.set_ghost(state)
+
+
+## 구간 통과 시간차(패널티 포함, ms. 음수=빠름). comparable=false면 비교 불가 안내.
+func show_split(index: int, delta_ms: int, comparable: bool) -> void:
+	if _ghost_banner != null:
+		_ghost_banner.show_split(index, delta_ms, comparable)
+
+
+func show_ghost_notice(text: String) -> void:
+	if _ghost_banner != null:
+		_ghost_banner.show_notice(text)
 
 
 ## 일시정지 오버레이 제목(PAUSED) 아래에 자동 정지 안내 라벨을 붙인다(평소 숨김).

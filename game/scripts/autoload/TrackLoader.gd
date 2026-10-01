@@ -38,6 +38,8 @@ const FALLBACK_TRACKS: Array = [
 ]
 
 var _cache: Dictionary = {}
+# track_id -> 기록 호환성 지문(record_fingerprint). load_track이 베이크와 함께 채우고 캐시와 같이 무효화한다.
+var _fingerprints: Dictionary = {}
 var _manifest: Array = []
 
 
@@ -90,10 +92,46 @@ func load_track(track_id: String) -> TrackData:
 		path = CUSTOM_DIR + track_id + ".json"
 	else:
 		path = OFFICIAL_DIR + track_id + ".json"
-	var data: TrackData = _load_from_file(path)
-	if data != null:
-		_cache[track_id] = data
+	var dict: Dictionary = _read_track_dict(path)
+	if dict.is_empty():
+		return null
+	var data: TrackData = _build_track(dict)
+	_cache[track_id] = data
+	_fingerprints[track_id] = record_fingerprint(data, _path_closed(dict.get("path", [])))
 	return data
+
+
+## 트랙 내용 지문(기록 엔트리·고스트 헤더의 track_fingerprint, 고스트 유효성 판정용). 실패하면 빈 문자열.
+func track_fingerprint(track_id: String) -> String:
+	if load_track(track_id) == null:
+		return ""
+	return str(_fingerprints.get(track_id, ""))
+
+
+## 실제 플레이 내용 지문(docs/architecture.md §3.2). 베이크 점 열·닫힘·폭·재질은 play_fingerprint 직렬화를
+## 재사용하고, 아이템은 그 정렬(문자열) 대신 ItemOrder 정규 순서(s→type→lat)로 이어 붙인다. 메타·modifiers
+## (시뮬레이션 미소비)·난이도(키에 따로 있음)는 뺀다. 허브용 fp1(play_fingerprint)은 바꾸지 않는다.
+static func record_fingerprint(track: TrackData, closed: bool) -> String:
+	var pts: Array = []
+	for p in track.points:
+		pts.append([p.x, p.y])
+	var w: Dictionary = {"perfect": track.perfect, "safe": track.safe, "fail": track.fail}
+	var norm: Dictionary = {
+		"difficulty": "", "fabric": track.fabric, "width": w, "items": [],
+		"path": [{"type": "baked", "closed": closed, "points": pts}],
+	}
+	var buf: String = play_fingerprint(norm) + "\nitems_in_order="
+	for i in ItemOrder.indices(track.items):
+		var it: Dictionary = track.items[i] if track.items[i] is Dictionary else {}
+		buf += "%.3f|%.3f|%s;" % [_num(it.get("s", 0)), _num(it.get("lat", 0)), str(it.get("type", ""))]
+	return "tf2:" + buf.sha256_text()
+
+
+static func _path_closed(path: Variant) -> bool:
+	for seg in path if path is Array else []:
+		if seg is Dictionary and (seg as Dictionary).get("closed", false) == true:
+			return true
+	return false
 
 
 ## 커스텀 트랙 목록: user://tracks/custom/ 디렉토리 스캔(웹 IDBFS 포함 안정).
@@ -136,6 +174,7 @@ func save_custom_track(track_dict: Dictionary) -> String:
 	file.store_string(JSON.stringify(data, "  "))
 	file.close()
 	_cache.erase(id)  # 재편집 저장 후 다음 로드가 갱신본을 읽게 한다
+	_fingerprints.erase(id)
 	return id
 
 
@@ -154,6 +193,7 @@ func delete_custom_track(track_id: String) -> bool:
 			err = dir.remove(track_id + ".json")
 	if err == OK:
 		_cache.erase(track_id)
+		_fingerprints.erase(track_id)
 		return true
 	push_error("TrackLoader: 커스텀 트랙 삭제 실패 " + path)
 	return false
@@ -920,21 +960,25 @@ func _path_length(path_json: Array) -> float:
 	return total
 
 
-func _load_from_file(path: String) -> TrackData:
+## 트랙 파일을 읽어 JSON dict로 반환한다(없거나 파싱 실패면 빈 dict).
+func _read_track_dict(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		push_error("TrackLoader: 트랙 파일 없음 " + path)
-		return null
+		return {}
 	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_error("TrackLoader: 트랙 파일 열기 실패 " + path)
-		return null
+		return {}
 	var text: String = file.get_as_text()
 	file.close()
 	var parsed: Variant = JSON.parse_string(text)
-	if not (parsed is Dictionary):
+	if not (parsed is Dictionary) or (parsed as Dictionary).is_empty():
 		push_error("TrackLoader: 트랙 JSON 파싱 실패 " + path)
-		return null
-	var dict: Dictionary = parsed
+		return {}
+	return parsed
+
+
+func _build_track(dict: Dictionary) -> TrackData:
 	var track: TrackData = TrackData.new()
 	track.track_id = str(dict.get("track_id", ""))
 	track.track_name = str(dict.get("name", ""))

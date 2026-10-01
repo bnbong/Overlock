@@ -92,7 +92,7 @@ Result는 `GameState.last_result`(Dictionary)만 읽어 렌더한다. Gameplay�
 | 1 | `Tuning` | Node | §19 튜닝 파라미터 보유, `tuning.json` 오버라이드 병합 |
 | 2 | `InputSetup` | Node | `InputMap.add_action`으로 입력 액션 런타임 등록(§7) |
 | 3 | `TrackLoader` | Node | 트랙 JSON 로드 → `TrackData` 베이크, id별 캐시 |
-| 4 | `RecordStore` | Node | `user://records.json` 로드/저장, 신기록 판정 |
+| 4 | `RecordStore` | Node | `user://records.json` 로드/저장, 트랙·난이도별 신기록 판정(§3.2), 개인 고스트 연결(§3.3) |
 | 5 | `GameState` | Node | 씬 전환 + 세션/결과 데이터 버스 |
 
 `GameState`가 다른 오토로드를 참조하므로 마지막에 둔다.
@@ -141,6 +141,94 @@ func _save() -> void:
     var f := FileAccess.open(PATH, FileAccess.WRITE)
     f.store_string(JSON.stringify(_data))
 ```
+
+### 3.1 RecordStore와 개인 고스트 (v2.3.0)
+
+위 코드는 MVP 시점의 구조이다. v2.3.0부터 RecordStore는 트랙·난이도별 개인 최고 기록(§3.2)에 개인 고스트 파일(§3.3)을 연결한다. 고스트 파일 입출력과 안전한 파일 교체는 `GhostStore`(`scripts/systems/GhostStore.gd`)가 맡고, 샘플 기록과 재생은 `GhostRun`(`scripts/systems/GhostRun.gd`)이 맡는다. RaceDirector는 주행 틱마다 GhostRun에 위치를 넘기고, 완주하면 `RecordStore.submit_run(result, ghost, skip_reason)`으로 기록과 고스트를 함께 저장한다. 기존 `submit(result)`는 고스트 없이 기록만 제출하는 하위 호환 진입점으로 남겨 두었다.
+
+| 함수 | 설명 |
+|---|---|
+| `is_practice()` | 개발용 튜닝 오버라이드가 물리에 쓰이는 값을 실제로 바꾸는지 돌려준다. 참이면 기록을 연습 기록으로 따로 저장한다. |
+| `fingerprint_for(id)` | `TrackLoader.track_fingerprint(id)`를 돌려준다. |
+| `best_for(id, diff)` | 이 트랙·난이도의 개인 최고 기록을 돌려준다. 연습 실행이면 연습 기록을 돌려준다. 트랙 선택 화면의 Best, 결과 화면, 리더보드 화면의 "내 기록"이 이 함수를 쓴다. |
+| `ghost_state(id, diff)` | 트랙 선택 화면 문구에 쓰는 고스트 상태(`ready`, `no_record`, `no_ghost`, `track_changed`)를 돌려준다. |
+| `load_ghost(id, diff)` | 개인 최고 기록의 고스트를 읽고 검사해서 돌려준다. |
+| `submit_run(result, ghost, skip)` | 기록과 고스트를 §3.3의 저장 순서대로 저장한다. |
+| `purge(track_id)`, `purge_for_delete(track_id)` | 해당 트랙의 모든 기록과 연결된 고스트 파일을 지운다. |
+| `ghost_enabled()`, `set_ghost_enabled(v)` | 트랙 선택 화면의 "개인 고스트" 토글 값을 읽고 `user://ghost_settings.json`에 저장한다. |
+
+### 3.2 기록 키와 트랙 지문
+
+**키.** 개인 최고 기록은 `track_id|difficulty` 키 하나로 보관한다. 같은 키 안에서 `final_time_ms`(패널티 포함)가 더 작은 기록을 신기록으로 판정하며, 동률이면 기존 기록을 유지한다. 원단 물리처럼 게임 규칙이 바뀌어도 기록을 규칙별로 나누지 않는다. 예전 버전에서 세운 기록도 그대로 현재 최고 기록이다.
+
+**연습 기록.** 개발용 `res://data/tuning.json`이 물리와 판정에 쓰이는 Tuning 값을 실제로 바꾸면 `is_practice()`가 참이 되고, 기록을 `track_id|difficulty|practice` 키로 따로 저장해 정식 기록과 섞지 않는다. 판정할 때는 물리와 판정에 실제로 쓰이는 키 목록(`RecordStore.PHYSICS_TUNING_KEYS`, PlayerController와 RaceDirector가 읽는 Tuning 키)만 보고, 파일 값과 새 Tuning 인스턴스의 기본값을 비교한다. `foot_response_rate`처럼 소비되지 않는 키를 바꾸면 물리가 같으므로 연습으로 보지 않는다. `steer_expo`는 시작할 때 LeaderboardClient가 사용자 설정값으로 덮어써 tuning.json 값이 쓰이지 않으므로 빼고, `speed_table`은 `_load_overrides`가 덮어쓰지 않으므로 뺀다. 소비 코드가 새 키를 읽기 시작하면 목록에 더해야 하며, `tools/ghost_regression`이 두 파일의 `Tuning.<키>` 참조가 목록에 모두 있는지 확인한다. 결과 dict와 기록 엔트리의 `practice` 필드가 연습 여부를 나타낸다. 트랙 선택 화면은 "연습 Best"와 연습 기록 안내를 보이고, 결과 화면은 연습 기록이라는 안내를 보인다. 설정 화면의 조향 감도(`steer_expo`)는 사용자 선택이므로 연습 판정에 영향을 주지 않으며, 고스트 메타데이터에 참고값으로만 기록한다. 저장소에 들어 있는 tuning.json은 기본값과 같아야 하며, `tools/ghost_regression`이 이 조건을 확인한다.
+
+**track_fingerprint.** 지문은 기록을 나누는 데 쓰지 않고 고스트를 쓸 수 있는지 판정하는 데만 쓴다. `TrackLoader.track_fingerprint(id)`는 트랙을 불러올 때 계산해서 캐시하는 `tf2:` 접두의 SHA-256 값이다. 공식 bezier 트랙과 커스텀 polyline 트랙 모두 베이크한 점 열을 기준으로 삼고, 점 열·닫힘·폭·재질의 직렬화에는 기존 `play_fingerprint`의 규칙(좌표 0.1 단위, 폭 수치 0.001 단위)을 재사용한다. 아이템은 `play_fingerprint`의 문자열 정렬 대신 `ItemOrder` 정규 순서(s 오름차순, 같으면 type, lat 순)로 이어 붙인다. 슬롯은 FIFO이므로 한 틱에 여러 아이템을 담는 순서가 플레이에 영향을 주는데, RaceDirector의 획득 판정도 같은 정규 순서로 아이템을 순회한다(§6.6). 그래서 파일의 items 배열 순서만 다른 트랙은 같은 지문을 가지며 실제 획득 순서도 같다. 지문에 들어가는 내용은 베이크 점 열, 닫힘(closed), 판정 폭, 재질(fabric), 아이템이다. 표시 이름, 작성자, 설명, track_id, checksum, length 같은 메타 정보는 넣지 않으므로 이름만 바꾼 트랙은 같은 지문을 가진다. modifiers는 TrackData에 파싱만 되고 시뮬레이션과 판정이 사용하지 않으므로 넣지 않았다. modifiers를 사용하는 코드가 생기면 지문에 포함하고 접두를 올려야 한다. 난이도는 기록 키에 따로 들어가므로 지문에서는 뺐다. 제출용 공식 트랙 체크섬(`LeaderboardClient.track_checksum`), 허브 매핑용 `custom_track_fingerprint`(fp1), 서버의 `content_hash`는 바꾸지 않았으며, 모두 이 지문과 의미가 다르다.
+
+지문은 같은 기기와 같은 엔진 빌드에서 안정적으로 같은 값을 낸다. 다만 베이크가 부동소수 연산이므로 플랫폼이나 엔진 버전이 바뀌면 0.1 반올림 경계에 걸린 점이 달라질 가능성이 남아 있다. 기록은 로컬에만 저장되므로 같은 기기 안에서는 이 차이가 문제가 되지 않는다.
+
+**트랙이 바뀐 경우.** 기록 엔트리에는 기록을 세울 때의 트랙 지문을 함께 저장한다. 같은 custom ID의 트랙을 편집해 경로, 닫힘, 원단, 폭, 아이템이 바뀌면 현재 지문과 엔트리의 지문이 달라진다. 이때 기록은 그대로 개인 최고로 두고, 그 기록의 고스트만 쓰지 않는다(`track_changed`). 트랙 선택 화면은 "트랙이 바뀌어 고스트를 쓸 수 없습니다 · 최고를 갱신하면 새로 생깁니다"를, 출발 배너는 같은 뜻의 안내를 보인다. 편집한 트랙에서 더 느리게 완주하면 신기록이 아니므로 고스트가 생기지 않으며, 결과 화면이 개인 최고를 갱신하면 새 고스트가 생긴다고 안내한다. 최고를 갱신하면 엔트리의 지문이 현재 지문으로 바뀌고 새 고스트가 생긴다. 이름만 바꾼 트랙은 지문이 같으므로 고스트를 계속 쓸 수 있다.
+
+**기록 엔트리.** 엔트리는 결과 dict(`RunStats.finalize`가 만든 필드)에 아래 필드를 더한 것이다. 결과 화면에서만 쓰는 키(`is_new_record`, `ghost_status`, `ghost_reason`, `prev_best_ms`, `ghost_track_changed`, `split_deltas`, `editor_test`)는 저장하지 않는다.
+
+| 필드 | 뜻 |
+|---|---|
+| `track_fingerprint` | 기록을 세울 때의 트랙 내용 지문(`tf2:…`). 고스트 유효성 판정에만 쓴다. |
+| `practice` | 연습 기록(개발용 튜닝) 여부 |
+| `ghost_run_id` | 연결된 고스트의 run_id이며, 고스트가 없으면 빈 문자열이다. |
+| `ghost_file` | 고스트 파일 경로(`user://ghosts/<run_id>.json`)이며, 고스트가 없으면 빈 문자열이다. |
+| `ghost_note` | 고스트를 만들지 못한 사유(예: `write_failed`, `too_many_samples`, `too_large`) |
+| `saved_at` | 저장 시각(UTC, ISO 형식 문자열) |
+
+**records.json 형식과 마이그레이션.** 현재 형식은 `{"format_version": 2, "records": {키: 엔트리}}`이다. v2 형식은 고스트 참조 필드를 담으려고 도입했다. 형식 버전이 없는 예전 파일(v1, `track_id|difficulty` → 결과)을 처음 읽으면 원본을 `records.json.bak`으로 복사한다. 이미 `.bak`이 있으면 `records.json.bak-<시각>`으로 복사한다. 백업이 성공하고 복사본이 원본과 같을 때만 v1 기록을 키와 필드 그대로 현재 최고 기록으로 옮겨 v2 형식으로 다시 저장한다. 옮긴 기록은 고스트 참조 필드가 비어 있으므로 트랙 선택 화면에 "고스트가 없습니다"로 보이고, 최고를 갱신하면 고스트가 생긴다. 백업에 실패하면 원본을 그대로 두고 메모리로만 읽으며(`load_state = migrated_readonly`), 이번 실행에서는 기록 쓰기를 보류하고 다음 기동에서 다시 시도한다. 개발 중에 잠시 쓰던 규칙 분리 키(`track_id|difficulty|규칙|지문`)와 `legacy` 묶음이 들어 있는 v2 파일은 읽을 때 현재 키로 합치며, 같은 키로 모이면 시간이 더 짧은 기록을 남긴다. JSON으로 읽을 수 없는 파일이나 지원하지 않는 형식 버전의 파일은 빈 저장소로 읽고, 처음 쓰기 전에 `records.json.bak-<시각>`으로 옮겨 보존한다.
+
+**저장 방식.** records.json과 고스트 파일은 `GhostStore.write_atomic`으로 쓴다. 이 함수는 임시 파일(`<경로>.tmp`)에 쓰고 다시 읽어서 내용과 JSON 구조를 확인한 뒤 rename으로 교체한다. 기존 파일 위로 rename하지 못하는 플랫폼에서는 기존 파일을 `<경로>.prev`로 옮긴 뒤 rename하고, 그것도 실패하면 `.prev`를 원래 이름으로 되돌린다. 기존 파일을 지우는 경로는 없으며, 실패하면 기존 파일이 그대로 남고 `.tmp`와 `.prev`도 남기지 않는다. 다음 로드 직전에는 `GhostStore.recover_pending`이 중단 흔적을 정리한다. 본 파일이 있으면 그것이 확정본이므로 `.tmp`와 `.prev`를 지운다. 본 파일이 없을 때는 완전한 v2 형식이고 참조하는 고스트 파일이 모두 실제로 있는 records.json.tmp만 채택하고, 그렇지 않으면 `.prev`를 복원한다. 실패한 트랜잭션은 `.tmp`를 남기지 않으므로, 채택되는 `.tmp`는 rename 직전에 앱이 종료된 경우뿐이다. 파일이 있는데 열지 못하면(`unreadable`) 일시적인 실패일 수 있으므로 보존용 이름 변경이나 덮어쓰기 없이 이번 실행의 쓰기를 보류한다. 웹(IDBFS)에서는 기존 저장 코드와 같은 관례를 따른다. 엔진은 쓰기 모드로 연 user:// 파일을 닫을 때 동기화가 필요하다고 표시하고 메인 루프에서 동기화하므로, 명시적인 sync는 부르지 않는다.
+
+### 3.3 개인 고스트
+
+**기록 방식.** 고스트는 입력을 다시 시뮬레이션하는 리플레이가 아니라 위치 스냅샷이며, 서버 검증이나 치트 판정에는 쓰지 않는다. RaceDirector는 카운트다운이 끝나는 틱에 `GhostRun.begin`으로 출발 샘플을 남기고, 정상 주행 틱마다 시뮬레이션과 트랙 질의, 집계를 마친 뒤 `on_tick`을 부른다. 주행 경과 시간이 다음 50ms 격자(20Hz)를 넘은 틱에서만 샘플을 남기므로, 샘플 간격은 물리 주기가 아니라 경과 시간으로 정해진다. 맵 이탈 강제 복귀가 일어나면 `on_reset`이 복귀 직전 위치와 복귀 직후 위치를 같은 시각의 샘플 두 개로 남기고, 직후 샘플에 FLAG_JUMP를 붙인다. 완주하면 `on_finish`가 실제 완주 시각의 샘플에 FLAG_FINISH를 붙인다. 일시정지, 튜토리얼, 카운트다운, 완주 줌아웃 중에는 `_tick_running`이 실행되지 않으므로 이 구간은 기록에서 빠진다. GhostRun은 플레이어 상태를 읽기만 하므로 충돌, 아이템, RISK, 기록에 영향을 주지 않는다. 고스트 표시를 꺼도 기록은 계속하며, 토글은 재생 여부만 정한다.
+
+**10구간.** 트랙 호길이를 10등분한 경계 1~9는 물리 틱마다 계산한다. 지금까지의 최대 진행도를 넘어선 경계만 이전 틱과 현재 틱의 진행도 사이에서 선형 보간해 최초 통과 시각을 정하므로, 후진하거나 같은 구간을 다시 지나도 중복으로 기록하지 않는다. 강제 복귀 때문에 아직 통과하지 않은 경계를 건너뛰게 되면 그 구간에는 가상의 통과 시각을 만들지 않고 비교 불가로 표시한다. 10번째 구간은 RaceDirector의 실제 완주 판정 시각(`finish_ms`)과 최종 패널티(`penalty_ms`)를 쓴다. 구간 값은 통과 시각에 그때까지 누적된 패널티를 더한 값이며, 마지막 구간의 값은 `final_time_ms`와 같다.
+
+**파일 포맷.** 고스트 하나는 `user://ghosts/<run_id>.json` 파일 하나에 compact JSON으로 저장한다.
+
+| 키 | 내용 |
+|---|---|
+| `format_version` | 1 |
+| `run_id` | `g`에 시각과 난수를 16진으로 붙인 영숫자 문자열 |
+| `track_id`, `difficulty` | 기록 키와 같다. |
+| `track_fingerprint` | 고스트를 기록할 때의 트랙 지문. 재생 전에 현재 지문과 비교한다. |
+| `finish_ms`, `penalty_ms`, `final_time_ms` | 결과 dict와 같다(finish + penalty = final). |
+| `sample_count` | 샘플 수 |
+| `meta` | 참고 메타데이터(`steer_expo`, `game_version`, `fabric`)이며, 비교에는 쓰지 않는다. |
+| `samples` | 평면 숫자 배열이다. 샘플마다 `t_ms, x, y, heading, s, flag` 여섯 값을 넣는다(위치와 s는 0.1, heading은 0.001 단위). |
+| `splits` | 구간 10개의 `[통과 시각 ms, 누적 패널티 ms, 유효 여부 1/0]` |
+
+flag 값은 0(일반), 1(FLAG_JUMP: 출발과 복귀 직후), 2(FLAG_FINISH: 완주)이다.
+
+**상한.** 샘플은 최대 24000개(20Hz 기준 약 20분이며 이벤트 샘플을 포함한다), 파일은 최대 2MiB이다. 샘플 수가 상한에 닿으면 그 런의 고스트를 만들지 않고(`too_many_samples`), 직렬화한 크기가 2MiB를 넘어도 저장하지 않는다(`too_large`). 두 경우 모두 기록 저장은 계속 진행하고 결과 화면에 사유를 보이며, 뒤가 잘린 고스트를 정상 파일로 쓰지 않는다.
+
+**검사.** 쓰기 직전과 읽을 때 `GhostStore.validate`가 헤더 키, 형식 버전, `finish + penalty = final` 관계, 샘플 수와 배열 길이, 모든 값의 유한성, 시각의 단조 증가(같은 시각은 허용), 첫 시각 0, 마지막 샘플의 FLAG_FINISH와 그 시각이 `finish_ms`와 같은지(허용 오차 1ms), 구간 배열을 검사한다. 구간은 행마다 유효 여부가 0 또는 1이고, 시각이 -1(미통과) 또는 0..finish_ms 범위이며, 누적 패널티가 0..penalty_ms 범위여야 한다. 시각이 있는 행의 시각과 유효 행의 누적 패널티는 단조 증가해야 하고, 마지막 구간은 유효하며 헤더의 finish_ms·penalty_ms와 같아야 한다. 짧은 샘플 열에 긴 finish_ms를 붙인 손상 파일이 조기 도착을 표시하거나 거짓 구간 차이를 내지 않게 하려는 검사이다. 읽을 때는 크기 상한을 먼저 확인하고, 헤더의 track_id, difficulty, track_fingerprint, run_id, final_time_ms가 기록 엔트리와 현재 트랙 지문에 모두 맞을 때만 재생한다. 하나라도 어긋나면 고스트만 비활성화하며(사유 `corrupt`, `unsupported`, `invalid`, `mismatch`, `missing`, `too_large`), 기록을 지우거나 게임 진입을 막지 않는다. v2.3.0 개발 중에 만든 고스트 파일에 남아 있는 `physics_ruleset` 필드는 판정에 쓰지 않는다. 고스트를 읽지 못하면 출발 시점에 HUD 배너가 그 사실을 잠깐 안내한다.
+
+**저장 순서.** `submit_run`은 다음 순서로 저장한다.
+
+1. 신기록이 아니면(느리거나 동률이면) 아무것도 쓰지 않고, 기존 최고와 고스트를 유지한다.
+2. 새 고스트에 run_id를 붙여 검사한 뒤 임시 파일에 쓰고, 다시 읽어 확인한 다음 최종 파일로 교체한다.
+3. 기록 엔트리에 run_id와 파일 경로를 연결한다. 고스트 쓰기가 실패했으면 엔트리에 고스트가 없다는 사실과 사유를 적는다.
+4. records.json을 임시 파일에 쓰고 교체한다.
+5. 기록 저장이 성공한 뒤에만 이전 최고 기록의 고스트 파일을 지운다.
+
+고스트 쓰기가 실패해도 최고 기록 저장은 시도하며, 새 최고 기록에는 고스트가 없다고 표시한다. 이전 고스트는 5단계에서 지우므로 새 최고 기록의 고스트처럼 보이지 않는다. records.json 저장이 실패하면 메모리를 이전 상태로 되돌리고 2단계에서 쓴 새 고스트 파일을 지우므로, 기존 최고 기록과 고스트가 그대로 남는다. 2단계와 4단계 사이에 앱이 종료되면 참조되지 않는 고스트 파일이 남을 수 있다. 이런 파일은 다음 실행 때 RecordStore가 `GhostStore.cleanup_orphans`로 지우며, 남은 임시 파일도 함께 지운다. 이 정리는 records.json을 정상으로 읽은 경우(`load_state == "ok"`)에만 실행한다. 손상, 미지원 버전, 읽기 실패, 마이그레이션 직후, 백업 실패 상태에서는 참조 목록을 확정할 수 없으므로 고스트를 지우지 않는다. 이 정리는 고스트 이름 형식(`g…json`, `g…json.tmp`)을 가진 파일만 건드린다.
+
+**저장하지 않는 런.** 에디터 테스트 플레이(`GameState.is_editor_test`)는 결과에 `editor_test`를 표시하고 submit_run을 부르지 않으며, 고스트를 재생하지도 않는다. 재시작은 씬을 다시 불러오므로 기록기가 버려지고, 중도 포기(메뉴 복귀)는 완주 경로를 지나지 않으므로 두 경우 모두 저장하지 않는다.
+
+**재생과 HUD.** 런을 시작할 때 고스트 표시가 켜져 있고 일반 플레이이면 `RecordStore.load_ghost`로 개인 최고 기록의 고스트를 읽는다. 기록 당시와 트랙 지문이 다르면 읽지 않고 출발 배너로 안내한다. 재생 위치는 `GhostRun.state_at(주행 경과 ms)`로 구하며, 인접한 두 샘플을 선형 보간하고 heading은 `lerp_angle`로 보간한다. 다음 샘플에 FLAG_JUMP가 있으면 보간하지 않고 그 시각에 바로 옮긴다. 같은 물리 경과 시간에서는 렌더 FPS와 관계없이 같은 위치가 나온다. 고스트가 먼저 완주하면 결승 위치에 멈추고, 미니맵이 3초 동안 "고스트 도착" 라벨을 보인다. 미니맵은 플레이어와 같은 좌표 변환을 적용해 반투명한 속 빈 마름모와 "고스트" 라벨을 그리고, 고스트가 부분 미니맵 밖에 있으면 테두리 안쪽에 방향 삼각형을 그린다. 플레이어는 채운 점과 화살표로 그리므로 모양과 라벨로 구분된다. 중앙 원단에는 두 번째 손이나 노루발을 그리지 않는다. 구간을 통과하면 화면 위 가운데 배너(`GhostSplitBanner`)가 "구간 3/10 · 0.42초 빠름"을 2.6초 동안 보이고, 둘째 줄에 "개인 최고 대비 · 패널티 포함 (마커는 주행 시간 기준)"이라고 적는다. 마커는 주행 시간을 기준으로 움직이고 구간 차이는 패널티를 포함해 계산하므로, 마커가 앞서 있어도 구간 차이는 느림으로 나올 수 있다. 마지막 구간의 차이는 HUD가 숨는 완주 줌아웃 대신 결과 화면의 구간별 차이에 나온다. 배너 배치는 docs/mobile.md §4.2에 정리했다.
+
+**트랙 선택과 결과 화면.** 트랙 선택 화면의 Best 줄 아래에 있는 고스트 줄(`GhostSelectRow`)에는 "개인 고스트" 토글(기본값은 켜기)과 상태 문구가 있다. 기록이 없으면 "첫 완주 후 고스트가 생깁니다"를, 트랙이 바뀌었으면 고스트를 쓸 수 없고 최고를 갱신하면 새로 생긴다는 문구를, 고스트가 없는 기록(예전 버전 기록 등)이면 다음 최고 기록부터 생긴다는 문구를 보인다. 데스크톱 배치에서는 상태 문구가 늘 한 줄에 들어가도록 길이를 맞춰, 상태에 따라 버튼 위치가 바뀌지 않는다. 그 아래 줄에는 로컬 최고와 고스트는 패널티 포함 시간을 기준으로 하고 온라인 순위는 등급을 먼저 본다는 안내를 적는다. 결과 화면의 고스트 줄은 새 고스트의 저장 성공 여부와 실패 사유, 미갱신일 때 개인 최고와의 차이, 구간별 차이, 트랙이 바뀌어 이전 고스트를 쓸 수 없을 때의 안내, 연습 기록 여부를 보인다. 터치 배치는 글자가 커서 모든 문구가 함께 뜨면 카드가 화면을 넘을 수 있으므로, 짧은 문구를 쓰고 구간 차이를 빠름·느림·비교 불가 개수 한 줄로 줄인다.
+
+**정리.** 커스텀 트랙을 삭제하면 트랙 선택 화면이 트랙 파일보다 먼저 `RecordStore.purge_for_delete(id)`로 기록을 정리한다. purge는 그 트랙의 정식 기록과 연습 기록을 모두 지우고, 저장이 성공하면 연결된 고스트 파일도 지운다. 저장에 실패하면 기록과 고스트를 그대로 두고 트랙 파일도 지우지 않으며, 같은 화면에서 다시 삭제를 시도할 수 있다. 트랙을 먼저 지우면 남은 기록이 고스트를 계속 참조하고 재시도할 트랙도 사라지기 때문에 이 순서를 택했다. 같은 custom ID를 편집해서 지문이 바뀌면 기록은 유지하고 고스트만 쓰지 않는다(§3.2 "트랙이 바뀐 경우").
+
+**검증.** `tools/ghost_regression/run.sh`가 키보드, 터치, practice 세 모드로 이 절의 규칙을 검사한다.
 
 ---
 
@@ -474,7 +562,7 @@ v2.2.1부터 필드 아이템(골무, 엄마 찬스)은 밟는 순간 효과를 
 - 슬롯은 `RaceDirector.ITEM_SLOT_CAPACITY`(2)칸의 FIFO 큐(`_slots`, 아이템 type 문자열 배열)이다. 앞쪽 원소가 다음에 쓸 아이템이다.
 - 노루발이 아이템 반경(`Tuning.item_pickup_radius`) 안에 들어오면, 빈 칸이 있을 때 슬롯 맨 뒤에 담고 그 아이템을 획득한 것으로 처리한다(`_collected[i] = true`, `ItemField.on_collected`).
 - 슬롯이 가득 차 있으면 아이템을 획득하지 않는다. 아이템은 필드에 그대로 남고, 반경에 들어온 첫 틱에만 HUD에 "가득 참" 피드백(슬롯 위젯 흔들림, 낮은 재봉틀 틱 소리)을 보낸다. 반경 안에 머무는 동안 슬롯이 비면 다음 틱에 정상적으로 담는다.
-- 한 틱에 아이템 여러 개가 겹치면 배열 인덱스 순서로 담는다.
+- 한 틱에 아이템 여러 개가 겹치면 `ItemOrder` 정규 순서(s 오름차순, 같으면 type, lat, 원래 인덱스 순)로 담는다(v2.3.0부터). 이전에는 배열 인덱스 순서였는데, 기록 지문(§3.2)과 같은 순서를 쓰도록 바꿔 파일의 배열 순서만 다른 트랙이 같은 결과를 내게 했다.
 
 **사용 규칙**
 
@@ -649,13 +737,18 @@ game/
 | `Tuning.gd` | §19 파라미터 + JSON 오버라이드 |
 | `InputSetup.gd` | 입력 액션 런타임 등록(§7) |
 | `TrackLoader.gd` | 트랙 JSON 로드 → `TrackData.bake`, id별 캐시 |
-| `RecordStore.gd` | `user://records.json` 로드/저장, 신기록 판정 |
+| `RecordStore.gd` | `user://records.json` 로드/저장, 트랙·난이도별 신기록 판정, 개인 고스트 연결, 고스트 표시 설정(§3.1~§3.3) |
+| `GhostRun.gd` | RefCounted. 고스트 샘플 기록(20Hz, 복귀·완주 이벤트), 10구간 통과, 재생 보간(`state_at`)(§3.3) |
+| `GhostStore.gd` | RefCounted 정적 도우미. 고스트 파일 저장·검사·고아 정리, 임시 파일 교체 쓰기(`write_atomic`)와 중단 복구(`recover_pending`)(§3.2, §3.3) |
+| `ItemOrder.gd` | RefCounted 정적 도우미. 필드 아이템 정규 순서(s→type→lat→인덱스). 획득 판정과 기록 지문이 함께 쓴다(§3.2, §6.6) |
+| `GhostSplitBanner.gd` | 화면 위 가운데 구간 시간차·고스트 안내 배너(§3.3, docs/mobile.md §4.2) |
+| `GhostSelectRow.gd` | 트랙 선택 화면의 개인 고스트 토글·상태 문구(§3.3) |
 | `GameState.gd` | 씬 전환, 세션/결과 데이터 버스 |
 | `PlayerController.gd` | 운동학 상태(position/heading/speed/steer/risk/stun). `simulate(input, delta)` — 조향/이동/리스크/스턴. 자체 `_physics_process` 없음 |
 | `TrackData.gd` | RefCounted. 베이크 폴리라인(`points/s_arr/length`), 판정 폭, `query(pos, hint)` 윈도 최근접 |
 | `TrackRenderer.gd` | `Node2D._draw`로 centerline + perfect/safe/fail 폭 시각화 |
 | `FinishLine.gd` | `Node2D._draw`로 피니시 시각 마커(경로에 수직인 라인). RaceDirector가 위치·회전·폭 설정 |
-| `RaceDirector.gd` | Gameplay 루트. 물리 루프 소유, 상태기계(COUNTDOWN/RUNNING/FINISHED), 스톱워치, 판정·집계 호출, 피니시, 전환 |
+| `RaceDirector.gd` | Gameplay 루트. 물리 루프 소유, 상태기계(COUNTDOWN/RUNNING/FINISHED), 스톱워치, 판정·집계 호출, 피니시, 전환. `is_racing()`은 표현 계층이 RUNNING 여부를 읽기만 하는 조회 함수다 |
 | `RunStats.gd` | RefCounted. accuracy/perfect_rate/off_seam/cuts/penalty 누적 및 `finalize` |
 | `InputFrame.gd` | RefCounted. 한 틱 입력 스냅샷(steer 방향, speed 증감, restart) — 실시간·리플레이 공통 입력 |
 | `MainMenu.gd` | 트랙명·최고기록 표시, Start/Quit |
@@ -666,6 +759,9 @@ game/
 | `RiskMeter.gd` | risk 게이지, 0.50/0.70/0.85/0.95 경고 색/점멸 |
 | `Stopwatch.gd` | `_elapsed` → `MM:SS.mmm` 포맷 |
 | `Countdown.gd` | 시작 카운트다운 오버레이 |
+| `DriftSkid.gd` | (표현) 드리프트 원단 주름 데이터 소스. 패치 위치·방향·강도·생성 시각 기록, 바닥 잔여 흔적, 완주 뷰용 `get_full_marks()`(docs/presentation.md §15) |
+| `DriftFoldLayer.gd` | (표현) 주름 패치를 Mode 7과 같은 카메라로 투영하는 2.5D 레이어. 활성 12개, 셰이더 `drift_fold.gdshader` |
+| `DriftFoldShape.gd` | (표현) 높이맵 공유 격자·파생 텍스처·시간 모델 정적 캐시 |
 | `cotton_01.json` | MVP 트랙(§9.2 포맷) |
 
 ---

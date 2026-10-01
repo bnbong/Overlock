@@ -318,15 +318,23 @@ func _is_mine(player_name: String) -> bool:
 
 
 ## 하단 고정 "내 기록" 행: 현재 트랙·난이도의 로컬 최고 기록(RecordStore) + 마지막 제출 시
-## 서버가 돌려준 순위(캐시, "제출 시점"). 기록 없으면 안내만 표시한다.
+## 서버가 돌려준 순위(캐시, "제출 시점"). 기록 없으면 안내만 표시한다. 개발용 튜닝 오버라이드로 달린
+## 연습 실행(RecordStore.is_practice)이면 best_for가 연습 기록을 돌려주므로, 제출 순위 캐시를 붙이지 않고
+## "연습 기록 · 순위 없음"으로 표시한다(연습 기록은 제출하지 않는다, LeaderboardClient.is_practice_run).
 func _update_my_record() -> void:
 	_my_record_label.add_theme_color_override("font_color", _c_main)
-	var rec: Dictionary = RecordStore.best_for(
-		LeaderboardClient.view_track_id, LeaderboardClient.view_difficulty
-	)
+	var id: String = LeaderboardClient.view_track_id
+	var diff: String = LeaderboardClient.view_difficulty
+	var rec: Dictionary = RecordStore.best_for(id, diff)
+	var practice: bool = LeaderboardClient.is_practice_run()
+	var rank: int = -1 if practice else LeaderboardClient.submitted_rank(id, diff)
+	_my_record_label.text = _my_record_text(rec, rank, practice)
+
+
+## "내 기록" 행 문구(순수 함수, 회귀 검사가 직접 부른다). rank <= 0이면 순위를 붙이지 않는다.
+static func _my_record_text(rec: Dictionary, rank: int, practice: bool) -> String:
 	if rec.is_empty():
-		_my_record_label.text = "내 기록:  아직 기록 없음"
-		return
+		return "내 기록:  아직 연습 기록 없음 · 순위 없음" if practice else "내 기록:  아직 기록 없음"
 	var line: String = (
 		"내 기록:  %s   ·   %.1f%%   ·   Cuts %d"
 		% [
@@ -335,12 +343,11 @@ func _update_my_record() -> void:
 			int(rec.get("cuts", 0)),
 		]
 	)
-	var rank: int = LeaderboardClient.submitted_rank(
-		LeaderboardClient.view_track_id, LeaderboardClient.view_difficulty
-	)
-	if rank > 0:
+	if practice:
+		line += "   ·   연습 기록 · 순위 없음"
+	elif rank > 0:
 		line += "   ·   Rank #%d (제출 시점)" % rank
-	_my_record_label.text = line
+	return line
 
 
 ## 금색 하이라이트 박스(내 행·내 기록 공용). top-3 색 강조와 달리 배경 틴트+테두리다.

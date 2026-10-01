@@ -399,6 +399,7 @@ func _render_detail(data: Dictionary) -> void:
 			]
 		)
 	)
+	_detail_meta.text += "\n" + W.fabric_note(str(data["fabric"]))
 	var desc: String = str(data.get("description", ""))
 	_detail_desc.text = desc if not desc.is_empty() else "(설명 없음)"
 	_detail_points = TrackLoader.hub_preview_points(data["track"])

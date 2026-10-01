@@ -42,7 +42,7 @@
   눈+눈썹을 한 성분으로 묶어 크롭하고, 눈동자(보라 홍채) 중심을 측정해 눈 앵커에 정렬,
   베이스는 랜드마크(코·헤어밴드·머리 폭)로 `face_base` 규격에 정규화했다(아래 "눈
   오버레이 스왑" 절).
-- **원단 128² seamless**: AI 텍스처는 이음매가 없지 않고 저주파 명암(특히 새틴 광택)이
+- **원단 128² seamless (구 타일, v2.3.0에서 교체)**: AI 텍스처는 이음매가 없지 않고 저주파 명암(특히 새틴 광택)이
   타일 반복 시 얼룩으로 드러난다. 저주파 명암을 평탄화한 뒤 대치 경계를 페더 블렌딩해
   실제 seamless 타일로 만들었다. `texture_repeat=ENABLED` 유지(대칭 MIRROR은 능직·니트
   방향성 텍스처에서 다이아몬드/모래시계 이음매를 만들어 배제).
@@ -72,13 +72,12 @@
 | `hand.png` | 원단을 누르는 손(화면 우측 손 기준, 좌측은 노드 `mirror=true`) | `LeftHand`/`RightHand` (`HandView.texture`) |
 | `presser_foot.png` | 금속 노루발(정적) | `NeedleView.foot_texture` |
 | `needle.png` | 바늘(왕복 파츠, `_bob`으로 상하 왕복) | `NeedleView.needle_texture` |
-| `fabric_cotton.png` | cotton 원단 타일(황록 평직) | `FabricSurface.set_fabric("cotton")` |
-| `fabric_denim.png` | denim 원단 타일(인디고 능직) | `FabricSurface.set_fabric("denim")` |
-| `fabric_silk.png` | silk 원단 타일(라벤더 새틴) | `FabricSurface.set_fabric("silk")` |
-| `fabric_knit.png` | knit 원단 타일(웜톤 니트) | `FabricSurface.set_fabric("knit")` |
+| `fabrics/fabric_<id>.png` | 원단 8종(cotton·denim·silk·knit·felt·satin·wool·leather) 바닥 타일. 사실적 원단 원본을 이음매 없이 가공한 1024² 사본이며 런타임 import는 512²입니다(아래 "사실적 원단 타일" 절) | `FabricSurface.set_fabric(id)` · `FabricSurface.swatch_source(id)` |
+| `src/legacy_fabric_128/fabric_<id>.png` | (롤백용) 구 128² 원단 타일 4종(cotton·denim·silk·knit). `src/`라서 import되지 않습니다 | 런타임 미사용 |
 | `menu_bg.png` | 메인 메뉴 재봉실 무드 배경(주간) | `Main/BackgroundArt` |
 | `title_plaque.png` | 타이틀 자수 패치 플라크(글자 없음, `OVERLOCK` 텍스트를 위에 겹침) | `Main/Menu/TitlePlaque` |
 | `dev_profile.png` | 개발자 프로필 아바타(개발자 제공 아바타를 256² 원형 크롭 + 재봉 실보라 링으로 가공) | `Main` 프로필 칩 · `ProfileDialog` |
+| `drift_folds/fold_height.png` | 드리프트 원단 주름 높이맵(R 채널 = 높이, 능선은 세로). 색으로 그리지 않는 데이터 에셋 | `DriftFoldShape`(공유 격자·잔여 흔적·완주 마스크) |
 
 ## 얼굴 표정 오버레이 (레거시 폴백 — 스왑 슬롯이 비었을 때만)
 
@@ -93,6 +92,16 @@
 
 원단 타일은 트랙 JSON의 `fabric` 필드로 런타임 결정된다
 (`PresentationController._setup_fabric` → `FabricSurface.set_fabric`).
+
+## 사실적 원단 타일 (`fabrics/fabric_<id>.png`, v2.3.0)
+
+v2.3.0부터 바닥 원단 8종은 모두 `fabrics/fabric_<id>.png`를 씁니다. 원본은 사용자가 생성해 제공한 `fabrics_realistic_v1/fabric_<id>.png`(1254², 알파 없음)이고, 원본 파일은 수정하지 않았습니다. 원본 폴더에는 `.gdignore`를 두어 import와 내보내기에서 제외했습니다. 구 128² 타일 4종은 `src/legacy_fabric_128/`로 옮겨 롤백용으로 보존했습니다. 타일 파일이 없을 때만 `FabricSurface`가 대표색과 격자로 그리는 절차적 바닥을 씁니다.
+
+- **이음매 처리**: 원본은 반복 경계의 픽셀 차이가 내부 이웃 픽셀 차이의 1.3~3.2배라서, 그대로 깔면 3×3 반복에서 경계선이 보입니다. `fabrics_realistic_v1/make_tileable.py`가 원본을 정사각형으로 잘라 남는 띠(66~211px)를 반대쪽 가장자리에 smoothstep으로 섞습니다. 띠 폭은 반대쪽 가장자리와 가장 비슷한 값을 골라 조직의 위상이 어긋나지 않게 했습니다. 그 뒤 3×3으로 이어 붙인 상태에서 Lanczos로 1024²까지 줄였습니다. 가공 후 경계 차이는 내부 차이의 0.88~1.04배입니다. 타일을 다시 만들려면 이 스크립트를 실행하고, 출력된 평균색으로 `FabricSurface.FABRIC_BASE`를 함께 갱신합니다.
+- **import 설정**: `compress/mode=0`(무손실), `mipmaps/generate=true`, `process/size_limit=512`, `detect_3d/compress_to=0`, `process/fix_alpha_border=false`입니다. 구 원단 타일과 같은 무손실 방식을 유지해 웹(WebGL 2)에서 VRAM 압축 포맷 지원 여부에 영향을 받지 않습니다. 런타임 텍스처는 512² RGB와 밉맵으로 약 1MiB이고, 내보내기 크기는 장당 약 0.5~0.7MB입니다.
+- **월드 반복 크기**: `FabricSurface._draw_textured()`는 텍스처 픽셀 크기와 무관하게 `FabricSurface.TILE_WORLD`의 월드 크기로 타일을 깝니다. 512를 기본으로 하여 구 타일의 조직 밀도와 비슷하게 맞췄고, 조직이 촘촘한 데님은 768, 새틴은 640으로 넓혔습니다. 128로 깔면 조직 한 주기가 SubViewport 1px 안팎이 되어 평탄한 색으로 뭉개집니다. 바닥 노드는 밉맵 선형 필터(`TEXTURE_FILTER_LINEAR_WITH_MIPMAPS`)로 그립니다.
+- **스와치**: 트랙 선택 화면과 트랙 에디터의 견본은 `FabricSurface.swatch_source()`가 돌려주는 `region`으로 타일 중앙을 자릅니다. 이 영역은 바닥 월드 70px(`SWATCH_WORLD`)에 해당하므로 견본 속 조직 크기가 바닥과 같은 비율을 유지합니다. 견본도 밉맵 필터로 그립니다.
+- **알려진 한계**: Mode 7 셰이더는 SubViewport 텍스처를 밉맵 없이 한 번만 샘플합니다. 그래서 중거리와 원경에서 생기는 모아레·반짝임은 타일 교체 전과 비슷한 수준으로 남아 있습니다. 울 타일에는 원본에 있던 옅은 무늬가 있어, 넓은 영역을 내려다보면 512 간격의 반복이 약하게 드러납니다.
 
 ## 얼굴 배치(구도 결함 수정 2)
 
@@ -201,3 +210,15 @@ x를 640, 헤어밴드 상단(콘텐츠 top)을 y=0에 맞춰 1280×720 캔버�
   깐 뒤 다음 상태만 페이드 알파로 얹으므로, 실루엣이 같으면 전환 내내 얼굴이 불투명하게
   유지되고 바깥 윤곽(머리카락·헤어밴드·볼 외곽)이 떨리지 않는다. 중앙 창만
   크로스디졸브된다.
+
+## 드리프트 원단 주름 높이맵 (`drift_folds/fold_height.png`, v2.3.0)
+
+`fold_height.png`는 사용자가 image_gen으로 생성해 제공한 1254×1254 불투명 RGB PNG입니다(생성 기록은 `docs/concepts/drift-fabric-folds-prompts.json`, 컨셉은 `docs/concepts/drift-fabric-folds-v1.png`에 있습니다). 검정은 높이 0이고 밝을수록 높은 주름이며, 길쭉한 능선 세 개가 이미지 세로 방향으로 놓여 있습니다. 원본 파일은 수정하지 않았습니다.
+
+- **import 설정**: `compress/mode=0`(lossless), `mipmaps/generate=false`, `detect_3d/compress_to=0`(3D에서 쓰여도 VRAM 압축으로 바뀌지 않음), `process/fix_alpha_border=false`, `process/size_limit=256`입니다. 256²으로 줄여 저장해도 공유 격자(22×12 셀)와 64² 텍스처를 만들기에 충분하고, 내보내기 크기는 약 29KB입니다.
+- **데이터로만 읽기**: `DriftFoldShape`가 시작할 때 한 번 `get_image()`로 R 값을 읽습니다. 셰이더 uniform으로 넘기지 않으므로 `source_color` 힌트나 sRGB 변환이 적용되지 않고, 검정 배경을 별도 이미지로 그리지도 않습니다. 생성 이미지의 경계값은 정밀하지 않으므로 런타임에서 clamp와 가장자리 smoothstep 감쇠로 테두리 높이를 0으로 보장합니다.
+- **회전·반전**: 능선(이미지 세로)을 진행 방향에 맞춰 놓고, 왼쪽 드리프트는 측방 축을 반대로 놓아 좌우가 반전됩니다. 광원은 카메라 기준이라 반전된 패치에서도 그림자 방향이 그대로입니다.
+- **파생 텍스처**: 런타임에 64² `ImageTexture` 두 장을 만듭니다. 잔여 흔적 텍스처는 작은 흐림에서 큰 흐림을 뺀 음영(능선 밝게, 골짜기 어둡게)이고, 완주 마스크는 흰색에 높이 알파를 넣은 것입니다. 원단 색은 이 에셋에서 가져오지 않고 바닥 원단 텍스처를 그대로 샘플합니다.
+- **WebGL**: 웹 빌드에서 `get_image()` 읽기와 셰이더 표시는 이 작업에서 실기로 확인하지 못했습니다. 이미지를 읽지 못하면 경고만 남기고 주름 연출을 끕니다(게임 진행에는 영향이 없습니다).
+
+자세한 투영·시간 모델·상한은 `docs/presentation.md` §15에 정리했습니다.

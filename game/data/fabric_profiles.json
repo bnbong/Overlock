@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "default": "cotton",
+  "fields": {
+    "speed": "speed_table, min_speed, max_speed multiplier",
+    "steer_tau": "steer_tau (steering lag time constant) multiplier",
+    "risk_gain": "risk_gain_rate multiplier, applied only after danger_threshold",
+    "label": "Korean fabric name",
+    "desc": "Korean one-line play difference shown in UI"
+  },
+  "profiles": {
+    "cotton": {"speed": 1.0, "steer_tau": 1.0, "risk_gain": 1.0, "label": "면", "desc": "표준 조작감"},
+    "denim": {"speed": 0.94, "steer_tau": 0.9, "risk_gain": 0.85, "label": "데님", "desc": "조금 느리지만 반응이 빠르고 위험이 덜 쌓임"},
+    "silk": {"speed": 1.04, "steer_tau": 1.15, "risk_gain": 1.1, "label": "실크", "desc": "조금 빠르지만 반응이 늦고 위험이 더 쌓임"},
+    "knit": {"speed": 0.98, "steer_tau": 1.08, "risk_gain": 0.95, "label": "니트", "desc": "약간 느리고 반응이 조금 늦음"},
+    "wool": {"speed": 0.95, "steer_tau": 1.0, "risk_gain": 0.9, "label": "울", "desc": "느리고 위험이 덜 쌓임"},
+    "felt": {"speed": 0.96, "steer_tau": 0.88, "risk_gain": 0.9, "label": "펠트", "desc": "느리지만 반응이 빠르고 위험이 덜 쌓임"},
+    "satin": {"speed": 1.02, "steer_tau": 1.1, "risk_gain": 1.05, "label": "새틴", "desc": "약간 빠르고 반응이 늦음"},
+    "leather": {"speed": 0.92, "steer_tau": 0.95, "risk_gain": 0.85, "label": "가죽", "desc": "가장 느리지만 위험이 덜 쌓임"}
+  }
+}

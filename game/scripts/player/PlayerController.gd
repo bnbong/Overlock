@@ -43,7 +43,17 @@ var autopilot_target_heading: float = 0.0
 # 읽기 전용 계약 — 물리 틱(simulate)과 해제 경로(골무·엄마찬스·이탈 리셋·reset_state)에서만 바뀐다.
 var cut_pending_timer: float = 0.0
 
+# 원단별 주행 배율(v2.3.0, docs/fabric_profiles.md). 런 시작 시 RaceDirector가 set_fabric_profile로
+# 한 번 넘긴다. 전역 Tuning은 그대로 두고 여기 배율을 곱한 effective 값만 쓴다(다음 트랙으로 누적 없음).
+# 미설정이면 면(cotton, 전부 1.0)이며 x*1.0은 정확히 x라 원단 도입 전 물리와 비트 단위로 같다.
+# fabric_id는 실제 적용 중인 원단 id(표에 없는 값이면 "cotton")로 읽기 전용이다.
+var fabric_id: String = FabricProfile.DEFAULT_FABRIC
+
 var _just_cut: bool = false
+
+var _fabric_speed_mult: float = 1.0
+var _fabric_steer_tau_mult: float = 1.0
+var _fabric_risk_gain_mult: float = 1.0
 
 @onready var _needle_visual: Polygon2D = $NeedleVisual
 
@@ -52,7 +62,7 @@ func reset_state(start_pos: Vector2, start_heading: float) -> void:
 	position = start_pos
 	heading = start_heading
 	speed_index = 1
-	speed = Tuning.speed_table[0]
+	speed = effective_speed_for_index(1)
 	target_steer = 0.0
 	actual_steer = 0.0
 	risk = 0.0
@@ -68,6 +78,64 @@ func reset_state(start_pos: Vector2, start_heading: float) -> void:
 	_just_cut = false
 	if _needle_visual != null:
 		_needle_visual.rotation = heading
+
+
+## 원단 주행 프로필 적용(FabricProfile.for_fabric 결과). 런 시작 시 한 번 호출하며 reset_state 앞뒤
+## 어느 쪽이어도 된다(현재 단계의 speed를 새 배율로 다시 맞춘다). 배율이 없거나 0 이하·비정상이면 1.0.
+func set_fabric_profile(profile: Dictionary) -> void:
+	fabric_id = str(profile.get("fabric", FabricProfile.DEFAULT_FABRIC))
+	_fabric_speed_mult = _sane_mult(profile.get("speed", 1.0))
+	_fabric_steer_tau_mult = _sane_mult(profile.get("steer_tau", 1.0))
+	_fabric_risk_gain_mult = _sane_mult(profile.get("risk_gain", 1.0))
+	speed = effective_speed_for_index(speed_index)
+
+
+## 현재 적용 중인 배율(읽기 전용 복사본). 고스트·기록 메타데이터·회귀 검사용.
+func fabric_multipliers() -> Dictionary:
+	return {
+		"fabric": fabric_id,
+		"speed": _fabric_speed_mult,
+		"steer_tau": _fabric_steer_tau_mult,
+		"risk_gain": _fabric_risk_gain_mult,
+	}
+
+
+## 속도 단계(1..speed_step_count)의 원단 반영 속도. 모든 speed 대입(reset·기어·부상·이탈 복귀)이
+## 이 함수 하나를 거친다.
+func effective_speed_for_index(index: int) -> float:
+	return Tuning.speed_table[clampi(index, 1, Tuning.speed_step_count) - 1] * _fabric_speed_mult
+
+
+## 지금 실제로 달리는 속도(px/s, 원단 반영). 엄마 찬스 자동 진행 거리도 이 값을 쓴다(= speed).
+func effective_speed() -> float:
+	return speed
+
+
+## 위험 속도 계수와 회전력 계산이 함께 쓰는 원단 반영 최소/최대 속도. 분모까지 같은 배율이라
+## 같은 단계의 속도 비율(위험 속도 계수·회전 각속도)은 원단과 무관하게 같다.
+func effective_min_speed() -> float:
+	return Tuning.min_speed * _fabric_speed_mult
+
+
+func effective_max_speed() -> float:
+	return Tuning.max_speed * _fabric_speed_mult
+
+
+func effective_steer_tau() -> float:
+	return Tuning.steer_tau * _fabric_steer_tau_mult
+
+
+func effective_risk_gain_rate() -> float:
+	return Tuning.risk_gain_rate * _fabric_risk_gain_mult
+
+
+static func _sane_mult(v: Variant) -> float:
+	if not (v is float or v is int):
+		return 1.0
+	var f: float = float(v)
+	if is_nan(f) or is_inf(f) or f <= 0.0:
+		return 1.0
+	return f
 
 
 ## 부상 사전 연출(pending) 중인가(표현 계층 소비용 읽기 전용).
@@ -137,7 +205,7 @@ func _apply_speed_change(delta_step: int) -> void:
 	if delta_step == 0 or stun_timer > 0.0 or offfabric_timer > 0.0:
 		return
 	speed_index = clampi(speed_index + delta_step, 1, Tuning.speed_step_count)
-	speed = Tuning.speed_table[speed_index - 1]
+	speed = effective_speed_for_index(speed_index)
 
 
 func _update_steering(input: InputFrame, delta: float) -> void:
@@ -167,7 +235,7 @@ func _update_steering(input: InputFrame, delta: float) -> void:
 	# steer_tau가 랙의 질감(≈시간지연)을 정한다. move_toward(선형 고정 속도) 대비
 	# 반전 같은 큰 갭에서 즉시 빠르게 움직이고 목표 근처에서 부드럽게 수렴한다(§4.3 지연 유지).
 	# 60Hz 고정 스텝에서 follow_alpha는 상수라 결정론 불변.
-	var follow_alpha: float = 1.0 - exp(-delta / Tuning.steer_tau)
+	var follow_alpha: float = 1.0 - exp(-delta / effective_steer_tau())
 	actual_steer += (target_steer - actual_steer) * follow_alpha
 
 
@@ -176,7 +244,7 @@ func _update_movement(delta: float) -> void:
 	# floor=1.0이면 회전각속도가 속도와 무관 → 회전반경 ∝ 속도(저속=급회전, 고속=완만한 큰 호).
 	# 이는 저속에서도 코너를 못 도는 구(舊) "전 속도 동일 최소반경(≈136px)" 문제를 해소한다.
 	# 조향 지연(steer_tau 지수 추종)이라는 핵심 기믹(§4.3)은 그대로 살아 있다.
-	var turn_speed_factor: float = maxf(speed / Tuning.max_speed, Tuning.steer_speed_floor)
+	var turn_speed_factor: float = maxf(speed / effective_max_speed(), Tuning.steer_speed_floor)
 	# 드리프트 중에는 조향 각속도에 drift_turn_mult를 곱해 회전반경을 1/배율로 줄인다(피벗 드리프트).
 	# 각속도만 스케일하므로 조향 입력/지연(target/actual_steer)과 속도는 불변 — 반경만 작아진다.
 	var drift_mult: float = Tuning.drift_turn_mult if is_drifting else 1.0
@@ -216,7 +284,7 @@ func _update_risk(delta: float) -> void:
 		_advance_cut_pending(delta)
 		return
 	var steer_gap: float = absf(target_steer - actual_steer)
-	var speed_factor: float = inverse_lerp(Tuning.min_speed, Tuning.max_speed, speed)
+	var speed_factor: float = inverse_lerp(effective_min_speed(), effective_max_speed(), speed)
 	var speed_gate: float = pow(speed_factor, Tuning.risk_speed_exp)
 	var steer_mag: float = maxf(absf(target_steer), absf(actual_steer))
 	var proximity: float = _finger_proximity(steer_mag)
@@ -228,7 +296,7 @@ func _update_risk(delta: float) -> void:
 		bias = Tuning.drift_static_bias
 	var gain: float = speed_gate * steer_mag * proximity * (steer_gap + bias)
 	if gain > Tuning.danger_threshold:
-		risk += gain * Tuning.risk_gain_rate * delta
+		risk += gain * effective_risk_gain_rate() * delta
 	else:
 		risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
 	# 골무(thimble) 활성 중에는 risk를 정상 누적하되 0.95로 상한을 둔다 — 절대 1.0에 도달하지
@@ -285,7 +353,7 @@ func _trigger_cut() -> void:
 	risk = 0.0
 	stun_timer = Tuning.stun_duration  # 조작 잠금
 	speed_index = 1  # 1단으로 강제 하락
-	speed = Tuning.speed_table[0]
+	speed = effective_speed_for_index(1)
 	_just_cut = true  # RaceDirector가 이번 틱에 소비 → cuts += 1
 
 
@@ -296,7 +364,7 @@ func off_fabric_reset(reset_pos: Vector2, reset_heading: float) -> void:
 	position = reset_pos
 	heading = reset_heading
 	speed_index = 1
-	speed = Tuning.speed_table[0]
+	speed = effective_speed_for_index(1)
 	target_steer = 0.0
 	actual_steer = 0.0
 	risk = 0.0

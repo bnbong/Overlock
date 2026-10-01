@@ -1,5 +1,6 @@
 extends "res://menu_ux_regression/check_prefs.gd"
-## 메뉴 UX 회귀 검사(v2.2.1 P1: 모바일 메뉴 터치 배치, 설정 저장/취소, 리더보드 오래된 응답).
+## 메뉴 UX 회귀 검사(v2.2.1 P1: 모바일 메뉴 터치 배치, 설정 저장/취소, 리더보드 오래된 응답,
+## v2.3.0 리더보드 "내 기록" 행의 연습 기록 표시·연습 기록 미제출).
 ## run.sh 가 사본 프로젝트에서 두 번 실행한다: 데스크톱(배치 불변·설정·닉네임·리더보드)과
 ## `-- --touch-controls`(터치 배치). 리더보드는 127.0.0.1 지연 스텁(stub_server.py)에만 요청한다.
 ## 인자: --stub=<URL> --baseline=<desktop_baseline.json> [--only=lb|prefs|nick|layout]
@@ -159,6 +160,7 @@ func _check_leaderboard() -> void:
 	retry = _retry_button()
 	_ok(retry != null and retry.is_visible_in_tree(), "retry button visible after timeout")
 	await _check_leaderboard_sync_fail()
+	_check_my_record_practice()
 	_ok(await _goto(MAIN), "leave leaderboard")
 
 
@@ -182,3 +184,25 @@ func _check_leaderboard_sync_fail() -> void:
 		text = status.text if status != null else "(no status)"
 		_ok(not ("불러오는 중" in text), "retry sync failure not stuck loading: " + text)
 	LeaderboardClient.base_url = str(_args.get("stub", ""))
+
+
+## v2.3.0: 개발용 튜닝 오버라이드(practice) 실행이면 "내 기록" 행에 제출 순위를 붙이지 않고, 기록도 제출하지 않는다.
+func _check_my_record_practice() -> void:
+	var scr: Script = load("res://scripts/ui/LeaderboardScreen.gd")
+	var rec: Dictionary = {"final_time_ms": 61000, "accuracy": 97.0, "cuts": 1}
+	var t: String = str(scr.call("_my_record_text", rec, 5, true))
+	_ok("연습 기록 · 순위 없음" in t and not ("Rank" in t), "practice row has no rank: " + t)
+	t = str(scr.call("_my_record_text", rec, 5, false))
+	_ok("Rank #5" in t and not ("연습" in t), "official row keeps rank: " + t)
+	t = str(scr.call("_my_record_text", {}, 5, true))
+	_ok("아직 연습 기록 없음" in t and not ("Rank" in t), "empty practice row: " + t)
+	t = str(scr.call("_my_record_text", {}, -1, false))
+	_ok(t == "내 기록:  아직 기록 없음", "empty official row: " + t)
+	# 연습 판정은 RecordStore.is_practice 를 따른다(이 사본은 튜닝 오버라이드가 없어 정식 실행).
+	var store_says: bool = (
+		RecordStore.has_method("is_practice") and bool(RecordStore.call("is_practice"))
+	)
+	_ok(
+		bool(LeaderboardClient.call("is_practice_run")) == store_says,
+		"is_practice_run follows RecordStore.is_practice"
+	)

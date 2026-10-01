@@ -28,12 +28,11 @@ const BG_COLOR: Color = Color(0.09, 0.072, 0.062)  # 웜톤 어두운 배경(재
 const BAND_COLOR: Color = Color(0.34, 0.24, 0.44, 0.28)  # 재봉 코리도(fail 폭, 옅게)
 const CENTER_COLOR: Color = Color(0.72, 0.56, 0.96, 0.95)  # 서킷 윤곽(중심선, 실 보라)
 const TRAIL_COLOR: Color = Color(0.90, 0.28, 0.26, 1.0)  # 내 재봉 자국(빨간 실)
-# 드리프트 스키드(원경 단순화 톤). 원단 명암 변조를 흉내 낸 뮤트 탄색 — 빨간 트레일·보라
-# 중심선과 구별되며 트레일 뒤에 옅게 깔린다(§13 줌아웃 반영).
-const SKID_COLOR: Color = Color(0.82, 0.75, 0.44, 0.80)
-const SKID_WIDTH: float = 2.5  # 줌아웃 스키드 dash 두께(스크린 고정)
-const SKID_OFFSET: float = 5.0  # intensity=1에서 스크린 측방 오프셋(px)
-const SKID_DASH: float = 3.5  # 융기 dash 반길이(px)
+# 드리프트 주름(원경 단순화 톤). 원단 명암을 흉내 낸 뮤트 탄색 능선 + 어두운 접지 그림자 —
+# 빨간 트레일·보라 중심선과 구별되며 트레일 뒤에 깔린다(§13 줌아웃, §15 주름).
+const SKID_COLOR: Color = Color(0.86, 0.78, 0.50, 0.85)
+const SKID_SHADOW: Color = Color(0.03, 0.02, 0.02, 0.6)
+const SKID_SHADOW_OFFSET: float = 1.2  # 그림자가 능선보다 아래·오른쪽으로 밀리는 스크린 px
 const START_COLOR: Color = Color(0.40, 0.90, 0.55, 1.0)
 const FINISH_COLOR: Color = Color(0.98, 0.84, 0.34, 1.0)
 const CAPTION_COLOR: Color = Color(0.86, 0.79, 0.66)  # 따뜻한 크림 캡션
@@ -43,7 +42,7 @@ var _active: bool = false
 var _time: float = 0.0
 var _track_points: PackedVector2Array = PackedVector2Array()
 var _trail_points: PackedVector2Array = PackedVector2Array()
-var _skid_marks: Array = []  # 드리프트 스키드 자국(각 {"pos","dir","intensity"}, 줌아웃 반영)
+var _skid_marks: Array = []  # 드리프트 주름 레코드(DriftSkid.get_full_marks, 줌아웃 반영)
 var _fail_width: float = 90.0
 var _player_pos: Vector2 = Vector2.ZERO
 var _bbox: Rect2 = Rect2()
@@ -134,7 +133,7 @@ func _draw_track(vp: Vector2) -> void:
 	draw_polyline(track_screen, BAND_COLOR, band_w)
 	# 서킷 윤곽(중심선) — 스크린 고정 두께로 또렷하게.
 	draw_polyline(track_screen, CENTER_COLOR, 2.5)
-	# 드리프트 스키드 자국 — 트레일 뒤(아래)에 옅은 융기 dash로 먼저 깐다.
+	# 드리프트 주름 자국 — 트레일 뒤(아래)에 낮은 능선 메시로 먼저 깐다(주행 화면과 같은 위치·방향).
 	if not _skid_marks.is_empty():
 		_draw_skids(focus, scale, origin)
 	# 내 재봉 자국(전체 궤적).
@@ -146,48 +145,32 @@ func _draw_track(vp: Vector2) -> void:
 	draw_circle(_project_point(last, focus, scale, origin), 6.0, FINISH_COLOR)
 
 
-## 드리프트 스키드 자국을 줌아웃 뷰에 그린다(원경 단순화). 각 자국을 스크린으로 투영하고,
-## 이웃 자국으로 접선을 추정해 드리프트 방향(dir 부호)으로 측방 오프셋된 짧은 융기 dash를
-## 그린다. 원단 명암 변조를 흉내 낸 뮤트 톤(SKID_COLOR)으로 트레일 뒤에 옅게 깔린다.
+## 드리프트 주름 자국을 줌아웃 뷰에 그린다(원경 단순화). DriftSkid 레코드가 미리 만든 잔여 흔적
+## 메시(월드 좌표 "rv", UV "ru")를 줌 변환 그대로 그리므로 주행 화면의 주름과 위치·방향·크기가 같다.
+## 능선 마스크(DriftFoldShape.crest_tex)를 어두운 그림자(살짝 아래로 밀림) + 원단 톤 능선 두 번 칠해
+## 낮은 입체감을 남긴다. 트레일 뒤에 깔린다.
 func _draw_skids(focus: Vector2, scale: float, origin: Vector2) -> void:
-	var count: int = _skid_marks.size()
-	# 자국 위치를 미리 투영해 접선 추정에 재사용.
-	var pts: PackedVector2Array = PackedVector2Array()
-	pts.resize(count)
-	for i in range(count):
-		pts[i] = _project_point(Vector2(_skid_marks[i]["pos"]), focus, scale, origin)
-	for i in range(count):
-		var dir: float = float(_skid_marks[i]["dir"])
-		var s: float = signf(dir)
-		if s == 0.0:
-			continue
-		var intensity: float = clampf(float(_skid_marks[i]["intensity"]), 0.0, 1.0)
-		var tangent: Vector2 = _skid_tangent(pts, i, count)
-		var perp: Vector2 = Vector2(-tangent.y, tangent.x) * s
-		var center: Vector2 = pts[i] + perp * (SKID_OFFSET * intensity)
-		var half: Vector2 = tangent * (SKID_DASH + SKID_DASH * intensity)
-		draw_line(center - half, center + half, SKID_COLOR, SKID_WIDTH)
-
-
-## 투영된 자국 배열에서 인접 점 방향으로 접선을 추정(끝점은 한쪽 이웃만).
-func _skid_tangent(pts: PackedVector2Array, i: int, count: int) -> Vector2:
-	var a: Vector2
-	var b: Vector2
-	if count < 2:
-		return Vector2.RIGHT
-	if i == 0:
-		a = pts[0]
-		b = pts[1]
-	elif i == count - 1:
-		a = pts[count - 2]
-		b = pts[count - 1]
-	else:
-		a = pts[i - 1]
-		b = pts[i + 1]
-	var d: Vector2 = b - a
-	if d.length_squared() < 0.0001:
-		return Vector2.RIGHT
-	return d.normalized()
+	var tex: Texture2D = DriftFoldShape.crest_tex
+	if tex == null:
+		return
+	var ci: RID = get_canvas_item()
+	var rid: RID = tex.get_rid()
+	var idx: PackedInt32Array = DriftFoldShape.grid_indices(DriftSkid.RES_U, DriftSkid.RES_V, 0)
+	var shadow: PackedColorArray = PackedColorArray([SKID_SHADOW])
+	var crest: PackedColorArray = PackedColorArray([SKID_COLOR])
+	var passes: Array = [
+		[Vector2(SKID_SHADOW_OFFSET, SKID_SHADOW_OFFSET), shadow],
+		[Vector2.ZERO, crest],
+	]
+	for pass_def in passes:
+		draw_set_transform(origin - focus * scale + Vector2(pass_def[0]), 0.0, Vector2(scale, scale))
+		for m in _skid_marks:
+			if not (m is Dictionary and m.has("rv") and m.has("ru")):
+				continue
+			RenderingServer.canvas_item_add_triangle_array(
+				ci, idx, m["rv"], pass_def[1], m["ru"], PackedInt32Array(), PackedFloat32Array(), rid
+			)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## 등급 문자를 소문자 tier로 환산해 해당 일러스트 1장만 지연 로드한다(ResultScreen과 공유하는
