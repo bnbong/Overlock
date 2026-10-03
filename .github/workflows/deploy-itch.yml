@@ -127,8 +127,17 @@ jobs:
         run: |
           set -eu
           mkdir -p ~/butler
-          # broth.itch.ovh 는 itch.io 공식 butler 배포 채널(LATEST = 최신 안정판).
-          curl -fL -o /tmp/butler.zip "https://broth.itch.ovh/butler/linux-amd64/LATEST/archive/default"
+          # GitHub Releases(itchio/butler)를 우선 사용하고 broth.itch.ovh는 폴백이다.
+          # (러너에서 broth.itch.ovh DNS 해석이 실패하는 경우가 있어 순서를 이렇게 둔다.)
+          primary_url="https://github.com/itchio/butler/releases/latest/download/butler-linux-amd64.zip"
+          fallback_url="https://broth.itch.ovh/butler/linux-amd64/LATEST/archive/default"
+          if ! curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -o /tmp/butler.zip "${primary_url}"; then
+            echo "::warning::GitHub Releases 다운로드 실패, broth.itch.ovh 로 재시도합니다."
+            if ! curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -o /tmp/butler.zip "${fallback_url}"; then
+              echo "::error::butler 다운로드 실패. 시도한 주소: 1) ${primary_url} 2) ${fallback_url}"
+              exit 1
+            fi
+          fi
           # butler 실행에 필요한 7z.so 등 동봉 파일과 함께 압축을 푼다.
           unzip -o /tmp/butler.zip -d ~/butler
           chmod +x ~/butler/butler
