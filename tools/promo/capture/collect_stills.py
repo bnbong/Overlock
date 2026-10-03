@@ -12,7 +12,7 @@ import re
 import shutil
 import sys
 
-TRACK = {"heart": "heart01", "tee": "tee01", "star": "star01"}
+TRACK = {"heart": "heart01", "tee": "tee01", "star": "star01", "cat": "cat01", "hub": "hub"}
 RES = {"1080": "1920x1080", "4k": "3840x2160"}
 
 

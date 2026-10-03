@@ -432,13 +432,16 @@ func _set_empty_state(empty: bool) -> void:
 		_fabric_row.visible = false
 
 
-## Best: 이 트랙·난이도의 개인 최고. 개발용 튜닝(연습)이면 연습 기록을 표시한다.
+## Best: 이 트랙·난이도의 개인 최고(등급 우선, 같은 등급이면 빠른 시간)를 "Best: S 00:13.950"처럼 등급과
+## 함께 보인다. 개발용 튜닝(연습)이면 연습 기록을 표시한다.
 func _update_best(id: String, diff: String) -> void:
 	var best: Dictionary = RecordStore.best_for(id, diff)
 	var head: String = "연습 Best: " if RecordStore.is_practice() else "Best: "
 	var text: String = head + "--:--.---"
 	if not best.is_empty():
-		text = head + _format_ms(int(best.get("final_time_ms", 0)))
+		var grade: String = RecordStore.grade_of(best)
+		var g: String = grade + " " if not grade.is_empty() else ""
+		text = head + g + _format_ms(int(best.get("final_time_ms", 0)))
 	_best_time_label.text = text
 	_ghost_row.refresh(id, diff)
 

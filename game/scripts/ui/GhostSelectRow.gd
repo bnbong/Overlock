@@ -12,7 +12,7 @@ extends VBoxContainer
 const TEXT_COLOR: Color = Color(0.9, 0.86, 0.78, 1.0)
 const POLICY_COLOR: Color = Color(0.78, 0.72, 0.86, 1.0)
 const OUTLINE: Color = Color(0.278, 0.203, 0.153, 1.0)
-const POLICY_TEXT: String = "로컬 최고·고스트는 패널티 포함 시간 기준이고, 온라인 순위는 등급을 먼저 봅니다."
+const POLICY_TEXT: String = "로컬 최고·고스트도 온라인 순위처럼 등급 우선, 같은 등급이면 빠른 시간입니다."
 const PRACTICE_TEXT: String = "개발용 튜닝 적용 중: 기록과 고스트를 연습 기록으로 따로 저장합니다. "
 const STATE_TEXTS: Dictionary = {
 	"ready": "개인 최고 고스트가 미니맵에서 함께 달립니다",

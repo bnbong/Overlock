@@ -22,8 +22,9 @@ extends Node2D
 
 ## 개인 고스트(v2.3.0, docs/architecture.md §3.3): 주행 틱마다 GhostRun이 위치 스냅샷과 10구간 통과를
 ## 기록하고(일시정지·튜토리얼·카운트다운·완주 줌아웃 제외), 완주 시 RecordStore.submit_run이 최고 기록과
-## 고스트를 함께 저장한다. 재생은 시작 시 읽은 개인 최고 고스트를 같은 주행 경과 시간으로 미니맵에만
-## 그린다. 고스트는 시뮬레이션 상태를 읽기만 하므로 충돌·아이템·RISK·기록에 영향을 주지 않는다.
+## 고스트를 함께 저장한다. 재생은 시작 시 읽은 개인 최고 고스트를 같은 주행 경과 시간으로 미니맵과 필드
+## (GhostFieldLayer)에 그린다. 구간 통과는 고스트 데이터(splits)로만 기록하고 화면에는 보이지 않는다.
+## 고스트는 시뮬레이션 상태를 읽기만 하므로 충돌·아이템·RISK·기록에 영향을 주지 않는다.
 ## 에디터 테스트 플레이·중도 포기·재시작은 저장하지 않는다(완주 경로가 아니거나 editor_test 분기).
 
 ## 자동 일시정지(v2.2.1, docs/mobile.md §4.4): 카운트다운·주행 중 세로 전환(OrientationGuard)이나
@@ -96,6 +97,8 @@ var _last_s: float = 0.0
 var _ghost_rec: GhostRun = null
 var _ghost_play: GhostRun = null
 var _ghost_notice: String = ""
+# 필드 위 고스트 마커(ItemLayer 안, 재생할 고스트가 있을 때만 만든다).
+var _ghost_field: GhostFieldLayer = null
 # 이번 런의 원단 주행 특성 id(_apply_fabric_profile이 TrackData.fabric으로 정한다).
 var _fabric_id: String = ""
 
@@ -137,6 +140,7 @@ func _ready() -> void:
 	_place_finish_line()
 	_init_player()
 	_hud.setup(_track)
+	_hud.sync_minimap(_player, 0.0)
 	_hud.set_pause_visible(false)
 	_hud.set_item_slots(_slots)
 	_setup_ghost()
@@ -433,12 +437,14 @@ func _tick_running(delta: float) -> void:
 	else:
 		_offfabric_dwell = 0.0
 	_stats.accumulate(delta, _player.speed_index, band, err, just_cut)
-	var crossed: Array = _ghost_rec.on_tick(
-		_elapsed, _player.position, _player.heading, _last_s, _stats.penalty_time
-	)
-	_show_split_deltas(crossed)
+	# 구간 통과는 고스트 데이터(splits)로만 기록한다(주행 중·결과 화면 모두 표시하지 않음).
+	_ghost_rec.on_tick(_elapsed, _player.position, _player.heading, _last_s, _stats.penalty_time)
 	if _ghost_play != null:
-		_hud.set_ghost_state(_ghost_play.state_at(_elapsed * 1000.0))
+		# 미니맵과 필드 마커가 같은 물리 시각의 고스트 상태를 쓴다.
+		var gs: Dictionary = _ghost_play.state_at(_elapsed * 1000.0)
+		_hud.set_ghost_state(gs)
+		if _ghost_field != null:
+			_ghost_field.set_state(gs)
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
 	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
 		_finish()
@@ -611,7 +617,6 @@ func _finish() -> void:
 	# 기록 메타(docs/architecture.md §3.2): 연습(개발용 튜닝) 여부는 기록 키를, 트랙 지문은 고스트 유효성을 정한다.
 	result["practice"] = RecordStore.is_practice()
 	result["track_fingerprint"] = RecordStore.fingerprint_for(GameState.track_id)
-	# 마지막 구간 차이는 HUD가 숨는 완주 줌아웃 대신 결과 화면(split_deltas)에서 보인다.
 	_ghost_rec.on_finish(result, _player.position, _player.heading, _last_s)
 	# 에디터 테스트 플레이는 결과 통계만 보여 주고 개인 최고 기록·고스트를 갱신하지 않는다(서버 제출도
 	# 결과 화면이 editor_test 표시로 막는다). 일반 플레이는 기존대로 즉시 기록한다.
@@ -723,40 +728,46 @@ func _setup_ghost() -> void:
 	var loaded: Dictionary = RecordStore.load_ghost(GameState.track_id, GameState.difficulty)
 	if bool(loaded["ok"]):
 		_ghost_play = loaded["run"]
+		_build_ghost_field()
 	else:
 		_ghost_notice = ghost_notice_text(str(loaded["reason"]))
 	_hud.setup_ghost(_ghost_play != null)
 
 
-## 고스트를 재생하지 못한 사유 → 출발 안내 문구(안내가 필요 없는 사유는 빈 문자열). 배너 폭에 맞게
-## "첫 줄\n둘째 줄"로 나눈다(GhostSplitBanner.show_notice).
+## 필드 위 고스트 마커 레이어를 ItemLayer 맨 아래(아이템 빌보드보다 먼저)에 붙인다. 손·노루발·바늘
+## (ForegroundLayer)과 HUD는 그 위에 그려진다. ItemLayer가 없는 씬이면 만들지 않는다(null-safe).
+func _build_ghost_field() -> void:
+	var layer: Node = get_node_or_null("ItemLayer")
+	if layer == null:
+		return
+	_ghost_field = GhostFieldLayer.new()
+	layer.add_child(_ghost_field)
+	layer.move_child(_ghost_field, 0)
+	_ghost_field.setup(_player)
+
+
+## 필드 고스트 마커(없으면 null). 회귀 검사용 읽기 전용.
+func ghost_field() -> GhostFieldLayer:
+	return _ghost_field
+
+
+## 고스트를 재생하지 못한 사유 → 출발 한 줄 안내(안내가 필요 없는 사유는 빈 문자열, GhostNoticeBanner).
 static func ghost_notice_text(reason: String) -> String:
 	match reason:
 		RecordStore.STATE_NO_RECORD, RecordStore.STATE_NO_GHOST:
 			return ""
 		RecordStore.STATE_TRACK_CHANGED:
-			return "트랙이 바뀌어 고스트를 쓸 수 없습니다\n개인 최고를 갱신하면 새 고스트가 생깁니다"
+			return "트랙이 바뀌어 고스트를 쓸 수 없습니다"
 		GhostStore.R_MISSING:
-			return "고스트 파일이 없습니다\n이번 주행은 고스트 없이 진행합니다"
+			return "고스트 파일이 없어 고스트 없이 달립니다"
 		GhostStore.R_MISMATCH:
-			return "고스트가 현재 트랙과 맞지 않습니다\n이번 주행은 고스트 없이 진행합니다"
-	return "고스트 파일을 읽지 못했습니다\n이번 주행은 고스트 없이 진행합니다"
+			return "고스트가 트랙과 맞지 않아 쓰지 않습니다"
+	return "고스트 파일을 읽지 못해 고스트 없이 달립니다"
 
 
 ## 재생 중인 고스트(없으면 null). HUD·회귀 검사용 읽기 전용.
 func ghost_playback() -> GhostRun:
 	return _ghost_play
-
-
-## 이번 틱에 통과한 구간마다 개인 최고 고스트와의 차이(패널티 포함)를 HUD에 보낸다.
-func _show_split_deltas(crossed: Array) -> void:
-	if _ghost_play == null:
-		return
-	for k in crossed:
-		var mine: int = _ghost_rec.split_value(int(k))
-		var theirs: int = _ghost_play.split_value(int(k))
-		var ok: bool = mine >= 0 and theirs >= 0
-		_hud.show_split(int(k), mine - theirs if ok else 0, ok)
 
 
 ## 완주 결과와 고스트를 저장하고 결과 화면용 메타를 채운다. 반환: 신기록(저장 성공) 여부.
@@ -765,12 +776,6 @@ func _submit_record(result: Dictionary) -> bool:
 	var diff: String = GameState.difficulty
 	var prev: Dictionary = RecordStore.best_for(id, diff)
 	var track_changed: bool = RecordStore.track_changed_since_best(id, diff)
-	var deltas: Array = []
-	if _ghost_play != null:
-		for k in GhostRun.SPLIT_COUNT:
-			var mine: int = _ghost_rec.split_value(k)
-			var theirs: int = _ghost_play.split_value(k)
-			deltas.append(mine - theirs if mine >= 0 and theirs >= 0 else null)
 	var meta: Dictionary = {
 		"steer_expo": Tuning.steer_expo,
 		"game_version": LeaderboardClient.GAME_VERSION,
@@ -782,5 +787,5 @@ func _submit_record(result: Dictionary) -> bool:
 	result["ghost_reason"] = outcome["ghost_reason"]
 	result["prev_best_ms"] = int(prev.get("final_time_ms", -1)) if not prev.is_empty() else -1
 	result["ghost_track_changed"] = track_changed
-	result["split_deltas"] = deltas
+	result["prev_best_grade"] = RecordStore.grade_of(prev) if not prev.is_empty() else ""
 	return bool(outcome["is_best"])

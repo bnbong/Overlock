@@ -45,13 +45,35 @@ const DIR_MIN: float = 0.06
 ## 연속 샘플 간격이 이보다 크면 순간이동으로 보고 스트로크를 끊는다(px).
 const STROKE_JUMP: float = 48.0
 ## 패치 길이: 바늘 뒤로 FOLD_LEN, 앞으로 FOLD_AHEAD(px). 경로 FOLD_SPACING(px)마다 새 패치.
-const FOLD_LEN: float = 70.0
-const FOLD_AHEAD: float = -20.0
-const FOLD_SPACING: float = 26.0
-## 회전 앞당김: 패치 방향을 회전 속도 × FOLD_LEAD(초)만큼 미리 돌린다(최대 FOLD_LEAD_MAX rad).
-## FOLD_LEAD는 솟음 + 유지의 절반 정도(패치가 가장 높을 때 화면 바늘 뒤에 오도록).
-const FOLD_LEAD: float = 0.28
-const FOLD_LEAD_MAX: float = 1.0
+const FOLD_LEN: float = 74.0
+const FOLD_AHEAD: float = -24.0
+const FOLD_SPACING: float = 16.0
+## 패치 접선 길이(px).
+const FOLD_SPAN: float = FOLD_LEN + FOLD_AHEAD
+## 손끝 기준 배치: 패치 앞쪽 끝을 손끝보다 TIP_GAP만큼 뒤(카메라 쪽)에 둔다. 솟은 면이 손가락 밑으로 들어가지
+## 않고 손끝 바로 아래·옆 빈 원단 위로 올라오게 한다. 손끝이 아주 앞·뒤로 가도 패치가 바늘을 덮거나 화면 밖으로
+## 나가지 않게 [TIP_FRONT_MIN, TIP_FRONT_MAX]로 제한한다(바늘 뒤 거리).
+const TIP_GAP: float = -14.0
+const TIP_FRONT_MIN: float = 20.0
+const TIP_FRONT_MAX: float = 90.0
+## 측방 폭을 손끝 바깥 TIP_SIDE까지 넓힌다(최대 TIP_WIDTH_MAX). 손끝에서 밀려 나온 천이 재봉선 쪽으로 모인 모양.
+const TIP_SIDE: float = -3.0
+## 손끝 주름: 앞쪽 끝을 손끝에서 LIVE_GAP(음수면 손끝보다 앞), 길이 LIVE_SPAN.
+const LIVE_GAP: float = -14.0
+const LIVE_SPAN: float = 40.0
+## 손끝 주름 높이 배율과 화면 솟음 상한 추가분(px).
+const LIVE_AMP: float = 1.25
+const LIVE_LIFT_BONUS: float = 6.0
+const TIP_WIDTH_MIN: float = 6.0
+const TIP_WIDTH_MAX: float = 16.0
+## 회전 중 추가 생성: 마지막 패치 이후 진행 방향이 이 각도(rad) 이상 돌았으면 FOLD_SPACING 전이라도 다음 샘플에서
+## 패치를 만든다. 곡선 드리프트에서 이웃 패치가 크게 엇갈려 능선 사이가 벌어지지 않게 한다(약 5도).
+const FOLD_ANGLE_STEP: float = 0.09
+## 회전 안쪽 굽힘 한계: (안쪽으로 가장 먼 측방 거리 × 곡률)이 이 값을 넘지 않게 곡률을 제한한다.
+const MAX_BEND: float = 0.7
+## 패치 하나가 휘는 최대 각도(rad). 급한 피벗(반경 20~30)에서 패치가 반원 넘게 말려 잔여 흔적·그림자가
+## 가는 선으로 뭉개지지 않게 한다.
+const MAX_ARC: float = 1.2
 ## 재봉선(바늘이 지나는 진행선)에서 패치 안쪽 가장자리까지의 평평한 구간 반폭(px). 바늘 접촉점과
 ## 스티치가 주름에 묻히지 않게 한다.
 const FLAT_HALF: float = 2.5
@@ -59,18 +81,22 @@ const FLAT_HALF: float = 2.5
 const FOLD_WIDTH: float = 8.5
 ## 최대 주름 높이(월드 단위, intensity=1). 1280×720 플레이어 행(depth=CAM_BACK)에서 1 단위가
 ## 약 10px로 솟는다(DriftFoldLayer.lift_px_per_unit). 컨셉보다 낮게 잡았다.
-const FOLD_HEIGHT: float = 3.3
+const FOLD_HEIGHT: float = 4.2
 ## 강도별 높이 계수: FOLD_HEIGHT × (AMP_BASE + AMP_GAIN × 강도). 보통 드리프트(강도 약 0.6)가 FOLD_HEIGHT,
-## 강도 1(강한 드리프트 정점)이 약 3.96이 된다.
+## 강도 1(강한 드리프트 정점)이 약 5.04가 된다.
 const AMP_BASE: float = 0.70
 const AMP_GAIN: float = 0.50
 ## 잔여 흔적 메시 해상도(셀)와 알파. 행 수는 DriftFoldShape.NV의 약수여야 한다.
 const RES_U: int = 6
-const RES_V: int = 4
+const RES_V: int = 12
 const RESIDUE_ALPHA: float = 0.42
 const RESIDUE_FADE_IN: float = 0.25
 ## 표현 전용 RNG 시드(같은 주행이면 같은 주름 변형).
 const RNG_SEED: int = 0x0F01D
+
+## 검증 전용: true면 손끝 기준점을 무시한다(이전 배치: 바늘 뒤 고정 오프셋, 손끝 주름 없음). 같은 입력으로
+## 이전/현재 배치를 나란히 캡처할 때만 쓴다.
+var debug_ignore_tip: bool = false
 
 var _near: Array = []
 var _full: Array = []
@@ -84,8 +110,14 @@ var _intensity: float = 0.0
 var _last: Vector2 = Vector2.ZERO
 var _tan: Vector2 = Vector2.RIGHT
 var _since: float = 0.0
-var _yaw_rate: float = 0.0
-var _tan_time: float = 0.0
+var _emit_tan: Vector2 = Vector2.RIGHT
+var _curv: float = 0.0
+# 누르는 손 손끝의 월드 좌표(PresentationController가 화면 손끝을 Mode 7 역식으로 역투영). NAN이면 고정 오프셋.
+var _tip: Vector2 = Vector2(NAN, NAN)
+# 손끝 주름(살아 있는 스트로크 동안 매 프레임 다시 만든다). 빈 Dictionary면 없음.
+var _live: Dictionary = {}
+var _live_var: float = 1.0
+var _stroke_born: float = 0.0
 
 
 func _ready() -> void:
@@ -97,8 +129,14 @@ func _ready() -> void:
 ## intensity=|drift_dir|, now=주행 표현 시각(초, 일시정지에서 멈춤. 음수면 마지막 시각),
 ## heading=진행각(rad, NAN이면 샘플 이동 방향). SKID_SPACING 이상 이동했을 때만 샘플을 남긴다.
 func push(
-	pos: Vector2, dir: float, intensity: float, now: float = -1.0, heading: float = NAN
+	pos: Vector2,
+	dir: float,
+	intensity: float,
+	now: float = -1.0,
+	heading: float = NAN,
+	tip: Vector2 = Vector2(NAN, NAN)
 ) -> void:
+	_tip = Vector2(NAN, NAN) if debug_ignore_tip else tip
 	if now >= 0.0:
 		_now = now
 	if absf(dir) < DIR_MIN:
@@ -114,6 +152,7 @@ func push(
 		if s != _side or gap > STROKE_JUMP:
 			end_stroke()
 		elif gap < SKID_SPACING:
+			_update_live(pos)
 			return
 	_intensity = clampf(intensity, 0.0, 1.0)
 	var prev_tan: Vector2 = _tan
@@ -121,14 +160,13 @@ func push(
 		_tan = Vector2(cos(heading), sin(heading))
 	elif gap > 0.0001:
 		_tan = (pos - _last) / gap
-	# 회전 속도(rad/s, +는 오른쪽 회전). 스트로크 안에서만 샘플 간 진행 방향 변화로 추정한다.
-	if _stroke_on and _now > _tan_time + 0.0001:
-		var w_now: float = prev_tan.angle_to(_tan) / (_now - _tan_time)
-		_yaw_rate = lerpf(_yaw_rate, w_now, 0.5)
-	_tan_time = _now
+	# 경로 곡률(rad/px, +는 오른쪽 회전): 스트로크 안 샘플 간 진행 방향 변화 / 이동 거리.
+	if _stroke_on and gap > 0.0001:
+		_curv = lerpf(_curv, prev_tan.angle_to(_tan) / gap, 0.5)
 	if not _stroke_on:
 		_begin_stroke(pos, s)
 		_emit()
+		_update_live(pos)
 		return
 	_last = pos
 	_since += gap
@@ -136,6 +174,10 @@ func push(
 		# 남는 거리를 이월해 샘플 간격(SKID_SPACING)과 무관하게 평균 FOLD_SPACING마다 생기게 한다.
 		_since -= FOLD_SPACING
 		_emit()
+	elif absf(_emit_tan.angle_to(_tan)) >= FOLD_ANGLE_STEP:
+		_since = 0.0
+		_emit()
+	_update_live(pos)
 
 
 ## 현재 스트로크를 끝낸다(드리프트 종료·조향 중립·강제 복귀·순간이동·완주). 이 스트로크의 패치는 지금부터
@@ -147,6 +189,12 @@ func end_stroke(now: float = -1.0) -> void:
 	if not _stroke_on:
 		return
 	_since = 0.0
+	# 손끝 주름은 지금 자리에서 바닥에 고정되어 함께 완화한다(일반 패치로 넘긴다).
+	if not _live.is_empty():
+		_build_residue(_live)
+		_live.erase("live")
+		_append(_live)
+		_live = {}
 	for i in range(_near.size() - 1, -1, -1):
 		var rec: Dictionary = _near[i]
 		if int(rec["stroke"]) != _stroke_id:
@@ -174,6 +222,11 @@ func get_near_folds() -> Array:
 	return _near
 
 
+## 지금 살아 있는 손끝 주름(없으면 빈 Dictionary). DriftFoldLayer가 근경 패치와 함께 그린다.
+func get_live_fold() -> Dictionary:
+	return _live
+
+
 func current_time() -> float:
 	return _now
 
@@ -189,6 +242,7 @@ func is_stroke_active() -> bool:
 ## 자국과 스트로크 상태를 모두 비운다. 재시작은 씬 재로드(_ready 재실행)로 자동 초기화되지만,
 ## 재로드 없이 비워야 하는 경로를 위해 명시 API로도 노출한다.
 func clear() -> void:
+	_live = {}
 	_near.clear()
 	_full.clear()
 	_stroke_on = false
@@ -203,48 +257,95 @@ func _begin_stroke(pos: Vector2, s: float) -> void:
 	_side = s
 	_last = pos
 	_since = 0.0
-	_yaw_rate = 0.0
+	_curv = 0.0
+	_stroke_born = _now
+	_live_var = _rng.randf_range(0.9, 1.1)
 
 
-## 지금 바늘 위치(_last)에서 곧은 패치 하나를 만든다. 방향은 지금 진행 방향을 회전 속도 × FOLD_LEAD만큼
-## 앞당긴 값이다. 피벗 드리프트에서는 화면이 빠르게 돌아 바닥에 고정된 패치가 솟기도 전에 누르는 손
-## 아래로 돌아 들어가므로, 솟아 있는 동안 화면에서 바늘 뒤(손과 재봉선 사이)에 오도록 미리 돌려 둔다.
-## 패치는 생성 뒤 바닥에 고정되므로 천 무늬가 미끄러지지 않는다.
+## 지금 바늘 위치(_last)·진행 방향(_tan)으로 패치 하나를 만든다(회전 중이면 경로 곡률을 따라 휜다). 패치는 바늘 뒤, 드리프트 쪽(누르는 손
+## 쪽)에 놓이고 생성 뒤에는 바닥에 고정되므로 천 무늬가 미끄러지지 않는다. 스트로크가 살아 있는 동안은 완화하지
+## 않으므로(relax=HELD) 겹친 패치들이 하나의 긴 주름으로 이어진다.
 func _emit() -> void:
+	_emit_tan = _tan
+	var rec: Dictionary = _make_rec(_last, TIP_GAP, FOLD_SPAN, _rng.randf_range(0.9, 1.1))
+	_build_residue(rec)
+	_append(rec)
+
+
+## 손끝 주름(스트로크가 살아 있는 동안 누르는 손끝 바로 앞·옆에 머무는 주름)을 지금 바늘·손끝 위치로 다시
+## 만든다. 손끝에서 밀려 나온 천이 손끝 앞에 계속 모여 있는 모양이라 바닥과 함께 흘러가지 않고 손끝을
+## 따라다닌다. 표면 색은 매 프레임 그 자리의 바닥 텍스처를 샘플하므로 천이 그 아래로 지나가는 것처럼 보인다.
+## 손끝이 없으면(단독 검사) 만들지 않는다.
+func _update_live(pos: Vector2) -> void:
+	if not _stroke_on or is_nan(_tip.x):
+		_live = {}
+		return
+	# 손끝 주름은 화면에서 손끝 앞에 곧게 머물러야 하므로 경로 곡률로 휘지 않는다.
+	var rec: Dictionary = _make_rec(pos, LIVE_GAP, LIVE_SPAN, _live_var, false)
+	rec["born"] = _stroke_born
+	rec["live"] = true
+	# 손끝 앞은 원근 확대가 작아 같은 월드 높이라도 덜 솟아 보이므로 높이와 화면 상한을 조금 올린다.
+	rec["amp"] = float(rec["amp"]) * LIVE_AMP
+	rec["lift_bonus"] = LIVE_LIFT_BONUS
+	_live = rec
+
+
+## 패치 레코드 하나를 만든다. anchor=바늘 위치, gap=패치 앞쪽 끝의 손끝 기준 오프셋(양수면 손끝보다 뒤), span=길이.
+func _make_rec(
+	anchor: Vector2, gap: float, span: float, var_k: float, bend: bool = true
+) -> Dictionary:
 	var nv: int = DriftFoldShape.NV
-	var lead: float = clampf(_yaw_rate * FOLD_LEAD, -FOLD_LEAD_MAX, FOLD_LEAD_MAX)
-	var axis: Vector2 = _tan.rotated(lead)
-	var nrm: Vector2 = Vector2(-axis.y, axis.x) * _side
-	var back: Vector2 = _last - axis * FOLD_LEN
-	var front: Vector2 = _last + axis * FOLD_AHEAD
+	var axis: Vector2 = _tan
+	var mid: int = nv / 2
+	# 곡률: 지금 회전 중이면 바늘 뒤 경로를 같은 곡률의 원호로 보고 패치를 그 원호를 따라 휜다. 연속된 패치가
+	# 같은 원호 위에 놓여 곡선 드리프트에서도 능선이 벌어지거나 꺾이지 않는다. 회전 안쪽으로 격자가 뒤집히지
+	# 않게(안쪽 가장자리 × 곡률 ≤ MAX_BEND) 제한한다.
+	var w: float = FOLD_WIDTH * (0.8 + 0.2 * _intensity)
+	# 손끝 기준: 패치 앞쪽 끝을 손끝에서 gap만큼 뒤에 두고, 측방 폭은 재봉선 평평 구간에서 손끝 측방 + TIP_SIDE
+	# 까지 덮는다. 손끝이 없으면(단독 검사 등) 바늘 뒤 -FOLD_AHEAD에서 시작하는 고정 오프셋.
+	var s_front: float = -FOLD_AHEAD
+	if not is_nan(_tip.x):
+		var rel: Vector2 = _tip - anchor
+		s_front = clampf(-rel.dot(axis) + gap, TIP_FRONT_MIN, TIP_FRONT_MAX)
+		var tip_lat: float = rel.dot(Vector2(-axis.y, axis.x) * _side)
+		w = clampf(tip_lat + TIP_SIDE - FLAT_HALF, TIP_WIDTH_MIN, TIP_WIDTH_MAX)
+	var kmax: float = minf(MAX_BEND / (FLAT_HALF + w), MAX_ARC / span)
+	var kappa: float = clampf(_curv, -kmax, kmax) if bend else 0.0
+	var h0: float = axis.angle()
 	var cs: PackedVector2Array = PackedVector2Array()
 	var ns: PackedVector2Array = PackedVector2Array()
 	cs.resize(nv + 1)
 	ns.resize(nv + 1)
 	for k in range(nv + 1):
-		cs[k] = back.lerp(front, float(k) / float(nv))
-		ns[k] = nrm
-	var w: float = FOLD_WIDTH * (0.8 + 0.2 * _intensity)
-	var var_k: float = _rng.randf_range(0.9, 1.1)
-	var mid: int = nv / 2
-	var rec: Dictionary = {
-		"pos": cs[mid] + nrm * (FLAT_HALF + w * 0.5),
+		# 호길이 s(바늘 뒤 거리): 뒤쪽 끝 s_front + span → 앞쪽 끝 s_front.
+		var sb: float = lerpf(s_front + span, s_front, float(k) / float(nv))
+		var hk: float = h0 - kappa * sb
+		if absf(kappa) < 1e-5:
+			cs[k] = anchor - axis * sb
+		else:
+			cs[k] = anchor + Vector2(sin(hk) - sin(h0), cos(h0) - cos(hk)) / kappa
+		ns[k] = Vector2(-sin(hk), cos(hk)) * _side
+	return {
+		"pos": cs[mid] + ns[mid] * (FLAT_HALF + w * 0.5),
 		"dir": _side * _intensity,
 		"intensity": _intensity,
-		"tan": axis,
+		"tan": Vector2(ns[mid].y, -ns[mid].x) * _side,
 		"side": _side,
 		"c": cs,
 		"n": ns,
 		"off": FLAT_HALF,
 		"w": w,
-		"len": FOLD_LEN + FOLD_AHEAD,
+		"len": span,
 		"amp": FOLD_HEIGHT * (AMP_BASE + AMP_GAIN * _intensity) * var_k,
 		"amp_var": var_k,
 		"born": _now,
-		"relax": _now + DriftFoldShape.HOLD,
+		# 스트로크가 살아 있는 동안은 완화하지 않는다(end_stroke가 그 순간으로 당긴다).
+		"relax": DriftFoldShape.HELD,
 		"stroke": _stroke_id,
 	}
-	_build_residue(rec)
+
+
+func _append(rec: Dictionary) -> void:
 	_near.append(rec)
 	if _near.size() > MAX_SKIDS:
 		_near.remove_at(0)

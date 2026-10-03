@@ -13,7 +13,7 @@ extends Control
 ## 키우고, 긴 트랙 이름·요약 줄은 줄을 바꿔 정보 열 폭을 지킨다. 데스크톱 배치는 그대로다.
 ##
 ## 개인 고스트(v2.3.0): 신기록 줄 아래 고스트 줄(GhostLabel)에 새 고스트 저장 성공·실패와 사유, 개인 최고
-## 대비 차이(패널티 포함), 구간별 차이, 트랙이 바뀌어 고스트를 쓸 수 없는 경우의 안내, 연습 기록 여부를
+## 대비 차이(등급 우선, 같은 등급이면 패널티 포함 시간), 트랙이 바뀌어 고스트를 쓸 수 없는 경우의 안내, 연습 기록 여부를
 ## 보인다(ghost_summary).
 
 const TRACK_NAMES: Dictionary = {"cotton_01": "Cotton Warm-up"}
@@ -32,6 +32,9 @@ const SCENARIO_MAX_W: float = 560.0  # 일러스트 폭 상한(카드가 과하�
 const SCENARIO_MIN_H: float = 200.0  # 일러스트 높이 하한(정보 열이 짧아도 이만큼은 확보).
 const _TOUCH_INFO_W: float = 460.0  # 터치 배치의 정보 열 폭(줄 바꿈 기준).
 const _GHOST_W: float = 420.0  # 고스트 줄 줄바꿈 폭.
+## 개인 최고 기준 안내(온라인 리더보드와 같은 등급 우선 규칙, RecordStore.is_better).
+const BEST_RULE_TEXT: String = "최고 기록은 등급 우선, 같은 등급이면 빠른 시간입니다"
+const BEST_RULE_TEXT_SHORT: String = "최고 기준: 등급 우선, 같으면 시간"
 const GHOST_REASONS_SHORT: Dictionary = {
 	"too_many_samples": "샘플 상한 초과",
 	"too_large": "파일 크기 초과",
@@ -152,7 +155,7 @@ func _build_ghost_label(result: Dictionary) -> void:
 	_ghost_label.custom_minimum_size.x = _GHOST_W
 	_ghost_label.add_theme_font_size_override("font_size", 14)
 	_ghost_label.add_theme_color_override("font_color", Color(0.32, 0.24, 0.19, 1))
-	# 터치 배치는 글자가 커서 구간 10개를 다 쓰면 카드가 화면을 넘을 수 있어 구간 차이를 개수 요약으로 줄인다.
+	# 터치 배치는 글자가 커서 모든 문구를 길게 쓰면 카드가 화면을 넘을 수 있어 짧은 요약을 쓴다.
 	_ghost_label.text = ghost_summary(result, MenuTouch.active())
 	_ghost_label.visible = not _ghost_label.text.is_empty()
 	_info.add_child(_ghost_label)
@@ -160,7 +163,7 @@ func _build_ghost_label(result: Dictionary) -> void:
 
 
 ## 결과 dict의 고스트·기록 메타(RaceDirector._submit_record)를 사람이 읽는 줄들로 만든다.
-## compact=true(터치 배치)면 구간별 차이를 빠름·느림·비교 불가 개수 한 줄로 줄인다.
+## compact=true(터치 배치)면 짧은 문구를 쓴다. 구간 차이는 보이지 않는다(GhostRun splits는 데이터로만 남는다).
 static func ghost_summary(result: Dictionary, compact: bool = false) -> String:
 	if bool(result.get("editor_test", false)) or not result.has("ghost_status"):
 		return ""
@@ -179,24 +182,33 @@ static func ghost_summary(result: Dictionary, compact: bool = false) -> String:
 		"unchanged":
 			if reason == "record_save_failed":
 				lines.append("기록을 저장하지 못해 이전 최고 기록과 고스트를 유지합니다")
+			elif prev >= 0 and _grade_cmp(result) < 0:
+				lines.append(
+					"개인 최고(%s %s)보다 등급이 낮아 기록·고스트를 바꾸지 않았습니다"
+					% [str(result.get("prev_best_grade", "")), _format_ms(prev)]
+				)
 			elif prev >= 0:
 				var slow: float = float(final_ms - prev) / 1000.0
 				var tail: String = "%.2f초 느림" % slow if final_ms > prev else "같은 시간"
-				lines.append("개인 최고보다 %s (패널티 포함) · 고스트는 그대로입니다" % tail)
+				lines.append("같은 등급의 개인 최고보다 %s (패널티 포함) · 고스트는 그대로입니다" % tail)
 	if bool(result.get("is_new_record", false)) and prev >= 0:
-		lines.append("개인 최고를 %.2f초 줄였습니다 (패널티 포함)" % (float(prev - final_ms) / 1000.0))
-	var splits: String = _split_summary(result.get("split_deltas", []))
-	if not splits.is_empty():
-		lines.append(splits)
+		if _grade_cmp(result) > 0:
+			lines.append(
+				"등급이 올라 개인 최고를 갱신했습니다 (%s → %s)"
+				% [str(result.get("prev_best_grade", "")), str(result.get("grade", ""))]
+			)
+		else:
+			lines.append("개인 최고를 %.2f초 줄였습니다 (패널티 포함)" % (float(prev - final_ms) / 1000.0))
 	if _track_changed_hint(result):
 		lines.append("트랙이 바뀌어 이전 고스트를 쓸 수 없습니다 · 개인 최고를 갱신하면 새 고스트가 생깁니다")
 	if bool(result.get("practice", false)):
 		lines.append("개발용 튜닝이 적용된 연습 기록입니다")
+	lines.append(BEST_RULE_TEXT)
 	return "\n".join(lines)
 
 
 ## 터치 배치용 짧은 요약. 글자가 커도 카드가 화면(여백 CARD_MARGIN) 안에 들도록 문구를 줄이고, 신기록 단축
-## 시간 줄은 빼며(NEW RECORD 표시가 대신함) 구간 차이는 빠름·느림·비교 불가 개수로 줄인다.
+## 시간 줄은 뺀다(NEW RECORD 표시가 대신함).
 static func _ghost_summary_compact(result: Dictionary) -> String:
 	var lines: PackedStringArray = PackedStringArray()
 	var prev: int = int(result.get("prev_best_ms", -1))
@@ -210,43 +222,32 @@ static func _ghost_summary_compact(result: Dictionary) -> String:
 		"unchanged":
 			if reason == "record_save_failed":
 				lines.append("기록 저장 실패: 이전 최고·고스트 유지")
+			elif prev >= 0 and _grade_cmp(result) < 0:
+				lines.append("등급이 낮아 최고 유지 (%s)" % str(result.get("prev_best_grade", "")))
 			elif prev >= 0:
 				var slow: float = float(final_ms - prev) / 1000.0
 				lines.append("개인 최고보다 %.2f초 느림 (패널티 포함)" % slow)
-	var splits: String = _split_summary(result.get("split_deltas", []), true)
-	if not splits.is_empty():
-		lines.append(splits)
 	if _track_changed_hint(result):
 		lines.append("트랙 변경: 최고 갱신 시 새 고스트")
 	if bool(result.get("practice", false)):
 		lines.append("연습 기록 (개발용 튜닝)")
+	lines.append(BEST_RULE_TEXT_SHORT)
 	return "\n".join(lines)
+
+
+## 이번 결과와 이전 개인 최고의 등급 비교(양수: 이번이 높음, 음수: 낮음, 0: 같거나 알 수 없음).
+static func _grade_cmp(result: Dictionary) -> int:
+	var now: int = int(RecordStore.GRADE_TIERS.get(str(result.get("grade", "")), 0))
+	var before: int = int(RecordStore.GRADE_TIERS.get(str(result.get("prev_best_grade", "")), 0))
+	if now == 0 or before == 0:
+		return 0
+	return signi(now - before)
 
 
 ## 기록 당시와 트랙이 달라 이전 고스트를 쓸 수 없는데 이번 완주로 최고를 갱신하지 못했는가.
 static func _track_changed_hint(result: Dictionary) -> bool:
 	var changed: bool = bool(result.get("ghost_track_changed", false))
 	return changed and not bool(result.get("is_new_record", false))
-
-
-## 구간별 개인 최고 대비 차이(초, 패널티 포함). 비교할 수 없는 구간은 "--". 비교 구간이 없으면 빈 문자열.
-static func _split_summary(deltas: Variant, compact: bool = false) -> String:
-	if not (deltas is Array) or (deltas as Array).is_empty():
-		return ""
-	var parts: PackedStringArray = PackedStringArray()
-	var counts: Array[int] = [0, 0, 0]  # 빠름(같음 포함), 느림, 비교 불가
-	for d in deltas:
-		if d == null:
-			parts.append("--")
-			counts[2] += 1
-		else:
-			parts.append("%+.2f" % (float(d) / 1000.0))
-			counts[0 if float(d) <= 0.0 else 1] += 1
-	if counts[0] + counts[1] == 0:
-		return ""
-	if compact:
-		return "구간(패널티 포함): 빠름 %d · 느림 %d · 비교 불가 %d" % counts
-	return "구간별 차이(패널티 포함): " + " ".join(parts)
 
 
 ## 재봉 평점(등급)을 큰 문자로 눈에 띄게 표시. 하위 호환: grade 없으면 "-".

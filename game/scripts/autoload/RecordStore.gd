@@ -1,8 +1,9 @@
 extends Node
 ## 로컬 최고 기록·개인 고스트 연결 저장 오토로드 (docs/architecture.md §3.1~§3.3).
 ##
-## 개인 최고 키는 "track_id|difficulty" 하나다. 같은 키 안에서 final_time_ms(패널티 포함)가 더 작으면
-## 신기록이며 동률이면 기존 기록을 유지한다. 원단 물리 등 게임 규칙이 바뀌어도 기록을 규칙별로 나누지
+## 개인 최고 키는 "track_id|difficulty" 하나다. 같은 키 안에서 재봉 등급(S>A>B>C>D)이 높으면 신기록이고,
+## 같은 등급이면 final_time_ms(패널티 포함)가 더 작을 때 신기록이다(온라인 리더보드 정렬과 같은 의미).
+## 같은 등급·같은 시간이면 기존 기록을 유지한다(is_better). 원단 물리 등 게임 규칙이 바뀌어도 기록을 규칙별로 나누지
 ## 않는다. 개발용 res://data/tuning.json이 물리에 쓰이는 Tuning 값을 실제로 바꾸면(is_practice) 정식
 ## 기록과 섞지 않도록 "track_id|difficulty|practice" 키로 따로 저장한다.
 ##
@@ -25,6 +26,8 @@ const SAVE_PATH: String = "user://records.json"
 const SETTINGS_PATH: String = "user://ghost_settings.json"
 const FORMAT_VERSION: int = 2
 const PRACTICE_SUFFIX: String = "practice"
+## 등급 문자 → 비교 티어(클수록 상위). 서버 grade.py의 _LETTER_TIER와 같은 순서다.
+const GRADE_TIERS: Dictionary = {"S": 5, "A": 4, "B": 3, "C": 2, "D": 1}
 const TUNING_OVERRIDE_PATH: String = "res://data/tuning.json"
 ## practice 판정에서 비교하는 Tuning 키: PlayerController·RaceDirector가 물리·판정에 실제로 읽는 키다.
 ## steer_expo는 시작 시 LeaderboardClient가 사용자 설정값으로 덮어 tuning.json 값이 쓰이지 않고(허용된
@@ -43,7 +46,7 @@ const PHYSICS_TUNING_KEYS: Array[String] = [
 # 결과 dict에서 기록 엔트리로 옮기지 않는 화면 전용 키.
 const TRANSIENT_KEYS: Array[String] = [
 	"is_new_record", "editor_test", "ghost_status", "ghost_reason", "prev_best_ms",
-	"ghost_track_changed", "split_deltas",
+	"ghost_track_changed", "prev_best_grade",
 ]
 # submit_run의 ghost_status 값.
 const GHOST_SAVED: String = "saved"
@@ -172,8 +175,7 @@ func submit_run(result: Dictionary, ghost: Dictionary = {}, ghost_skip: String =
 		return out
 	var key: String = record_key(id, diff, practice)
 	var prev: Dictionary = _records.get(key, {})
-	var new_time: int = int(result.get("final_time_ms", 0))
-	if not (prev.is_empty() or new_time < int(prev.get("final_time_ms", 0))):
+	if not is_better(result, prev):
 		out["ghost_reason"] = "not_best"
 		return out
 	var entry: Dictionary = _entry_from(result, practice, fp)
@@ -215,6 +217,36 @@ func purge(track_id: String) -> bool:
 	return true
 
 
+## 기록의 재봉 등급 문자. 완주 때 RunStats.finalize가 저장한 grade를 쓰고, 없으면(예전 기록) 저장된
+## accuracy·perfect_rate·cuts로 RunStats.grade_from_metrics(서버 grade.py와 같은 식·임계값)를 계산한다.
+## 어느 쪽도 없으면 빈 문자열.
+static func grade_of(entry: Dictionary) -> String:
+	var g: String = str(entry.get("grade", ""))
+	if GRADE_TIERS.has(g):
+		return g
+	for k in ["accuracy", "perfect_rate", "cuts"]:
+		var v: Variant = entry.get(k)
+		if not (v is int or v is float):
+			return ""
+	return RunStats.grade_from_metrics(
+		float(entry["accuracy"]), float(entry["perfect_rate"]), int(entry["cuts"])
+	)
+
+
+## new가 prev보다 나은 개인 최고인가: 등급이 높으면 참, 같은 등급이면 final_time_ms가 작을 때 참(동률은
+## 기존 유지). prev가 비면 참. 한쪽 등급을 알 수 없으면 기존 기록을 유지하되, 둘 다 모르면 시간만 비교한다.
+static func is_better(new: Dictionary, prev: Dictionary) -> bool:
+	if prev.is_empty():
+		return true
+	var tn: int = int(GRADE_TIERS.get(grade_of(new), 0))
+	var tp: int = int(GRADE_TIERS.get(grade_of(prev), 0))
+	if (tn == 0) != (tp == 0):
+		return false
+	if tn != tp:
+		return tn > tp
+	return int(new.get("final_time_ms", 0)) < int(prev.get("final_time_ms", 0))
+
+
 ## 커스텀 트랙 삭제 전 정리용. 지울 기록이 없거나 지우고 저장까지 성공하면 true, 저장에 실패하면
 ## false(기록·고스트 유지). 트랙 선택 화면은 true일 때만 트랙 파일을 지운다.
 func purge_for_delete(track_id: String) -> bool:
@@ -250,6 +282,9 @@ func _entry_from(result: Dictionary, practice: bool, fp: String) -> Dictionary:
 		entry.erase(k)
 	entry.erase("physics_ruleset")
 	entry["practice"] = practice
+	var grade: String = grade_of(entry)
+	if not grade.is_empty():
+		entry["grade"] = grade
 	entry["track_fingerprint"] = fp
 	entry["ghost_run_id"] = ""
 	entry["ghost_file"] = ""
@@ -370,7 +405,7 @@ func _migrate_v1(root: Dictionary) -> void:
 
 
 ## 개발 중(v2.3.0 미출시) 잠시 쓰던 규칙 분리 키("id|diff|규칙|지문")와 "legacy" 묶음을 현재 키로 합친다.
-## 같은 키로 모이면 final_time_ms가 더 작은 엔트리를 남긴다(practice 규칙 키는 연습 키로).
+## 같은 키로 모이면 is_better 기준(등급 우선, 같은 등급이면 빠른 시간)으로 나은 엔트리를 남긴다.
 static func _merge_dev_keys(records: Dictionary, legacy: Variant) -> Dictionary:
 	var out: Dictionary = {}
 	var pool: Array = []
@@ -385,7 +420,7 @@ static func _merge_dev_keys(records: Dictionary, legacy: Variant) -> Dictionary:
 		var practice: bool = parts.size() >= 3 and parts[2] == PRACTICE_SUFFIX
 		var key: String = record_key(parts[0], parts[1], practice)
 		var e: Dictionary = pair[1]
-		if not out.has(key) or int(e.get("final_time_ms", 0)) < int(out[key].get("final_time_ms", 0)):
+		if not out.has(key) or is_better(e, out[key]):
 			out[key] = e
 	return out
 

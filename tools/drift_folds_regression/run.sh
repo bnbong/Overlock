@@ -192,6 +192,15 @@ if [ "$code" -eq 0 ] && grep -E "SCRIPT ERROR|SHADER ERROR" "$WORK/check.log" >/
 	echo "검사 로그에 스크립트/셰이더 오류가 있습니다" >&2
 	code=4
 fi
+# 런타임에 쓰면 안 되는 에디터 전용 API 경고(global_shader_parameter_get_list 등)가 0건이어야 한다.
+EDITOR_ONLY_RE="should never be used outside the editor"
+editor_only="$(grep -c "$EDITOR_ONLY_RE" "$WORK/check.log" || true)"
+echo "editor-only API errors (headless): $editor_only"
+if [ "$editor_only" != "0" ]; then
+	echo "헤드리스 검사 로그에 에디터 전용 API 오류가 있습니다" >&2
+	grep "$EDITOR_ONLY_RE" "$WORK/check.log" | head -3 >&2
+	[ "$code" -ne 0 ] || code=4
+fi
 if [ -n "${FOLDS_REGRESSION_LOG:-}" ]; then
 	cp "$WORK/check.log" "$FOLDS_REGRESSION_LOG"
 fi
@@ -221,6 +230,12 @@ if [ "$has_display" = "1" ]; then
 	done
 	if [ "$render_code" -eq 0 ] && ! grep -q "flatcheck PASS" "$RENDER_OUT/events.txt"; then
 		render_code=3
+	fi
+	render_editor_only="$(grep -c "$EDITOR_ONLY_RE" "$RENDER_OUT/godot.log" 2>/dev/null || true)"
+	echo "editor-only API errors (render): ${render_editor_only:-?}"
+	if [ "${render_editor_only:-1}" != "0" ]; then
+		echo "렌더 단계 로그에 에디터 전용 API 오류가 있습니다" >&2
+		[ "$render_code" -ne 0 ] || render_code=4
 	fi
 	echo "drift folds render check exit=$render_code"
 else

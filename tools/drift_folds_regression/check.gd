@@ -177,7 +177,7 @@ func _check_time_model() -> void:
 		DriftFoldShape.RELAX >= 0.35 and DriftFoldShape.RELAX <= 0.65, "time: relax in 0.35..0.65 s"
 	)
 	var born: float = 10.0
-	var relax: float = born + DriftFoldShape.HOLD
+	var relax: float = born + 0.35  # 0.35초 드리프트 후 종료
 	_ok(DriftFoldShape.amp01(born, relax, born) == 0.0, "time: flat at birth")
 	_ok(DriftFoldShape.amp01(born, relax, born - 1.0) == 0.0, "time: nothing before birth")
 	_ok(
@@ -379,8 +379,9 @@ func _check_strokes() -> void:
 		travelled >= DriftSkid.FOLD_SPACING - 0.01,
 		"neutral: next patch after FOLD_SPACING from re-steer (%.0f px)" % travelled
 	)
-	_ok(n0 == 1, "neutral: setup made exactly one patch before neutral")
+	_ok(n0 >= 1, "neutral: setup made patches before neutral")
 	nb.queue_free()
+	await _check_long_stroke()
 	# 버퍼 상한과 데시메이션(전체 span 보존).
 	s.clear()
 	_ok(s.get_near_folds().is_empty() and s.get_full_marks().is_empty(), "clear: empties buffers")
@@ -573,3 +574,115 @@ func _check_layer() -> void:
 func _hold_all(skid: DriftSkid, until: float) -> void:
 	for rec in skid.get_near_folds():
 		rec["relax"] = until
+
+
+## 패치 rec이 월드 점 p에서 만드는 정규화 높이(패치 밖이면 0). 휜 패치도 행별 기준점·법선으로 국소 좌표를 구한다.
+func _patch_height_at(rec: Dictionary, p: Vector2) -> float:
+	var cs: PackedVector2Array = rec["c"]
+	var ns: PackedVector2Array = rec["n"]
+	var best: float = INF
+	var v_best: float = -1.0
+	var lat_best: float = 0.0
+	for k in range(cs.size() - 1):
+		var seg: Vector2 = cs[k + 1] - cs[k]
+		var t: float = clampf((p - cs[k]).dot(seg) / maxf(seg.length_squared(), 1e-6), 0.0, 1.0)
+		var base: Vector2 = cs[k].lerp(cs[k + 1], t)
+		var nrm: Vector2 = ns[k].lerp(ns[k + 1], t).normalized()
+		var lat: float = (p - base).dot(nrm)
+		var along: float = absf((p - base).dot(Vector2(nrm.y, -nrm.x)))
+		if along < best:
+			best = along
+			v_best = (float(k) + t) / float(cs.size() - 1)
+			lat_best = lat
+	var u: float = (lat_best - float(rec["off"])) / float(rec["w"])
+	if best > 1.0 or u < 0.0 or u > 1.0 or v_best < 0.0:
+		return 0.0
+	return DriftFoldShape.height_at(u, v_best)
+
+
+## 긴 드리프트(사용자 피드백): 스트로크가 살아 있는 동안 모든 패치가 완화 없이 유지되고, 끝나면 함께
+## 완화를 시작하며, 겹친 패치들이 능선을 따라 높이가 끊기지 않는 하나의 긴 주름을 만든다.
+func _check_long_stroke() -> void:
+	var ls: DriftSkid = _new_skid()
+	await _frames(1)
+	_ok(
+		DriftSkid.FOLD_LEN + DriftSkid.FOLD_AHEAD >= DriftSkid.FOLD_SPACING * 1.6,
+		"long: patch length >= 1.6 x spacing"
+	)
+	# 3초 직진 드리프트(170px/s).
+	var p: Vector2 = Vector2(0, 1500)
+	var t: float = 30.0
+	for i in 180:
+		p += Vector2(170.0 / 60.0, 0.0)
+		t += 1.0 / 60.0
+		ls.push(p, 0.9, 0.9, t, 0.0)
+	var recs: Array = ls.get_near_folds()
+	var held: bool = recs.size() > 10
+	for rec in recs:
+		if float(rec["relax"]) < DriftFoldShape.HELD:
+			held = false
+	_ok(held, "long: all patches held while the stroke is alive (%d patches)" % recs.size())
+	var first_amp: float = DriftFoldShape.amp01(float(recs[0]["born"]), float(recs[0]["relax"]), t)
+	_ok(first_amp > 0.999, "long: oldest patch still at full height after 3 s (%.3f)" % first_amp)
+	# 능선(가운데 행에서 가장 높은 u) 위를 따라 높이가 끊기지 않는가.
+	var w: int = DriftFoldShape.NU + 1
+	var row: int = int(round(DriftFoldShape.PEAK_V * DriftFoldShape.NV))
+	var best_u: int = 0
+	for i in range(w):
+		if DriftFoldShape.grid_h[row * w + i] > DriftFoldShape.grid_h[row * w + best_u]:
+			best_u = i
+	var u_r: float = float(best_u) / float(DriftFoldShape.NU)
+	var r0: Dictionary = recs[2]
+	var lat: float = float(r0["off"]) + float(r0["w"]) * u_r
+	var n0: Vector2 = Vector2(r0["n"][0])
+	var x0: float = Vector2(recs[2]["c"][0]).x + 20.0
+	var x1: float = Vector2(recs[recs.size() - 3]["c"][DriftFoldShape.NV]).x - 20.0
+	var lo: float = 1.0
+	var hi: float = 0.0
+	var x: float = x0
+	while x < x1:
+		var q: Vector2 = Vector2(x, Vector2(r0["c"][0]).y) + n0 * lat
+		var mh: float = 0.0
+		for rec in recs:
+			mh = maxf(mh, _patch_height_at(rec, q))
+		lo = minf(lo, mh)
+		hi = maxf(hi, mh)
+		x += 2.0
+	print("long: ridge height along a 3 s straight stroke min %.2f max %.2f" % [lo, hi])
+	_ok(lo >= 0.8 * hi and hi > 0.5, "long: overlapping patches form one continuous ridge")
+	# 곡선(피벗) 스트로크: 이웃 패치의 능선 가운데가 다음 패치에도 덮이는가(벌어짐 확인).
+	var cs: DriftSkid = _new_skid()
+	await _frames(1)
+	var hd: float = 0.0
+	var cp: Vector2 = Vector2(0, -1500)
+	t = 40.0
+	for i in 120:
+		hd += 2.5 / 60.0  # 초당 2.5rad 회전
+		cp += Vector2(cos(hd), sin(hd)) * (170.0 / 60.0)
+		t += 1.0 / 60.0
+		cs.push(cp, 0.9, 0.9, t, hd)
+	var crecs: Array = cs.get_near_folds()
+	var worst: float = 1.0
+	for k in range(1, crecs.size() - 1):
+		var a: Dictionary = crecs[k]
+		var mid: Vector2 = (
+			Vector2(a["c"][DriftFoldShape.NV / 2])
+			+ Vector2(a["n"][0]) * (float(a["off"]) + float(a["w"]) * u_r)
+		)
+		var cover: float = maxf(
+			_patch_height_at(crecs[k - 1], mid), _patch_height_at(crecs[k + 1], mid)
+		)
+		worst = minf(worst, cover / maxf(_patch_height_at(a, mid), 0.001))
+	print(
+		"long: curve stroke (2.5 rad/s) neighbour cover of ridge centre, worst ratio %.2f" % worst
+	)
+	_ok(worst >= 0.3, "long: curve stroke patches overlap their neighbours (no gaps)")
+	# 끝나면 함께 완화한다.
+	ls.end_stroke(t + 0.1)
+	var together: bool = true
+	for rec in ls.get_near_folds():
+		if absf(float(rec["relax"]) - (t + 0.1)) > 1e-6:
+			together = false
+	_ok(together, "long: every patch of the stroke starts relaxing at stroke end")
+	ls.queue_free()
+	cs.queue_free()

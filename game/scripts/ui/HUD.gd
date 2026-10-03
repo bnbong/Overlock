@@ -33,8 +33,8 @@ var _autopilot_card: EffectTimerCard = null
 
 # 아이템 슬롯 2칸 위젯(v2.2.1). RISK 패널 오른쪽에 붙고, 터치 모드에서는 RISK와 함께 위로 옮긴다.
 var _item_slots: ItemSlots = null
-# 개인 고스트 구간 시간차·안내 배너(v2.3.0, 화면 위 가운데). 재생할 고스트가 없어도 안내용으로 만든다.
-var _ghost_banner: GhostSplitBanner = null
+# 개인 고스트 출발 안내 배너(v2.3.0, 화면 위 가운데). 재생할 고스트가 없을 때의 사유만 잠시 보인다.
+var _ghost_banner: GhostNoticeBanner = null
 # 자동 일시정지 안내 라벨(일시정지 오버레이 제목 아래). 자동 정지일 때만 보인다.
 var _auto_pause_label: Label = null
 
@@ -109,9 +109,9 @@ func _build_item_slots() -> void:
 	move_child(_item_slots, _pause_overlay.get_index())
 
 
-## 화면 위 가운데 고스트 배너(GhostSplitBanner.RECT)를 동적 생성한다. 일시정지 딤 아래에 그린다.
+## 화면 위 가운데 고스트 출발 안내 배너(GhostNoticeBanner.RECT)를 동적 생성한다. 일시정지 딤 아래에 그린다.
 func _build_ghost_banner() -> void:
-	_ghost_banner = GhostSplitBanner.new()
+	_ghost_banner = GhostNoticeBanner.new()
 	add_child(_ghost_banner)
 	move_child(_ghost_banner, _pause_overlay.get_index())
 
@@ -130,12 +130,7 @@ func set_ghost_state(state: Dictionary) -> void:
 	_minimap.set_ghost(state)
 
 
-## 구간 통과 시간차(패널티 포함, ms. 음수=빠름). comparable=false면 비교 불가 안내.
-func show_split(index: int, delta_ms: int, comparable: bool) -> void:
-	if _ghost_banner != null:
-		_ghost_banner.show_split(index, delta_ms, comparable)
-
-
+## 고스트를 재생하지 못하는 사유를 출발 때 한 줄로 안내한다(주행 중 구간 시간차 팝업은 없다).
 func show_ghost_notice(text: String) -> void:
 	if _ghost_banner != null:
 		_ghost_banner.show_notice(text)
@@ -179,6 +174,13 @@ func setup(track: TrackData) -> void:
 	_progress.set_progress(0.0)
 	_reset_audio_run()
 	_play_bgm("gameplay")
+
+
+## 카운트다운(주행 전)에도 미니맵이 출발 위치·방향과 같은 변환으로 그리게 플레이어 상태를 넘긴다.
+## update_frame은 주행 틱에서만 불리므로, 이 호출이 없으면 미니맵이 기본값(원점·heading 0)으로 그려
+## 원점이 아닌 곳에서 출발하는 트랙의 경로가 마커에서 떨어져 보인다(HEAD 8d6099c부터 있던 문제).
+func sync_minimap(player: PlayerController, progress_s: float) -> void:
+	_minimap.update_view(player.position, player.heading, progress_s, player.speed)
 
 
 func show_countdown(value: int) -> void:

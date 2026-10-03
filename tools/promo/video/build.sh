@@ -7,6 +7,8 @@
 #   PY    python with numpy, pillow, skia-python, soundfile, librosa (see README.md)
 #   WORK  scratch directory for large intermediates (default: $TMPDIR/overlock_promo_work, outside the repo)
 #   CRF   x264 CRF for the 1080p60 master (default 16)
+#   PROMO_FOOTAGE  directory with the encoded footage clips and footage.json (encode_clips.py output;
+#                  footage is not committed). Default: docs/promo/video/footage
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

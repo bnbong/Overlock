@@ -6,7 +6,7 @@ extends Node
 ## InputEventMouseButton 을 주입한다. 촬영용 표현 조작은 HUD 캔버스 레이어 표시 끄기(HUD 없는 스틸)
 ## 한 가지뿐이며, 스틸을 찍은 직후 되돌린다. 화면에 로그 텍스트를 그리지 않는다.
 ##
-## 인자(-- 뒤): --out=<dir> --scenario=heart|tee|star [--stills]
+## 인자(-- 뒤): --out=<dir> --scenario=heart|tee|star|cat|hub [--stills]
 ##   --stills : 시나리오가 지정한 순간에 HUD 있는/없는 스틸 PNG를 같은 프레임으로 저장한다.
 ##              Movie Maker 촬영(--write-movie)과 같이 쓰지 않는다(HUD 끄기 프레임이 섞이지 않게).
 ## --fixed-fps 60(Movie Maker는 자동)으로 실행하면 1 프레임 = 1 물리 틱이라 같은 입력 스크립트가
@@ -59,6 +59,20 @@ var _prev: Dictionary = {}
 var _draw_count: int = 0
 var _last_cd: int = -1
 var _still_seq: int = 0
+# v2.2.1 아이템 슬롯: 담긴 아이템을 종류별 대기(프레임) 뒤에 Space(use_item)로 쓴다. 슬롯에 담긴 모습을
+# 잠깐 보여 준 다음 쓰는 흐름이다. auto_use=false 이면 쓰지 않는다.
+var auto_use: bool = true
+var use_delay: Dictionary = {"thimble": 24, "autopilot": 70}
+var _slot_sig: String = ""
+var _slot_since: int = 0
+# 고스트 따라가기(heart 2회차): 앞서가는 개인 고스트와의 진행도 차(ds)를 이 범위로 유지하도록 기어를 고른다.
+var ghost_follow: bool = false
+var ghost_ds_lo: float = 70.0
+var ghost_ds_hi: float = 115.0
+# 강제 드리프트 구간(진행도 s). 이 구간에서는 Shift 를 계속 누른다(긴 원단 주름 촬영용).
+var force_drift_s0: float = INF
+var force_drift_s1: float = -INF
+var _forcing: bool = false
 
 
 func _ready() -> void:
@@ -82,7 +96,7 @@ func _ready() -> void:
 	_log.store_line(
 		(
 			"frame,mf,scene,state,s,speed_idx,target_steer,actual_steer,err,drifting,risk,"
-			+ "stun,thimble,autopilot,offfabric,held"
+			+ "stun,thimble,autopilot,offfabric,held,ghost_vis,ghost_alpha,ghost_scale,ghost_ds"
 		)
 	)
 	_events = FileAccess.open(out_dir + "/events.jsonl", FileAccess.WRITE)
@@ -126,7 +140,11 @@ func _to_window(canvas_pos: Vector2) -> Vector2:
 
 
 func _click_control(c: Control) -> void:
-	var wp: Vector2 = _to_window(c.get_global_transform_with_canvas() * (c.size * 0.5))
+	await _click_at(_to_window(c.get_global_transform_with_canvas() * (c.size * 0.5)))
+
+
+## 창 좌표 wp 에 마우스 이동 → 왼쪽 버튼 누름(4프레임) → 뗌을 주입한다.
+func _click_at(wp: Vector2) -> void:
 	var mm: InputEventMouseMotion = InputEventMouseMotion.new()
 	mm.position = wp
 	mm.global_position = wp
@@ -313,6 +331,15 @@ func _write_log() -> void:
 			_held_str(),
 		]
 	)
+	var gi: Dictionary = _ghost_info()
+	cols.append_array(
+		[
+			int(bool(gi.get("visible", false))),
+			"%.2f" % float(gi.get("alpha", 0.0)),
+			"%.3f" % float(gi.get("scale", 0.0)),
+			"%.1f" % float(gi.get("ds", 0.0)),
+		]
+	)
 	_log.store_line(",".join(cols.map(func(x): return str(x))))
 	_detect_events(gp, p)
 
@@ -355,6 +382,7 @@ func _detect_events(gp: Node, p: Node) -> void:
 		"autopilot": p.autopilot_timer > 0.0,
 		"offfabric": p.offfabric_timer > 0.0,
 		"drift": bool(p.is_drifting),
+		"ghost_vis": bool(_ghost_info().get("visible", false)),
 	}
 	for k in flags:
 		var on: bool = flags[k]
@@ -406,10 +434,7 @@ func _detect_toast(gp: Node) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	# v2.2.1 아이템 슬롯: 담긴 아이템을 곧바로 Space(use_item)로 써서 예전 즉시 발동 흐름을 유지한다.
-	var gpu: Node = _gp()
-	var use_ok: bool = gpu != null and gpu.has_method("item_slots") and _state() == 1
-	_key(K_USE, use_ok and not _held.get(K_USE, false) and not gpu.item_slots().is_empty())
+	_auto_use_step()
 	var gp: Node = _gp()
 	if gp == null or _state() != 1 or get_tree().paused:
 		if auto_steer:
@@ -431,6 +456,47 @@ func _physics_process(_delta: float) -> void:
 			_key(K_DRIFT, false)
 		return
 	_auto_steer_step(p, tr, gp)
+
+
+## 슬롯 맨 앞 아이템이 use_delay 만큼 담겨 있었으면 Space 를 한 번 누른다(누름 1틱, 뗌 1틱).
+func _auto_use_step() -> void:
+	var gp: Node = _gp()
+	if gp == null or not gp.has_method("item_slots"):
+		_key(K_USE, false)
+		return
+	var slots: Array = gp.item_slots()
+	var sig: String = ",".join(PackedStringArray(slots))
+	if sig != _slot_sig:
+		_slot_sig = sig
+		_slot_since = frame
+		_ev("slots", {"value": sig, "s": snappedf(_progress_s(), 0.1)})
+	if bool(_held.get(K_USE, false)):
+		_key(K_USE, false)
+		return
+	if not auto_use or _state() != 1 or slots.is_empty():
+		return
+	var p: Node = _player()
+	if p != null and (p.stun_timer > 0.0 or p.offfabric_timer > 0.0):
+		return
+	if frame - _slot_since >= int(use_delay.get(str(slots[0]), 45)):
+		_ev("use_item", {"type": str(slots[0])})
+		_key(K_USE, true)
+
+
+## 필드 위 고스트 마커 상태(읽기 전용). {visible, alpha, scale, ground, ds}
+func _ghost_info() -> Dictionary:
+	var gp: Node = _gp()
+	if gp == null:
+		return {}
+	var gf: Node = gp.get("_ghost_field")
+	if gf == null:
+		return {}
+	var st: Dictionary = gf.get("_state")
+	if st.is_empty():
+		return {}
+	var m: Dictionary = gf.call("marker")
+	m["ds"] = float(st.get("s", 0.0)) - _progress_s()
+	return m
 
 
 static func _expo(a: float) -> float:
@@ -474,7 +540,18 @@ func _auto_steer_step(p: Node2D, tr: Object, gp: Node) -> void:
 	var s: float = float(q["s"])
 	var v: float = p.speed
 	# 드리프트 보조: 곧 올 곡률이 비드리프트 한계를 넘으면 Shift 홀드, 잦아들면 뗀다.
-	if auto_drift:
+	var forced: bool = s >= force_drift_s0 and s <= force_drift_s1
+	if forced:
+		if not bool(_held.get(K_DRIFT, false)):
+			drift_count += 1
+			_ev("force_drift_down", {"n": drift_count, "s": snappedf(s, 0.1)})
+		_key(K_DRIFT, true)
+		_forcing = true
+	elif _forcing:
+		_forcing = false
+		_key(K_DRIFT, false)
+		_ev("force_drift_up", {"s": snappedf(s, 0.1)})
+	elif auto_drift:
 		var need: float = v * _max_abs_curv(tr, s, s + v * 0.3 + 10.0)
 		if need > DRIFT_ON * _wmax(v, false):
 			if not bool(_held.get(K_DRIFT, false)):
@@ -532,20 +609,32 @@ func _auto_gear_step(p: Node2D, tr: Object, gp: Node, locked: bool) -> void:
 	if locked:
 		return
 	var s: float = float(tr.query(p.position, int(gp.get("_hint")))["s"])
+	var ds: float = NAN
+	if ghost_follow:
+		var gi: Dictionary = _ghost_info()
+		if not gi.is_empty():
+			ds = float(gi["ds"])
+	# 고스트가 너무 멀면(ds > hi) 따라잡도록 5단까지 허용한다(곡률 한계는 그대로 지킨다).
+	var top: int = 5 if (not is_nan(ds) and ds > ghost_ds_hi) else max_gear
 	var want: int = 1
-	for g in range(max_gear, 0, -1):
+	for g in range(top, 0, -1):
 		var v: float = Tuning.speed_table[g - 1]
 		var k: float = _max_abs_curv(tr, s, s + v * 1.1 + 60.0)
 		if v * k <= GEAR_USE * _wmax(v, auto_drift):
 			want = g
 			break
 	var cur: int = int(p.speed_index)
+	if not is_nan(ds):
+		if ds < ghost_ds_lo:
+			want = mini(want, maxi(1, cur - 1))
+		elif ds <= ghost_ds_hi:
+			want = mini(want, cur)
 	if want < cur:
 		_upshift_wait = 0
 		_gear_press(K_DOWN)
 	elif want > cur:
 		_upshift_wait += 1
-		if _upshift_wait >= 24:
+		if _upshift_wait >= (6 if ghost_follow else 24):
 			_upshift_wait = 0
 			_gear_press(K_UP)
 	else:
@@ -576,6 +665,10 @@ func _main() -> void:
 			await _scenario_tee()
 		"star":
 			await _scenario_star()
+		"cat":
+			await _scenario_cat()
+		"hub":
+			await _scenario_hub()
 		"probe":
 			await _wait(120)
 		_:
@@ -589,17 +682,11 @@ func _main() -> void:
 
 ## 메인 메뉴에서 hold 프레임 머문 뒤 Start → 트랙 종류 선택(공식 트랙) → 트랙 선택에서 steps(+1=다음, -1=이전)대로 캐러셀을
 ## 넘기고(각 dwell 프레임), 목표 트랙이면 Play 를 누른다.
-func _menu_to_track(track_id: String, hold: int, steps: Array, dwell: int) -> bool:
-	await _wait_until(func(): return _scene_name() == "Main", 600, "Main")
-	_park_mouse()
-	_ev("main_menu")
-	await _wait(hold)
-	var start_btn: Control = _scene().get_node("Menu/StartButton")
-	await _click_control(start_btn)
-	if not await _wait_until(func(): return _scene_name() == "TrackKindSelect", 120, "TrackKind"):
+func _menu_to_track(
+	track_id: String, hold: int, steps: Array, dwell: int, kind_dwell: int = -1
+) -> bool:
+	if not await _menu_to_kind(hold, dwell if kind_dwell < 0 else kind_dwell):
 		return false
-	_park_mouse()
-	await _wait(dwell)
 	await _click_control(_scene().get("_official_card"))
 	if not await _wait_until(func(): return _scene_name() == "TrackSelect", 120, "TrackSelect"):
 		return false
@@ -625,6 +712,22 @@ func _menu_to_track(track_id: String, hold: int, steps: Array, dwell: int) -> bo
 	await _click_control(_scene().get("_play_button"))
 	_park_mouse()
 	return await _wait_until(func(): return _gp() != null, 120, "Gameplay")
+
+
+## 메인 메뉴에서 hold 프레임 머문 뒤 Start 를 눌러 트랙 종류 선택 화면에서 dwell 프레임 머문다.
+func _menu_to_kind(hold: int, dwell: int) -> bool:
+	await _wait_until(func(): return _scene_name() == "Main", 600, "Main")
+	_park_mouse()
+	_ev("main_menu")
+	await _wait(hold)
+	var start_btn: Control = _scene().get_node("Menu/StartButton")
+	await _click_control(start_btn)
+	if not await _wait_until(func(): return _scene_name() == "TrackKindSelect", 120, "TrackKind"):
+		return false
+	_park_mouse()
+	_ev("track_kind_select")
+	await _wait(dwell)
+	return true
 
 
 func _wait_go() -> void:
@@ -655,10 +758,12 @@ func _wait_finish_to_result(hold: int) -> void:
 
 
 func _scenario_heart() -> void:
-	# 메인 메뉴 11초(오프라인 알림 토스트가 사라진 뒤 5초 이상) → 트랙 선택 캐러셀(cotton에서 다음 4번, 이전 3번) → heart_01
-	if not await _menu_to_track("heart_01", 660, [1, 1, 1, 1, -1, -1, -1], 70):
+	# 메인 메뉴 11초(오프라인 알림 토스트가 사라진 뒤 5초 이상) → 트랙 종류 선택 2.5초 → 트랙 선택 캐러셀
+	# (cotton에서 다음 4번, 이전 3번) → heart_01
+	if not await _menu_to_track("heart_01", 660, [1, 1, 1, 1, -1, -1, -1], 70, 150):
 		return
-	_ev("gameplay")
+	# 1회차: 깔끔한 자동 주행(최고 4단). 완주하면 기록과 개인 고스트가 격리 user dir 에 저장된다.
+	_ev("gameplay", {"run": 1})
 	_still_when("countdown", func(): return _state() == 0 and _last_cd == 2, 1, 1, 400)
 	await _wait_go()
 	auto_steer = true
@@ -678,7 +783,44 @@ func _scenario_heart() -> void:
 		150,
 		4000
 	)
+	await _wait_finish_to_result(240)
+	# 2회차: 결과 화면 Retry. 같은 트랙을 다시 달리며 1회차 고스트를 앞세운다(고스트와의 진행도 차를
+	# 70~115 로 유지하도록 기어를 고른다). 두 번째 하트 볼록(s 1360~1790)은 Shift 를 계속 눌러
+	# 긴 드리프트(원단 주름)를 만든다.
+	await _click_control(_scene().get("_retry_button"))
+	_park_mouse()
+	if not await _wait_until(func(): return _gp() != null, 300, "Gameplay run2"):
+		return
+	_ev("gameplay", {"run": 2})
+	await _wait_go()
+	auto_steer = true
+	auto_gear = true
+	ghost_follow = true
+	max_gear = 4
+	force_drift_s0 = 1370.0
+	force_drift_s1 = 1780.0
+	_still_when(
+		"ghost",
+		func():
+			var gi: Dictionary = _ghost_info()
+			return bool(gi.get("visible", false)) and float(gi.get("alpha", 0.0)) > 0.45,
+		3,
+		120,
+		6000
+	)
+	_still_when(
+		"fold",
+		func():
+			var p: Node = _player()
+			return p != null and p.is_drifting and _progress_s() > 1450.0,
+		3,
+		30,
+		6000
+	)
 	await _wait_finish_to_result(300)
+	ghost_follow = false
+	force_drift_s0 = INF
+	force_drift_s1 = -INF
 
 
 # ---------------------------------------------------------------- 시나리오: tee(가속·엄마·꿀밤·골무·부상)
@@ -902,3 +1044,115 @@ func _scenario_star() -> void:
 		6000
 	)
 	await _wait_finish_to_result(200)
+
+
+# ---------------------------------------------------------------- 시나리오: cat(데님 원단 곡선)
+
+
+func _scenario_cat() -> void:
+	if not await _menu_to_track("cat_01", 30, [], 20):
+		return
+	_ev("gameplay")
+	await _wait_go()
+	auto_steer = true
+	auto_gear = true
+	auto_drift = true
+	max_gear = 4
+	_still_when(
+		"curve",
+		func():
+			var p: Node = _player()
+			return p != null and absf(p.actual_steer) > 0.3 and R.err(_gp()) < 12.0,
+		3,
+		150,
+		6000
+	)
+	await _wait_finish_to_result(120)
+
+
+# ---------------------------------------------------------------- 시나리오: hub(공유 허브 → 다운로드 → 에디터 아이템 배치)
+# 로컬 임시 서버(hub_server.sh)에 게시물을 넣어 두고, 격리 user dir 의 base_url 을 그 주소로 바꿔 실행한다.
+
+
+func _scenario_hub() -> void:
+	if not await _menu_to_kind(90, 50):
+		return
+	await _click_control(_scene().get("_user_card"))
+	if not await _wait_until(func(): return _scene_name() == "TrackSelect", 120, "TrackSelect user"):
+		return
+	_park_mouse()
+	_ev("track_select_user")
+	await _wait(70)
+	await _click_control(_scene().get("_hub_button"))
+	if not await _wait_until(func(): return _scene_name() == "CommunityHub", 120, "CommunityHub"):
+		return
+	_park_mouse()
+	var rows_ready: Callable = func():
+		var rows: Node = _scene().get("_rows")
+		return rows != null and rows.get_child_count() > 0 and bool(_scene().get("_list_loaded"))
+	if not await _wait_until(rows_ready, 600, "hub list"):
+		return
+	_ev("hub_list", {"rows": (_scene().get("_rows") as Node).get_child_count()})
+	await _still("hub_list")
+	await _wait(150)
+	await _click_control((_scene().get("_rows") as Node).get_child(0))
+	_park_mouse()
+	if not await _wait_until(
+		func(): return (_scene().get("_download_btn") as Control).visible, 600, "hub detail"
+	):
+		return
+	_ev("hub_detail", {"id": str(_scene().get("_detail_id"))})
+	await _wait(30)
+	await _still("hub_detail")
+	await _wait(150)
+	await _click_control(_scene().get("_download_btn"))
+	_park_mouse()
+	_ev("hub_download")
+	await _wait(120)
+	await _click_control(_scene().get("_detail_back_btn"))
+	_park_mouse()
+	await _wait(40)
+	await _click_control(_scene().get("_list_back_btn"))
+	if not await _wait_until(func(): return _scene_name() == "TrackSelect", 120, "TrackSelect back"):
+		return
+	_park_mouse()
+	_ev("track_select_user", {"track": str(_scene().call("_current_id"))})
+	await _wait(90)
+	await _click_control(_scene().get("_edit_button"))
+	if not await _wait_until(func(): return _scene_name() == "TrackEditor", 120, "TrackEditor"):
+		return
+	_park_mouse()
+	_ev("editor")
+	await _wait(70)
+	var ed: Node = _scene()
+	await _click_control(ed.get_node("Toolbar/ModeItem"))
+	_park_mouse()
+	await _wait(40)
+	await _click_control(ed.get_node("ItemBar/AutopilotType"))
+	_park_mouse()
+	await _wait(30)
+	for k in [0.32, 0.58]:
+		await _place_item_at(ed, k)
+		await _wait(50)
+	await _click_control(ed.get_node("ItemBar/ThimbleType"))
+	_park_mouse()
+	await _wait(30)
+	for k in [0.18, 0.45, 0.8]:
+		await _place_item_at(ed, k)
+		await _wait(50)
+	await _still("editor_items")
+	await _wait(150)
+
+
+## 에디터 경로의 호길이 비율 frac 지점(경로 점 인덱스 근사)을 캔버스 화면 좌표로 바꿔 누른다.
+func _place_item_at(ed: Node, frac: float) -> void:
+	var path: PackedVector2Array = ed.get("_doc")["path"]
+	if path.size() < 2:
+		return
+	var w: Vector2 = path[clampi(int(frac * (path.size() - 1)), 0, path.size() - 1)]
+	var cv: Control = ed.get("_canvas")
+	var local: Vector2 = cv.call("world_to_screen", w)
+	var wp: Vector2 = _to_window(cv.get_global_transform_with_canvas() * local)
+	_ev("place_item", {"frac": frac, "world": str(w)})
+	await _click_at(wp)
+	_park_mouse()

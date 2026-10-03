@@ -7,8 +7,10 @@ extends "res://ghost_regression/check_store.gd"
 ##  review_backup  : v1 백업 실패 시 원본을 덮지 않고 메모리 읽기만(쓰기 보류), 다음 기동에 재시도.
 ##  review_validate: 마지막 샘플 시각 = finish_ms(±1ms), 구간 범위·단조성·마지막 구간 = 헤더 완주·패널티.
 ##  review_items   : 같은 기록 지문(아이템 s 순서 정규화)이면 배열 순서가 달라도 슬롯 적재 순서가 같음.
-##  review_result_fit: 결과 화면에 가장 긴 고스트 문구 조합(신기록·저장 실패·구간 10개·트랙 변경·연습)이 떠도
+##  review_result_fit: 결과 화면에 가장 긴 고스트 문구 조합(신기록·저장 실패·트랙 변경·연습)이 떠도
 ##                   카드·버튼이 1280×720 캔버스 안에 들어감(키보드·터치).
+##  grade_best     : 개인 최고·고스트는 등급 우선(S>A>B>C>D), 같은 등급이면 패널티 포함 시간(동률 유지).
+##                   등급 없는 v1 기록은 저장된 accuracy·perfect_rate·cuts로 계산, 계산 불가면 기존 유지.
 ##  review_practice: practice 판정은 물리·판정이 소비하는 Tuning 키만 비교(미사용 키·steer_expo 제외).
 
 const TrackSelectScene: PackedScene = preload("res://scenes/TrackSelect.tscn")
@@ -303,7 +305,8 @@ func _check_review_practice() -> void:
 
 func _check_review_result_fit() -> void:
 	var splits: Array = [-420, 130, null, -2210, 1050, -30, 880, null, -1240, -4000]
-	# 가장 긴 두 조합: 신기록+고스트 저장 실패, 미갱신+트랙 변경 안내(둘 다 구간 10개·연습).
+	# 가장 긴 두 조합: 신기록+고스트 저장 실패, 미갱신+트랙 변경 안내(둘 다 연습). 옛 split_deltas 키를
+	# 넣어도 결과 화면은 구간 줄을 보이지 않아야 한다.
 	var combos: Array = [
 		{
 			"ghost_status": "failed",
@@ -335,13 +338,108 @@ func _check_review_result_fit() -> void:
 		for b in [scr._retry_button, scr._menu_button, scr._track_label, scr._ghost_label]:
 			var r: Rect2 = (b as Control).get_global_rect()
 			_ok(card.encloses(r), "%s: combo %d %s inside card %s" % [_mode, k, b.name, r])
-		var compact: bool = scr._ghost_label.text.contains("빠름 5 · 느림 3 · 비교 불가 2")
-		var detail: bool = scr._ghost_label.text.contains("-0.42 +0.13 --")
-		_ok(
-			compact == (_mode == "touch") and detail == (_mode != "touch"), "%s: split form" % _mode
-		)
+		var txt: String = scr._ghost_label.text
+		_ok(not txt.contains("구간") and not txt.contains("-0.42"), "%s: no split line" % _mode)
+		_ok(txt.contains("등급 우선"), "%s: best rule line kept" % _mode)
 		if k == 1:
 			_ok(scr._ghost_label.text.contains("트랙"), "%s: track changed hint shown" % _mode)
 		scr.queue_free()
 		await _frames(2)
 	_done.append("review_result_fit")
+
+
+func _graded(ms: int, grade: String) -> Dictionary:
+	var r: Dictionary = _result(ms)
+	r["grade"] = grade
+	return r
+
+
+func _check_grade_best() -> void:
+	_reset_store()
+	var a: Dictionary = _graded(60000, "A")
+	RecordStore.submit_run(a, _ghost_of(a))
+	var path_a: String = str(RecordStore.best_for(TRACK, DIFF)["ghost_file"])
+	var b: Dictionary = _graded(55000, "B")
+	var ob: Dictionary = RecordStore.submit_run(b, _ghost_of(b))
+	_ok(not bool(ob["is_best"]), "grade: faster but lower grade is not best")
+	_ok(
+		str(RecordStore.best_for(TRACK, DIFF)["ghost_file"]) == path_a,
+		"grade: ghost kept (lower grade)"
+	)
+	_ok(_ghost_files() == [path_a.get_file()], "grade: no ghost for lower grade run")
+	var s1: Dictionary = _graded(65000, "S")
+	var os1: Dictionary = RecordStore.submit_run(s1, _ghost_of(s1))
+	_ok(
+		bool(os1["is_best"]) and str(os1["ghost_status"]) == "saved",
+		"grade: higher grade slower is best"
+	)
+	_ok(not FileAccess.file_exists(path_a), "grade: previous ghost replaced")
+	_ok(str(RecordStore.best_for(TRACK, DIFF).get("grade", "")) == "S", "grade: entry stores grade")
+	var s2: Dictionary = _graded(64000, "S")
+	_ok(
+		bool(RecordStore.submit_run(s2, _ghost_of(s2))["is_best"]),
+		"grade: same grade faster is best"
+	)
+	var s3: Dictionary = _graded(64000, "S")
+	_ok(
+		not bool(RecordStore.submit_run(s3)["is_best"]),
+		"grade: same grade same time keeps existing"
+	)
+	var s4: Dictionary = _graded(64500, "S")
+	_ok(not bool(RecordStore.submit_run(s4)["is_best"]), "grade: same grade slower not best")
+	# 등급 필드 없는 v1 기록: 저장된 메트릭으로 같은 식(RunStats.grade_from_metrics) 계산.
+	_reset_store()
+	var v1: Dictionary = {
+		"track_id": TRACK,
+		"difficulty": DIFF,
+		"finish_ms": 50000,
+		"penalty_ms": 0,
+		"final_time_ms": 50000,
+		"accuracy": 99.0,
+		"perfect_rate": 99.0,
+		"cuts": 0,
+	}
+	_write_text(RecordStore.SAVE_PATH, JSON.stringify({TRACK + "|" + DIFF: v1}))
+	RecordStore._load()
+	var g1: String = str(RecordStore.call("grade_of", RecordStore.best_for(TRACK, DIFF)))
+	_ok(g1 == "S", "grade: v1 metrics -> S")
+	_ok(
+		not bool(RecordStore.submit_run(_graded(40000, "A"))["is_best"]),
+		"grade: v1 S beats faster A"
+	)
+	_ok(bool(RecordStore.submit_run(_graded(49000, "S"))["is_best"]), "grade: faster S beats v1 S")
+	# 등급도 메트릭도 없는 기록은 비교할 수 없으므로 기존 기록을 유지한다.
+	_reset_store()
+	var bare: Dictionary = {"track_id": TRACK, "difficulty": DIFF, "final_time_ms": 50000}
+	_write_text(RecordStore.SAVE_PATH, JSON.stringify({TRACK + "|" + DIFF: bare}))
+	RecordStore._load()
+	var g2: String = str(RecordStore.call("grade_of", RecordStore.best_for(TRACK, DIFF)))
+	_ok(g2 == "", "grade: bare record unknown")
+	_ok(not bool(RecordStore.submit_run(_graded(40000, "S"))["is_best"]), "grade: unknown kept")
+	# 연습 기록도 같은 규칙.
+	_reset_store()
+	var pa: Dictionary = _graded(60000, "A")
+	pa["practice"] = true
+	RecordStore.submit_run(pa)
+	var pb: Dictionary = _graded(50000, "B")
+	pb["practice"] = true
+	_ok(not bool(RecordStore.submit_run(pb)["is_best"]), "grade: practice uses same rule")
+	# 결과 화면 문구.
+	var low: Dictionary = _graded(55000, "B")
+	low.merge({"ghost_status": "unchanged", "ghost_reason": "not_best", "prev_best_ms": 60000})
+	low["prev_best_grade"] = "A"
+	var t_low: String = ResultScene2Script.ghost_summary(low)
+	_ok(t_low.contains("등급이 낮아"), "grade result: lower grade message")
+	_ok(t_low.contains("등급 우선"), "grade result: policy line")
+	var up: Dictionary = _graded(65000, "S")
+	up.merge({"ghost_status": "saved", "is_new_record": true, "prev_best_ms": 60000})
+	up["prev_best_grade"] = "A"
+	_ok(ResultScene2Script.ghost_summary(up).contains("A → S"), "grade result: grade up message")
+	var same: Dictionary = _graded(62000, "A")
+	same.merge({"ghost_status": "unchanged", "ghost_reason": "not_best", "prev_best_ms": 60000})
+	same["prev_best_grade"] = "A"
+	_ok(
+		ResultScene2Script.ghost_summary(same).contains("2.00초 느림"),
+		"grade result: same grade slower"
+	)
+	_done.append("grade_best")

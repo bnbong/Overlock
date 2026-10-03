@@ -12,9 +12,11 @@ import tempfile
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
 FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 REP = {
-    "01_title": 3.0, "02_trackselect": 4.0, "03_countdown_go": 1.5, "04_straight_speedup": 3.6,
-    "05_curves_clean": 6.0, "06_drift": 1.5, "07_thimble": 2.0, "08_mom_chance": 2.5,
-    "09_injury_A": 1.8, "09_injury_B": 1.8, "10_bonk_scold": 3.0, "11_finish_reveal": 3.0, "11b_finish_reveal_star": 3.0, "12_result": 2.0,
+    "01_title": 3.0, "01b_trackkind": 1.5, "02_trackselect": 2.0, "03_countdown_go": 1.5,
+    "04_straight_speedup": 3.6, "05_curves_clean": 6.0, "05b_ghost": 3.0, "06_drift": 1.5,
+    "06b_fold_long": 1.9, "06c_denim": 5.0, "07_thimble": 1.5, "08_mom_chance": 1.2, "09_injury_A": 1.8,
+    "09_injury_B": 1.8, "10_bonk_scold": 3.0, "11_finish_reveal": 3.0, "12_result": 2.0, "13_hub": 2.5,
+    "14_editor": 6.0,
 }
 
 

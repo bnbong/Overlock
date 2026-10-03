@@ -16,6 +16,13 @@ const DEPTH_SCALE: float = 28.0
 const CAM_BACK: float = 140.0
 const SPREAD: float = 0.9
 const COVERAGE: float = 600.0
+## 바닥 SubViewport 한 변(px). Mode 7 근경은 월드 1px이 화면 가로 10~29px로 크게 확대되므로, 씬 기본값
+## 512(0.85 px/월드)로는 원단 조직이 뭉개진다. 2048(3.41 px/월드)로 올려 조직 한 주기가 뷰포트 3.5px
+## 이상 담기게 한다. 원경 모아레는 FabricSurface의 깊이 기반 밉맵이 거른다.
+const SOURCE_SIZE: int = 2048
+## 모바일 기기(네이티브·모바일 웹)는 렌더 타깃 채움 비용과 메모리(2048² RGBA 16MiB)를 줄이려고 절반을
+## 쓴다. 이때 조직이 뷰포트 해상도보다 촘촘한 부분은 FabricSurface 밉맵이 흐리게 걸러 모아레를 막는다.
+const SOURCE_SIZE_MOBILE: int = 1024
 
 # --- 수평선-원단 이음새 상수 (단일 소스, 셰이더 uniform으로 전달) ---
 # HORIZON_FADE: 수평선 근처를 원단 대표색으로 흐리는 대역(원경 앨리어싱 완화).
@@ -207,11 +214,19 @@ func _setup_projection() -> void:
 		_mat.set_shader_parameter("horizon_fade", HORIZON_FADE)
 		_mat.set_shader_parameter("edge_width", EDGE_WIDTH)
 		_mat.set_shader_parameter("edge_darkness", EDGE_DARKNESS)
-	# 소스가 coverage 월드 px를 512 텍셀에 담도록 카메라를 축소(zoom<1).
+	# 소스가 coverage 월드 px를 SOURCE_SIZE 텍셀에 담도록 카메라를 축소(zoom<1).
+	if _viewport != null:
+		var n: int = SOURCE_SIZE_MOBILE if _is_mobile_device() else SOURCE_SIZE
+		_viewport.size = Vector2i(n, n)
 	if _camera != null and _viewport != null:
 		var vp_w: float = float(_viewport.size.x)
 		var z: float = vp_w / COVERAGE
 		_camera.zoom = Vector2(z, z)
+
+
+## 모바일 기기 여부(네이티브 Android·iOS, 모바일 브라우저의 웹 빌드). 바닥 SubViewport 크기에만 쓴다.
+static func _is_mobile_device() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
 
 
 ## 노루발 오버레이를 v_needle 행에 정렬(셰이더와 동일 상수에서 유도).
@@ -360,7 +375,8 @@ func _update_drift_folds(
 	if _prev_fold_push and (not drifting or jumped or reset_edge):
 		_skid.end_stroke(_fx_time)
 	if drifting and not jumped and not reset_edge:
-		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir), _fx_time, heading)
+		var tip: Vector2 = _fold_tip_world(_player.drift_dir, pos, heading)
+		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir), _fx_time, heading, tip)
 		_prev_fold_push = true
 	else:
 		_prev_fold_push = false
@@ -368,6 +384,18 @@ func _update_drift_folds(
 	if _folds != null:
 		_folds.enabled = true
 		_folds.update_view(_fx_time, pos, heading)
+
+
+## 드리프트 쪽(누르는) 손의 접촉 손끝 화면 위치를 바닥 월드로 역투영한다(주름 기준점). 손끝은 조향·드리프트
+## 누름·미끄러짐에 따라 움직이므로 매 프레임 HandView가 그리는 위치를 그대로 쓴다. 손이 없으면 NAN.
+func _fold_tip_world(dir: float, pos: Vector2, heading: float) -> Vector2:
+	var hand: HandView = _right_hand if dir > 0.0 else _left_hand
+	if hand == null:
+		return Vector2(NAN, NAN)
+	# HandView는 이 작업에서 바꾸지 않으므로, 회귀 검사가 쓰는 읽기 전용 손끝 위치(_slip_tip_local)를 읽는다.
+	var tip_screen: Vector2 = hand.position + hand._slip_tip_local()
+	var screen: Vector2 = get_viewport().get_visible_rect().size
+	return DriftFoldLayer.screen_to_world(tip_screen, pos, heading, screen)
 
 
 ## RaceDirector가 주행 틱(RUNNING) 중인가(카운트다운·완주 줌아웃·결과 전환이면 false). 부모가 다른 씬

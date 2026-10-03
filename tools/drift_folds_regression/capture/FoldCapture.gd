@@ -18,6 +18,7 @@ var scenario: String = "main"
 var track: String = "tee_01"
 var auto: bool = false
 var hide_fg: bool = false
+var legacy_place: bool = false
 var frame: int = 0
 var _log: FileAccess = null
 var _events: FileAccess = null
@@ -44,6 +45,8 @@ func _ready() -> void:
 			track = a.substr(8)
 		elif a.begins_with("--flat-max-diff="):
 			_flat_max_diff = float(a.substr(16))
+		elif a == "--legacy-place":
+			legacy_place = true
 		elif a == "--hide-fg":
 			hide_fg = true
 	if out_dir.is_empty():
@@ -193,6 +196,8 @@ func _physics_process(_delta: float) -> void:
 	if out_dir.is_empty():
 		return
 	frame += 1
+	if legacy_place and _skid() != null:
+		_skid().debug_ignore_tip = true
 	if hide_fg and _g() != null:
 		for n in ["ForegroundLayer", "HUD"]:
 			var c: CanvasLayer = _g().get_node_or_null(n)
@@ -372,6 +377,8 @@ func _main() -> void:
 			await _scenario_perf()
 		"heightcmp":
 			await _scenario_heightcmp()
+		"longdrift":
+			await _scenario_longdrift()
 		_:
 			_fail("unknown scenario %s" % scenario)
 	for name in _expected_caps:
@@ -788,7 +795,7 @@ func _scenario_perf() -> void:
 
 
 ## 같은 장면(일시정지한 같은 프레임)을 높이 비교 모드로 다시 그려 찍는다.
-## a=이전 2.6 공식(실제 강도), b=새 기본값(보통 강도 0.6 → FOLD_HEIGHT), c=강한 드리프트 정점(강도 1).
+## a=이전 3.3 공식(실제 강도, 상한 36px), b=새 기본값(보통 강도 0.6 → FOLD_HEIGHT), c=강한 드리프트 정점(강도 1).
 func _cap_height_modes(prefix: String) -> void:
 	var pr: Node = _presenter()
 	var fl: Node = _folds()
@@ -798,7 +805,7 @@ func _cap_height_modes(prefix: String) -> void:
 		return
 	get_tree().paused = true
 	var now: float = float(pr._fx_time)
-	for pair in [[1, "a_old26"], [3, "b_new"], [2, "c_peak"]]:
+	for pair in [[4, "a_prev33"], [3, "b_new"], [2, "c_peak"]]:
 		fl.debug_height_mode = pair[0]
 		fl.update_view(now, p.position, p.heading)
 		await _ticks(2)
@@ -832,3 +839,102 @@ func _scenario_heightcmp() -> void:
 	await _recover()
 	await _wait_curve(-1)
 	await _height_drift(-1, "left")
+
+
+## 드리프트 유지(Shift를 누른 채): drift_dir이 keep 아래로 내려가면 조향 키를 누르고 넘으면 뗀다. 같은 방향
+## 스트로크가 끊기지 않게 유지하면서 회전 반경을 키운다(keep이 클수록 급한 곡선).
+func _drift_hold(dir: int, n: int, keep: float, cap_at: Dictionary = {}) -> void:
+	auto = false
+	_drift(true)
+	var p: PlayerController = _player()
+	for i in n:
+		_steer(dir if p.drift_dir * float(dir) < keep else 0)
+		await get_tree().physics_frame
+		if cap_at.has(i):
+			var nm: String = cap_at[i]
+			if nm.begins_with("LAYERS_"):
+				await _cap_layers(nm.substr(7))
+			else:
+				await _cap(nm)
+	_drift(false)
+	_steer(0)
+
+
+## 같은 프레임(일시정지)을 주름 레이어·바닥 잔여 흔적을 켜고 끄며 찍는다(어느 층이 그린 것인지 확인용).
+func _cap_layers(prefix: String) -> void:
+	var pr: Node = _presenter()
+	var fl: Node = _folds()
+	var sk: Node = _skid()
+	var p: PlayerController = _player()
+	get_tree().paused = true
+	var now: float = float(pr._fx_time)
+	for v in [[true, true, "all"], [false, true, "no_layer"], [true, false, "no_residue"]]:
+		fl.enabled = v[0]
+		sk.visible = v[1]
+		fl.update_view(now, p.position, p.heading)
+		await _ticks(3)
+		await _cap("%s_%s" % [prefix, v[2]])
+	fl.enabled = true
+	sk.visible = true
+	fl.update_view(now, p.position, p.heading)
+	get_tree().paused = false
+
+
+## 긴 드리프트(2.5초 유지) 좌/우 + 짧은 드리프트 + 급한 곡선 드리프트 + 급반전. 긴 드리프트는 연속 프레임과
+## 놓은 뒤 완화까지 남긴다.
+func _scenario_longdrift() -> void:
+	await _start_run(3, 120)
+	for pair in [[1, "right"], [-1, "left"]]:
+		var dir: int = pair[0]
+		var tag: String = pair[1]
+		await _wait_curve(dir, 400)
+		_seq("seq_long_%s" % tag, 200)
+		await _ticks(4)
+		await _drift_hold(
+			dir,
+			150,
+			0.35,
+			{
+				30: "ld_%s_t030" % tag,
+				50: "LAYERS_ld_%s_t050" % tag,
+				75: "ld_%s_t075" % tag,
+				96: "LAYERS_ld_%s_t096" % tag,
+				149: "ld_%s_t150" % tag
+			}
+		)
+		auto = true
+		await _ticks(10)
+		await _cap("ld_%s_release10" % tag)
+		await _ticks(30)
+		await _cap("ld_%s_release40" % tag)
+		await _recover()
+	# 짧은 드리프트.
+	await _wait_curve(1, 400)
+	await _drift_burst(1, 8, {7: "sd_short_t8"})
+	auto = true
+	await _ticks(10)
+	await _cap("sd_short_release10")
+	await _recover()
+	# 급한 곡선 드리프트(조향을 강하게 유지).
+	await _wait_curve(-1, 400)
+	_seq("seq_curve_left", 120)
+	await _drift_hold(-1, 90, 0.85, {45: "cd_curve_t045", 89: "cd_curve_t090"})
+	auto = true
+	await _ticks(10)
+	await _cap("cd_curve_release10")
+	await _recover()
+	# 급반전(드리프트 유지, 우 → 좌).
+	await _wait_curve(1, 400)
+	auto = false
+	_drift(true)
+	_steer(1)
+	await _ticks(24)
+	await _cap("rv_before")
+	_steer(-1)
+	await _ticks(12)
+	await _cap("rv_t12")
+	await _ticks(12)
+	await _cap("rv_t24")
+	_drift(false)
+	_steer(0)
+	auto = true

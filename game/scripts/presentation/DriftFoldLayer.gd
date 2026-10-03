@@ -28,15 +28,20 @@ extends Node2D
 ## 칠한 음영으로만 남는다. 시간은 PresentationController의 주행 표현 시계를 받는다(일시정지에서 멈춤).
 
 ## 활성 입체 패치 상한(모바일 기준).
-const MAX_ACTIVE: int = 12
+## 긴 드리프트에서 겹친 패치(간격 16)가 근경까지 이어지도록 12에서 16으로 늘렸다.
+const MAX_ACTIVE: int = 16
+## 근경 링에서 후보로 살펴볼 최근 패치 수. 스트로크가 살아 있는 동안 패치가 완화하지 않으므로 생성 시각만으로
+## 끊지 않고 이 개수만큼 살핀다(원경·화면 밖은 컬링, 그 바깥은 바닥 잔여 흔적만 남는다).
+const SCAN_MAX: int = 64
 ## 투영 카메라 높이(월드 단위). 위 설명 참조.
 const CAM_HEIGHT: float = (
 	PresentationController.DEPTH_SCALE * PresentationController.SPREAD * 720.0 / 1280.0
 )
 ## 카메라 앞 최소 깊이(px). 이보다 가까운 정점은 이 깊이로 눌러 투영이 무한대로 튀지 않게 한다.
 ## 화면 하단(uv.y=1)의 깊이가 약 48이라 클램프되는 정점은 항상 화면 밖이고, 근경 감쇠(NEAR_FADE_LO)보다
-## 가까워 표면 알파·높이가 0이므로 눌린 정점이 만드는 삼각형 왜곡은 보이지 않는다.
-const NEAR_CLIP: float = 30.0
+## 가까워 표면 알파·높이가 0이므로 눌린 정점이 만드는 삼각형 왜곡은 보이지 않는다. 긴 드리프트에서 패치가 카메라
+## 아래까지 오래 남으므로, 눌린 정점이 화면 바로 아래(y 약 760)에 머물도록 30에서 44로 올렸다.
+const NEAR_CLIP: float = 44.0
 ## 이보다 먼 패치(수평선 쪽)는 메시로 그리지 않는다. 바닥 셰이더의 수평선 페이드 대역보다 가깝다.
 const FAR_DEPTH: float = 420.0
 ## 플레이어에서 패치 중심까지 이보다 멀면 그리지 않는다. 패치 반대각선(약 60)을 더해도 바닥 텍스처
@@ -58,7 +63,11 @@ const LUM_MAX: float = 1.32
 const SHADOW_ALPHA: float = 0.5
 ## 화면에서 솟는 최대 픽셀(1280×720 캔버스). 카메라 바로 앞(depth 50 근처는 높이 1 단위가 약 28px)에서
 ## 주름이 지나치게 높아지지 않게 정점 깊이별로 패치 높이를 비례로 낮춘다(drift_fold.gdshader).
-const MAX_LIFT_PX: float = 36.0
+const MAX_LIFT_PX: float = 48.0
+## 강도별 화면 솟음 상한: LIFT_CAP_BASE + LIFT_CAP_GAIN × 강도(보통 0.6 → 42.4px, 강도 1 → 48px). 높이 중심
+## 깊이에서는 보통·정점 모두 상한에 닿으므로, 상한을 강도에 비례시켜 정점이 분명히 더 높게 보이게 한다.
+const LIFT_CAP_BASE: float = 34.0
+const LIFT_CAP_GAIN: float = 14.0
 ## 카메라 바로 앞 감쇠 구간(깊이). 이보다 가까운 정점은 높이·명암이 0으로 줄어 근경 부채꼴 줄무늬를 막는다.
 const NEAR_FADE_LO: float = 46.0
 const NEAR_FADE_HI: float = 72.0
@@ -72,14 +81,15 @@ const G_PLAYER: StringName = &"fold_player_pos"
 const G_HEADING: StringName = &"fold_heading"
 const G_NOW: StringName = &"fold_now"
 
+static var _globals_ready: bool = false
+
 ## false면 아무것도 그리지 않는다(연출 OFF 비교·문제 시 끄기).
 var enabled: bool = true
 ## 검증 전용: true면 모든 패치를 높이 0·불투명·그림자 없음으로 그린다. 이때 화면이 바닥과 같아야 한다
 ## (투영·월드 UV가 Mode 7 바닥과 일치함을 픽셀로 확인하는 캡처 검사용, 게임에서는 쓰지 않는다).
 var debug_flat: bool = false
-## 검증 전용 높이 비교 모드(같은 장면을 다시 그려 비교할 때만 쓴다). 0=실제 기록값, 1=이전(2.6 ×
-## (0.6+0.4×강도), 상한 26px), 2=모든 패치를 강도 1(강한 드리프트 정점), 3=모든 패치를 보통 강도 0.6(새 기본값
-## FOLD_HEIGHT 그대로).
+## 검증 전용 높이 비교 모드(같은 장면을 다시 그려 비교할 때만 쓴다). height_profile 참조:
+## 0=실제 기록값, 1=v2(2.6), 2=강도 1 정점, 3=보통 강도 0.6(새 기본값), 4=v3(3.3, 상한 36px).
 var debug_height_mode: int = 0
 
 var _skid: DriftSkid = null
@@ -105,19 +115,17 @@ func setup(skid: DriftSkid, source_tex: Texture2D) -> void:
 
 
 ## 전역 uniform을 등록한다(프로세스에서 처음 한 번). 셰이더가 컴파일되기 전에 있어야 하므로 셰이더는
-## 이 뒤에 load한다.
+## 이 뒤에 load한다. 등록 여부는 정적 플래그로만 판단한다(global_shader_parameter_get_list/get은 에디터
+## 전용이라 런타임에 오류를 남긴다). 전역 uniform은 프로세스 수명 동안 유지되므로 재시작해도 다시 등록하지 않는다.
 static func _register_globals() -> void:
-	var have: PackedStringArray = PackedStringArray()
-	for name in RenderingServer.global_shader_parameter_get_list():
-		have.append(str(name))
-	var defs: Array = [
-		[G_PLAYER, RenderingServer.GLOBAL_VAR_TYPE_VEC2, Vector2.ZERO],
-		[G_HEADING, RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
-		[G_NOW, RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
-	]
-	for d in defs:
-		if not have.has(str(d[0])):
-			RenderingServer.global_shader_parameter_add(d[0], d[1], d[2])
+	if _globals_ready:
+		return
+	RenderingServer.global_shader_parameter_add(
+		G_PLAYER, RenderingServer.GLOBAL_VAR_TYPE_VEC2, Vector2.ZERO
+	)
+	RenderingServer.global_shader_parameter_add(G_HEADING, RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	RenderingServer.global_shader_parameter_add(G_NOW, RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	_globals_ready = true
 
 
 func _create_slots() -> void:
@@ -246,6 +254,21 @@ static func project(
 	return Vector3(x, y, depth)
 
 
+## 화면 점(캔버스 좌표)을 바닥 월드 좌표로 역투영한다(project의 z=0 역식 = Mode 7 바닥 셰이더 식).
+## 수평선 위·바로 아래처럼 깊이가 무한히 커지는 점은 depth_max로 자른다.
+static func screen_to_world(
+	sp: Vector2, ppos: Vector2, heading: float, screen: Vector2, depth_max: float = 600.0
+) -> Vector2:
+	var fwd: Vector2 = Vector2(cos(heading), sin(heading))
+	var rgt: Vector2 = Vector2(-fwd.y, fwd.x)
+	var dy: float = sp.y / screen.y - PresentationController.HORIZON
+	var depth: float = depth_max
+	if dy > PresentationController.DEPTH_SCALE / depth_max:
+		depth = PresentationController.DEPTH_SCALE / dy
+	var lateral: float = (sp.x / screen.x - 0.5) * depth * PresentationController.SPREAD
+	return ppos + fwd * (depth - PresentationController.CAM_BACK) + rgt * lateral
+
+
 ## 패치의 지금 표면 정점 화면 좌표(셰이더와 같은 계산, 회귀 검사·클리핑 확인용).
 func debug_project_patch(rec: Dictionary, screen: Vector2) -> PackedVector2Array:
 	var a01: float = DriftFoldShape.amp01(float(rec["born"]), float(rec["relax"]), _now)
@@ -254,13 +277,14 @@ func debug_project_patch(rec: Dictionary, screen: Vector2) -> PackedVector2Array
 	var out: PackedVector2Array = PackedVector2Array()
 	out.resize(world.size())
 	var spread: float = relax_spread(rec, _now)
-	var base: Vector2 = (rec["c"] as PackedVector2Array)[0]
-	var nrm: Vector2 = (rec["n"] as PackedVector2Array)[0]
+	var mid_k: int = (rec["c"] as PackedVector2Array).size() / 2
+	var base: Vector2 = (rec["c"] as PackedVector2Array)[mid_k]
+	var nrm: Vector2 = (rec["n"] as PackedVector2Array)[mid_k]
 	var mid: float = float(rec["off"]) + float(rec["w"]) * 0.5
 	for k in range(world.size()):
 		var lat: float = (world[k] - base).dot(nrm)
 		var wp: Vector2 = world[k] + nrm * ((lat - mid) * (spread - 1.0))
-		var z: float = capped_amp(amp, wp, _ppos, _heading) * DriftFoldShape.grid_h[k]
+		var z: float = capped_amp(amp, wp, _ppos, _heading, lift_cap(rec)) * DriftFoldShape.grid_h[k]
 		var pr: Vector3 = project(wp, z, _ppos, _heading, screen)
 		out[k] = Vector2(pr.x, pr.y)
 	return out
@@ -273,11 +297,22 @@ static func relax_spread(rec: Dictionary, now: float) -> float:
 
 
 ## 정점 깊이에서 화면 솟음이 MAX_LIFT_PX를 넘지 않도록 낮춘 패치 높이(셰이더 a_eff와 같은 식).
-static func capped_amp(amp: float, world: Vector2, ppos: Vector2, heading: float) -> float:
+static func capped_amp(
+	amp: float, world: Vector2, ppos: Vector2, heading: float, cap_px: float = MAX_LIFT_PX
+) -> float:
 	var fwd: Vector2 = Vector2(cos(heading), sin(heading))
 	var depth: float = (world - ppos).dot(fwd) + PresentationController.CAM_BACK
 	var near_k: float = smoothstep(NEAR_FADE_LO, NEAR_FADE_HI, depth)
-	return minf(amp, MAX_LIFT_PX / lift_px_per_unit(depth, Vector2(1280.0, 720.0))) * near_k
+	return minf(amp, cap_px / lift_px_per_unit(depth, Vector2(1280.0, 720.0))) * near_k
+
+
+## 패치의 화면 솟음 상한(px, 강도별).
+static func lift_cap(rec: Dictionary) -> float:
+	return (
+		LIFT_CAP_BASE
+		+ LIFT_CAP_GAIN * clampf(float(rec["intensity"]), 0.0, 1.0)
+		+ float(rec.get("lift_bonus", 0.0))
+	)
 
 
 ## 패치 격자 정점의 바닥 월드 좌표((NU+1)×(NV+1), 행 = 뒤→앞).
@@ -299,16 +334,16 @@ static func patch_world_grid(rec: Dictionary) -> PackedVector2Array:
 ## 반환 원소 {"rec","a01","depth","lift"}, 배열의 마지막 원소는 후보 수(int)다.
 func _select(screen: Vector2, fwd: Vector2) -> Array:
 	var near: Array = _skid.get_near_folds()
-	var horizon_age: float = (
-		DriftFoldShape.HOLD + DriftFoldShape.RELAX + DriftFoldShape.RESIDUE_FADE + 0.05
-	)
 	var cands: Array = []
 	var count: int = 0
-	for i in range(near.size() - 1, -1, -1):
-		var rec: Dictionary = near[i]
+	var scan: Array = []
+	var live: Dictionary = _skid.get_live_fold()
+	if not live.is_empty():
+		scan.append(live)
+	for i in range(near.size() - 1, maxi(near.size() - 1 - SCAN_MAX, -1), -1):
+		scan.append(near[i])
+	for rec in scan:
 		var born: float = float(rec["born"])
-		if _now - born > horizon_age:
-			break  # 더 오래된 패치는 모두 높이 0(링은 생성 순서).
 		var a01: float = DriftFoldShape.amp01(born, float(rec["relax"]), _now)
 		if a01 <= 0.0:
 			continue
@@ -319,7 +354,9 @@ func _select(screen: Vector2, fwd: Vector2) -> Array:
 		var depth: float = d.dot(fwd) + PresentationController.CAM_BACK
 		if depth > FAR_DEPTH:
 			continue
-		var lift: float = float(rec["amp"]) * a01 * lift_px_per_unit(maxf(depth, 48.0), screen)
+		var lift: float = minf(
+			float(rec["amp"]) * a01 * lift_px_per_unit(maxf(depth, 48.0), screen), lift_cap(rec)
+		)
 		if lift < MIN_LIFT_PX or not _on_screen(rec, screen, lift):
 			continue
 		cands.append({"rec": rec, "a01": a01, "depth": depth, "lift": lift})
@@ -331,25 +368,22 @@ func _select(screen: Vector2, fwd: Vector2) -> Array:
 	return cands
 
 
-## 패치 네 모서리의 바닥 투영(+최대 솟음)이 화면과 겹치는가.
+## 패치 가장자리(행별 안쪽·바깥 점)의 바닥 투영(+최대 솟음)이 화면과 겹치는가. 휜 패치도 놓치지 않도록
+## 네 모서리만이 아니라 세 행마다 안쪽·바깥 점을 본다.
 func _on_screen(rec: Dictionary, screen: Vector2, lift: float) -> bool:
 	var cs: PackedVector2Array = rec["c"]
 	var ns: PackedVector2Array = rec["n"]
 	var off: float = float(rec["off"])
 	var w: float = float(rec["w"])
-	var last: int = cs.size() - 1
-	var corners: Array = [
-		cs[0] + ns[0] * off,
-		cs[0] + ns[0] * (off + w),
-		cs[last] + ns[last] * off,
-		cs[last] + ns[last] * (off + w),
-	]
 	var mn: Vector2 = Vector2(INF, INF)
 	var mx: Vector2 = Vector2(-INF, -INF)
-	for c in corners:
-		var pr: Vector3 = project(c, 0.0, _ppos, _heading, screen)
-		mn = mn.min(Vector2(pr.x, pr.y))
-		mx = mx.max(Vector2(pr.x, pr.y))
+	var k: int = 0
+	while k < cs.size():
+		for lat in [off, off + w]:
+			var pr: Vector3 = project(cs[k] + ns[k] * lat, 0.0, _ppos, _heading, screen)
+			mn = mn.min(Vector2(pr.x, pr.y))
+			mx = mx.max(Vector2(pr.x, pr.y))
+		k = mini(k + 3, cs.size() - 1) if k < cs.size() - 1 else cs.size()
 	var margin: float = lift * 4.0 + 8.0
 	return (
 		mx.x >= -margin
@@ -471,9 +505,11 @@ func _update_slot(slot: Dictionary, draw_pos: int) -> void:
 	var fresh: bool = is_nan(float(slot.get("relax", NAN)))
 	if fresh:
 		var mid: float = float(rec["off"]) + float(rec["w"]) * 0.5
+		# 완화 퍼짐의 측방 기준: 패치 가운데 행(휜 패치에서도 가운데 부근이 정확하다).
+		var mk: int = (rec["c"] as PackedVector2Array).size() / 2
 		for key in ["hmat", "smat"]:
-			_set_param(slot[key], "patch_base", (rec["c"] as PackedVector2Array)[0])
-			_set_param(slot[key], "patch_n", (rec["n"] as PackedVector2Array)[0])
+			_set_param(slot[key], "patch_base", (rec["c"] as PackedVector2Array)[mk])
+			_set_param(slot[key], "patch_n", (rec["n"] as PackedVector2Array)[mk])
 			_set_param(slot[key], "patch_mid", mid)
 			_set_param(slot[key], "patch_born", float(rec["born"]))
 	if fresh or float(slot["relax"]) != relax:
@@ -499,19 +535,23 @@ func _update_slot(slot: Dictionary, draw_pos: int) -> void:
 
 
 ## 높이 비교 모드별 [패치 최대 높이, 화면 솟음 상한 px, LIGHT_GAIN, AO_GAIN].
+## 0=실제 기록값, 1=v2(2.6×(0.6+0.4i), 26px), 2=강도 1 정점, 3=보통 강도 0.6, 4=v3(3.3×(0.7+0.5i), 36px).
 static func height_profile(rec: Dictionary, mode: int) -> Array:
 	var var_k: float = float(rec.get("amp_var", 1.0))
+	var i: float = float(rec["intensity"])
+	var h0: float = DriftSkid.FOLD_HEIGHT
 	match mode:
 		1:
-			var legacy: float = 2.6 * (0.6 + 0.4 * float(rec["intensity"])) * var_k
-			return [legacy, 26.0, 1.1, 0.55]
+			return [2.6 * (0.6 + 0.4 * i) * var_k, 26.0, 1.1, 0.55]
 		2:
-			var peak: float = DriftSkid.FOLD_HEIGHT * (DriftSkid.AMP_BASE + DriftSkid.AMP_GAIN) * var_k
-			return [peak, MAX_LIFT_PX, LIGHT_GAIN, AO_GAIN]
+			var peak: float = h0 * (DriftSkid.AMP_BASE + DriftSkid.AMP_GAIN) * var_k
+			return [peak, LIFT_CAP_BASE + LIFT_CAP_GAIN, LIGHT_GAIN, AO_GAIN]
 		3:
-			var base: float = DriftSkid.FOLD_HEIGHT * (DriftSkid.AMP_BASE + DriftSkid.AMP_GAIN * 0.6)
-			return [base * var_k, MAX_LIFT_PX, LIGHT_GAIN, AO_GAIN]
-	return [float(rec["amp"]), MAX_LIFT_PX, LIGHT_GAIN, AO_GAIN]
+			var base: float = h0 * (DriftSkid.AMP_BASE + DriftSkid.AMP_GAIN * 0.6) * var_k
+			return [base, LIFT_CAP_BASE + LIFT_CAP_GAIN * 0.6, LIGHT_GAIN, AO_GAIN]
+		4:
+			return [3.3 * (0.70 + 0.50 * i) * var_k, 36.0, 0.95, 0.5]
+	return [float(rec["amp"]), lift_cap(rec), LIGHT_GAIN, AO_GAIN]
 
 
 func _set_param(mat: ShaderMaterial, param: StringName, value: Variant) -> void:

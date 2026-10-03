@@ -22,7 +22,9 @@ https://creativecommons.org/licenses/by/4.0/
 
 ## 게임 화면과 에셋
 
-- 게임 화면은 모두 현재 빌드를 실제 입력으로 플레이하며 촬영한 `footage/`의 클립 13개에서 가져왔습니다. 13개 클립을 모두 한 번 이상 사용했습니다.
+- 게임 화면은 모두 v2.3.0 빌드를 macOS 데스크톱에서 실제 입력 이벤트로 플레이하며 촬영한 클립 19개에서 가져왔습니다. 모바일 실기기 화면은 없습니다. 19개 가운데 결과 화면 클립(`12_result`)을 뺀 18개를 영상에 사용했습니다. 결과 화면 클립은 포스터와 확인용으로만 남겼습니다.
+- 촬영본은 저장소에 넣지 않으며, 촬영과 클립 생성 방법은 `README.md`의 "다시 만드는 방법"에 적었습니다.
+- 공유 허브 장면의 게시물 세 개(`하트 한 바퀴 연습`, `느긋한 S자 산책`, `트랙 경기장 한 바퀴`)는 로컬 임시 서버에 올린 촬영용 데모 데이터입니다. 트랙 모양은 `server/tests/fixtures/community_tracks/`의 회귀 검사용 fixture이고, 작성자 이름(`실밥요정`, `솔기장인`, `바늘손`)은 실제 사용자가 아니라 촬영을 위해 지어낸 이름입니다.
 - 로고는 `game/assets/gfx/overlock_logo.png`를, 자막의 아이템 아이콘은 `game/assets/gfx/item_moms_chance.png`와 `game/assets/gfx/item_thimble.png`를 썼습니다. 이 이미지들은 Overlock 프로젝트의 에셋입니다(`game/assets/gfx/README.md` 참고).
 - 게임 효과음은 넣지 않았습니다. 영상의 소리는 음악 한 곡뿐입니다.
 
@@ -32,7 +34,8 @@ https://creativecommons.org/licenses/by/4.0/
 
 | 도구 | 용도 | 라이선스 |
 |---|---|---|
+| Godot 4.6.1 Movie Maker | 게임 화면 촬영(1920×1080, 60fps 고정, MJPEG) | MIT |
 | skia-python 144 | 프레임 합성과 벡터 그래픽, 글자 렌더링 | BSD-3-Clause |
 | NumPy, Pillow, SciPy | 프레임 버퍼 처리, 시트 제작 | BSD 계열, HPND(Pillow) |
 | librosa 1.0, soundfile | 박자·온셋 분석, 오디오 입출력 | ISC, BSD-3-Clause |
-| FFmpeg 7.1.1(libx264, soxr, AudioToolbox AAC) | 디코딩, 리샘플링, 라우드니스 측정, 인코딩, 먹싱 | LGPL/GPL(빌드 구성에 따름) |
+| FFmpeg(libx264, soxr, AudioToolbox AAC) | 디코딩, 리샘플링, 라우드니스 측정, 인코딩, 먹싱 | LGPL/GPL(빌드 구성에 따름) |

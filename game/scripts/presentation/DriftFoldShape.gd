@@ -27,10 +27,14 @@ const CROP_V1: float = 0.95
 ## 패치 가장자리 감쇠 폭(격자 비율). 이 안에서 높이가 smoothstep으로 0까지 줄어 사각 경계가 없다.
 const EDGE_U: float = 0.14
 const EDGE_V: float = 0.12
-## 접선 방향 높이 봉우리 위치(v=0 패치 뒤쪽 끝=근경, v=1 바늘 쪽). 높이가 v=PEAK_V에서 가장 크고 양 끝으로
-## 부드럽게 0이 된다. 생성 순간 노루발 바로 뒤, 원단과 함께 흘러가면 손 옆 바로 아래 구간에 높이의 중심이
-## 온다. 근경 끝이 낮아 원근 때문에 능선이 카메라 쪽으로 부채꼴처럼 뻗지 않는다.
-const PEAK_V: float = 0.45
+## 접선 방향 기준 행(v=0 패치 뒤쪽 끝=근경, v=1 바늘 쪽). 능선 개수·폭 측정에 쓰는 가운데 행이다.
+const PEAK_V: float = 0.5
+## 긴 드리프트에서 겹친 패치들이 하나의 긴 주름으로 이어지도록, 높이를 v 방향으로 거의 일정한 단면(봉우리
+## 행 근처 평균)과 원래 높이맵의 섞음으로 만든다. 1이면 완전히 곧은 능선, 0이면 원래 높이맵.
+const STRAIGHT_MIX: float = 0.75
+## v 방향 봉우리 고원: 양 끝 FADE_V 구간만 0으로 줄이고 가운데는 거의 평평하다. 패치 간격보다 고원이 길어
+## 이웃 패치와 겹친 구간에서 높이가 꺼지지 않는다.
+const FADE_V: float = 0.28
 ## 능선을 둥글고 넓게 만드는 격자 흐림 횟수(3×3 상자). 생성 이미지의 능선은 좁고 날카로워서 그대로
 ## 쓰면 원근에서 속도선처럼 읽힌다(캡처로 확인). 4회면 능선 세 개가 각각 측방 셀 5~7개 폭의 둥근
 ## 언덕이 되고 사이 골짜기는 얕아진다.
@@ -45,8 +49,9 @@ const TEX_SIZE: int = 64
 # --- 시간 모델(표현 시간, 초). 주행 표현 시계가 멈추면(일시정지) 그대로 멈춘다. ---
 ## 생성 후 솟는 시간.
 const RISE: float = 0.12
-## 손이 지나간 뒤 눌린 채로 버티는 시간. 드리프트가 더 일찍 끝나면 그때부터 완화한다.
-const HOLD: float = 0.35
+## 스트로크(드리프트 유지)가 살아 있는 동안 패치의 relax 값. 이 동안은 완화하지 않고 솟은 높이를 유지하며,
+## 스트로크가 끝나는 순간 그 스트로크의 모든 패치가 함께 완화를 시작한다(DriftSkid.end_stroke).
+const HELD: float = 1.0e9
 ## 완화 시간(최대 높이 → 잔여 높이).
 const RELAX: float = 0.60
 ## 완화 뒤 남는 낮은 높이 비율.
@@ -139,15 +144,40 @@ static func _sample_heights(img: Image, cols: int, rows: int) -> PackedFloat32Ar
 			out[j * (cols + 1) + i] = r
 			peak = maxf(peak, r)
 	peak = maxf(peak, 0.001)
+	# 곧은 단면: 가운데 행(v 0.35 ~ 0.65) 평균. 이웃 패치와 능선 위치가 맞아 긴 주름으로 이어진다.
+	var profile: PackedFloat32Array = PackedFloat32Array()
+	profile.resize(cols + 1)
+	var j0: int = int(round(0.35 * rows))
+	var j1: int = int(round(0.65 * rows))
+	for i in range(cols + 1):
+		var acc: float = 0.0
+		for j in range(j0, j1 + 1):
+			acc += out[j * (cols + 1) + i]
+		profile[i] = acc / float(j1 - j0 + 1)
 	for j in range(rows + 1):
 		var v: float = float(j) / float(rows)
-		var ev: float = smoothstep(0.0, PEAK_V, v) * smoothstep(0.0, 1.0 - PEAK_V, 1.0 - v)
+		var ev: float = smoothstep(0.0, FADE_V, v) * smoothstep(0.0, FADE_V, 1.0 - v)
 		for i in range(cols + 1):
 			var u: float = float(i) / float(cols)
 			var eu: float = smoothstep(0.0, EDGE_U, u) * smoothstep(0.0, EDGE_U, 1.0 - u)
 			var k: int = j * (cols + 1) + i
-			out[k] = clampf(out[k] / peak, 0.0, 1.0) * eu * ev
+			var r: float = lerpf(out[k], profile[i], STRAIGHT_MIX)
+			out[k] = clampf(r / peak, 0.0, 1.0) * eu * ev
 	return out
+
+
+## 공유 격자 높이를 (u, v) ∈ 0..1에서 쌍선형 보간한다(회귀 검사의 연속성 측정용).
+static func height_at(u: float, v: float) -> float:
+	var x: float = clampf(u, 0.0, 1.0) * float(NU)
+	var y: float = clampf(v, 0.0, 1.0) * float(NV)
+	var i: int = mini(int(x), NU - 1)
+	var j: int = mini(int(y), NV - 1)
+	var fx: float = x - float(i)
+	var fy: float = y - float(j)
+	var w: int = NU + 1
+	var top: float = lerpf(grid_h[j * w + i], grid_h[j * w + i + 1], fx)
+	var bot: float = lerpf(grid_h[(j + 1) * w + i], grid_h[(j + 1) * w + i + 1], fx)
+	return lerpf(top, bot, fy)
 
 
 ## 분리 가능 상자 흐림((2r+1)×(2r+1), 가로 한 번 + 세로 한 번)을 passes번. 경계는 가장자리 복제.

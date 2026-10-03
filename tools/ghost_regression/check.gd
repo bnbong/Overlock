@@ -17,10 +17,10 @@ extends "res://ghost_regression/check_review.gd"
 ##  playback    : 30/60/120Hz 기록·재생 위치 일치, 같은 물리 시간 같은 위치, 각도 보간, 복귀 즉시 이동.
 ##  splits      : 구간 최초 통과·후진 중복 없음·보간·복귀로 건너뛴 구간 비교 불가·최종 구간 = 실제 완주,
 ##                순수 주행은 빠르지만 패널티 포함 느린 런, 고스트 선완주.
-##  game_flow   : 실제 Gameplay 주행 → 완주 → 기록·고스트 저장, 다음 런에서 고스트 재생·구간 시간차 표시.
+##  game_flow   : 실제 Gameplay 주행 → 완주 → 기록·고스트 저장, 다음 런에서 고스트 재생(구간은 데이터로만 기록).
 ##  determinism : 고스트 ON/OFF 에서 같은 입력의 틱별 위치·RISK·아이템·패널티·결과 동일.
 ##  no_overwrite: 테스트 플레이·재시작·중도 포기는 최고·고스트를 덮지 않음.
-##  hud_layout  : 구간 시간차 배너가 미니맵·진행 막대·TIME·RISK·아이템 슬롯·효과 카드·부상 말풍선·터치
+##  hud_layout  : 출발 안내 배너가 미니맵·진행 막대·TIME·RISK·아이템 슬롯·효과 카드·부상 말풍선·터치
 ##                버튼과 겹치지 않음(1280×720 캔버스, aspect keep), 미니맵 고스트 마커·라벨.
 ##  select_ui   : 트랙 선택 고스트 토글(기본 켜기·영속)·상태 문구(첫 완주/고스트 없음/준비됨/트랙 변경, 데스크톱
 ##                한 줄)·v1 기록이 Best.
@@ -49,11 +49,14 @@ func _ready() -> void:
 	else:
 		sections.append_array(["fingerprint", "migration", "save_flow", "capacity", "playback"])
 		sections.append_array(["splits", "game_flow", "determinism", "no_overwrite", "hud_layout"])
-		sections.append_array(["select_ui", "result_ui", "purge"])
+		sections.append_array(
+			["select_ui", "result_ui", "purge", "minimap_countdown", "field_ghost"]
+		)
 		sections.append_array(["review_cleanup", "review_rename", "review_delete", "review_backup"])
 		sections.append_array(
 			["review_validate", "review_items", "review_practice", "review_result_fit"]
 		)
+		sections.append("grade_best")
 		_check_fingerprint()
 		_check_migration()
 		_check_save_flow()
@@ -67,6 +70,8 @@ func _ready() -> void:
 		await _check_select_ui()
 		await _check_result_ui()
 		_check_purge()
+		await _check_minimap_countdown()
+		await _check_field_ghost()
 		_check_review_cleanup()
 		_check_review_rename()
 		await _check_review_delete()
@@ -75,6 +80,7 @@ func _ready() -> void:
 		await _check_review_items()
 		_check_review_practice()
 		await _check_review_result_fit()
+		_check_grade_best()
 	for s in sections:
 		_ok(s in _done, "section completed: " + s)
 	_reset_store()
@@ -105,7 +111,7 @@ func _check_practice_flow() -> void:
 	_done.append("practice_flow")
 
 
-## 실제 주행 → 완주: 기록·고스트 저장. 다음 런은 고스트를 재생하고 구간 통과 때 시간차를 보인다.
+## 실제 주행 → 완주: 기록·고스트 저장. 다음 런은 고스트를 재생하고 구간 통과는 데이터로만 기록한다.
 func _check_game_flow() -> void:
 	_reset_store()
 	var g: Node = await _new_game()
@@ -130,7 +136,8 @@ func _check_game_flow() -> void:
 		_ok(run.split_value(9) == int(res["final_time_ms"]), "flow: final split = final time")
 		_ok(absi(run.sample_count() - (int(res["finish_ms"]) / 50 + 2)) <= 3, "flow: ~20Hz samples")
 	await _free_game(g)
-	# 다음 런: 같은 입력이면 같은 경로라 구간 시간차가 0으로 나온다.
+	# 다음 런: 같은 입력이면 같은 경로라 고스트가 플레이어와 겹친다. 주행 중 구간 팝업은 뜨지 않고
+	# 구간 통과는 기록만 된다. 필드 마커는 플레이어와 겹치면 숨는다(근접 숨김).
 	g = await _new_game()
 	_ok(g.ghost_playback() != null, "flow: ghost loaded on next run")
 	var mm: MiniMap = g._hud._minimap
@@ -138,10 +145,12 @@ func _check_game_flow() -> void:
 	for t in 300:
 		_drive_input(t)
 		_step(g, 1)
-		var txt: String = g._hud._ghost_banner.main_text()
+		var txt: String = g._hud._ghost_banner.notice_text()
 		if not txt.is_empty() and not (txt in shown):
 			shown.append(txt)
 		if t == 100:
+			var fm: Dictionary = g.ghost_field().marker()
+			_ok(not bool(fm["visible"]), "flow: field marker hidden when overlapping player")
 			var m: Dictionary = mm.ghost_marker()
 			_ok(bool(m["visible"]) and bool(m["inside"]), "flow: minimap ghost marker inside")
 			_ok(
@@ -149,8 +158,9 @@ func _check_game_flow() -> void:
 				"flow: same path -> marker on player"
 			)
 	_release_all()
-	_ok(not shown.is_empty(), "flow: split banner shown %s" % str(shown))
-	_ok(shown.size() > 0 and str(shown[0]).contains("개인 최고와 같음"), "flow: identical run delta 0")
+	_ok(shown.is_empty(), "flow: no split popup while driving %s" % str(shown))
+	_ok(g._ghost_rec.split_t[0] >= 0, "flow: split still recorded as data")
+	_ok(g.ghost_field() != null, "flow: field ghost layer built")
 	await _free_game(g)
 	_done.append("game_flow")
 
@@ -159,14 +169,14 @@ func _check_game_flow() -> void:
 func _check_determinism() -> void:
 	RecordStore.set_ghost_enabled(true)
 	var g: Node = await _new_game()
-	var on_loaded: bool = g.ghost_playback() != null
+	var on_loaded: bool = g.ghost_playback() != null and g.ghost_field() != null
 	var a: Array = _drive(g, 420)
 	var ra: Dictionary = g._stats.finalize(g._elapsed, g._track.safe, TRACK, DIFF)
 	var ghost_drawn: bool = bool(g._hud._minimap.ghost_marker()["visible"])
 	await _free_game(g)
 	RecordStore.set_ghost_enabled(false)
 	g = await _new_game()
-	var off_loaded: bool = g.ghost_playback() != null
+	var off_loaded: bool = g.ghost_playback() != null or g.ghost_field() != null
 	var b: Array = _drive(g, 420)
 	var rb: Dictionary = g._stats.finalize(g._elapsed, g._track.safe, TRACK, DIFF)
 	var off_drawn: bool = bool(g._hud._minimap.ghost_marker()["visible"])
@@ -230,20 +240,19 @@ func _check_hud_layout() -> void:
 	var hud: HUD = g._hud
 	hud._thimble_card.visible = true
 	hud._autopilot_card.visible = true
-	hud.show_split(2, -420, true)
-	await _frames(2)
-	var banner: GhostSplitBanner = hud._ghost_banner
-	var br: Rect2 = banner.get_global_rect()
-	_ok(br.is_equal_approx(GhostSplitBanner.RECT), "layout: banner rect %s" % br)
-	_ok(banner.main_text() == "구간 3/10 · 0.42초 빠름", "banner text: " + banner.main_text())
-	_ok(banner._sub.text.contains("패널티 포함"), "banner states penalty-inclusive comparison")
-	# 출발 안내 문구(트랙 변경·손상·불일치·파일 없음)가 배너 폭 안에 들어간다.
+	_ok(not hud.has_method("show_split"), "layout: no split popup API (removed)")
+	var banner: GhostNoticeBanner = hud._ghost_banner
+	# 출발 한 줄 안내(트랙 변경·손상·불일치·파일 없음)가 배너 폭 안에 들어간다.
 	for reason in ["track_changed", "missing", "mismatch", "corrupt"]:
-		hud.show_ghost_notice(RD.ghost_notice_text(reason))
+		var text: String = RD.ghost_notice_text(reason)
+		_ok(not text.is_empty() and not text.contains("\n"), "notice %s is one line" % reason)
+		hud.show_ghost_notice(text)
 		await _frames(1)
-		var mw: float = maxf(banner._main.get_minimum_size().x, banner._sub.get_minimum_size().x)
-		_ok(mw <= GhostSplitBanner.RECT.size.x - 16.0, "notice %s fits banner (%.0f)" % [reason, mw])
-	hud.show_split(2, -420, true)
+		var mw: float = banner.text_width()
+		_ok(mw <= GhostNoticeBanner.RECT.size.x - 16.0, "notice %s fits (%.0f)" % [reason, mw])
+	await _frames(1)
+	var br: Rect2 = banner.get_global_rect()
+	_ok(br.is_equal_approx(GhostNoticeBanner.RECT), "layout: banner rect %s" % br)
 	var others: Dictionary = {
 		"minimap": hud.get_node("MiniMap").get_global_rect(),
 		"progress": hud.get_node("ProgressBar").get_global_rect(),
@@ -311,20 +320,21 @@ func _check_select_ui() -> void:
 	_ok(row != null and row.is_visible_in_tree(), "select: ghost row visible")
 	_ok(row.toggle().button_pressed, "select: toggle default on")
 	_ok(row.status_text() == "첫 완주 후 고스트가 생깁니다", "select: no record text")
-	_ok(row._policy.text.contains("온라인 순위는 등급"), "select: local vs online policy text")
+	_ok(row._policy.text.contains("등급 우선"), "select: grade-first policy text")
+	_ok(not row._policy.text.contains("패널티 포함 시간 기준이고"), "select: old policy gone")
 	var v1: Dictionary = {TRACK + "|" + DIFF: _result(50000)}
 	_write_text(RecordStore.SAVE_PATH, JSON.stringify(v1))
 	RecordStore._load()
 	sel._refresh()
 	_ok(row.status_text().contains("고스트가 없습니다"), "select: v1 best without ghost text")
-	_ok(sel._best_time_label.text == "Best: 00:50.000", "select: v1 record is current best")
+	_ok(sel._best_time_label.text == "Best: A 00:50.000", "select: v1 record is current best")
 	_ok(not sel._best_time_label.text.contains("이전"), "select: no previous-version wording")
 	await _check_status_one_line(row, "no_ghost")
 	var r: Dictionary = _result(48000)
 	RecordStore.submit_run(r, _ghost_of(r))
 	sel._refresh()
 	_ok(row.status_text().contains("함께 달립니다"), "select: ready text")
-	_ok(sel._best_time_label.text == "Best: 00:48.000", "select: current best")
+	_ok(sel._best_time_label.text == "Best: A 00:48.000", "select: current best")
 	await _check_status_one_line(row, "ready")
 	# 기록 당시와 트랙 지문이 다르면(편집) 고스트를 쓸 수 없다는 문구.
 	RecordStore._records[TRACK + "|" + DIFF]["track_fingerprint"] = "tf2:old"
@@ -393,13 +403,20 @@ func _check_result_ui() -> void:
 			"트랙이 바뀌어 이전 고스트를 쓸 수 없습니다 · 개인 최고를 갱신하면 새 고스트가 생깁니다"
 		],
 		[{"ghost_status": "saved", "practice": true}, "연습 기록"],
-		[{"ghost_status": "saved", "split_deltas": [-420, null, 130]}, "-0.42 -- +0.13"],
 	]
 	for c in cases:
 		var res: Dictionary = base.duplicate()
 		res.merge(c[0], true)
 		var text: String = ResultScript.ghost_summary(res)
 		_ok(text.contains(c[1]), "result summary contains '%s'" % c[1])
+	# 결과 화면은 구간 차이를 보이지 않는다(데스크톱·터치 요약 모두, 옛 split_deltas 키가 있어도).
+	var sp: Dictionary = base.duplicate()
+	sp.merge({"ghost_status": "saved", "split_deltas": [-420, null, 130]})
+	for compact in [false, true]:
+		var t: String = ResultScript.ghost_summary(sp, compact)
+		_ok(
+			not t.contains("구간") and not t.contains("-0.42"), "result: no split line (%s)" % compact
+		)
 	var et: Dictionary = base.duplicate()
 	et["editor_test"] = true
 	et["ghost_status"] = "saved"
@@ -450,3 +467,118 @@ func _check_purge() -> void:
 	_ok(_ghost_files().size() == 1, "purge: other track ghost kept")
 	_ok(not RecordStore.best_for(TRACK, DIFF).is_empty(), "purge: other record kept")
 	_done.append("purge")
+
+
+## 카운트다운 첫 프레임부터 미니맵이 주행 시작 위치·방향과 같은 변환으로 그린다(출발점이 마커 위,
+## 주행 첫 틱과의 화면 위치 차이 < 1px). 원점이 아닌 곳에서 출발하는 트랙으로 검사한다.
+func _check_minimap_countdown() -> void:
+	for track_id in ["star_01", "ridge_01"]:
+		GameState.track_id = track_id
+		var g: Node = GameplayScene.instantiate()
+		get_tree().root.add_child(g)
+		await _frames(2)
+		g.set_physics_process(false)
+		var mm: MiniMap = g._hud._minimap
+		var start: Vector2 = g._track.points[0]
+		var p0: Vector2 = _map_point(mm, start)
+		var center: Vector2 = mm.size * 0.5
+		_ok(
+			p0.distance_to(center) < 1.0,
+			"%s countdown: start under marker (%.1fpx)" % [track_id, p0.distance_to(center)]
+		)
+		var ahead: Vector2 = _map_point(mm, g._track.point_at_s(60.0))
+		_ok(
+			ahead.y < center.y - 5.0 and absf(ahead.x - center.x) < 3.0,
+			"%s countdown: path goes up" % track_id
+		)
+		# 첫 스텝은 카운트다운 → 주행 전환, 둘째 스텝이 주행 첫 틱(update_frame)이다.
+		g._countdown_time = 0.0001
+		_step(g, 2)
+		await _frames(1)
+		var p1: Vector2 = _map_point(mm, start)
+		_ok(
+			p1.distance_to(p0) < 1.0,
+			"%s: first running tick moves start < 1px (%.2f)" % [track_id, p1.distance_to(p0)]
+		)
+		await _free_game(g)
+	GameState.track_id = TRACK
+	_done.append("minimap_countdown")
+
+
+## 미니맵이 월드 점을 그리는 위치(_draw_route와 같은 변환).
+func _map_point(mm: MiniMap, world: Vector2) -> Vector2:
+	var preview: float = maxf(mm._display_speed * 4.0, 1.0)
+	var scale_factor: float = (mm.size.x * 0.5) / preview
+	var rot: float = -mm._heading - PI * 0.5
+	return mm.size * 0.5 + (world - mm._player_pos).rotated(rot) * scale_factor
+
+
+## 필드 위 고스트 마커: Mode 7 역투영 위치·크기, 뒤·근접·수평선 숨김, 도착 후 잠시 표시, 레이어 순서,
+## 렌더 프레임과 무관한 위치(같은 물리 시각이면 같은 마커).
+func _check_field_ghost() -> void:
+	_reset_store()
+	var r: Dictionary = _result(60000)
+	RecordStore.submit_run(r, _ghost_of(r))
+	var g: Node = await _new_game()
+	var f: GhostFieldLayer = g.ghost_field()
+	_ok(f != null, "field: layer built when ghost exists")
+	if f == null:
+		await _free_game(g)
+		return
+	var item_layer: CanvasLayer = g.get_node("ItemLayer")
+	_ok(f.get_parent() == item_layer and f.get_index() == 0, "field: under item billboards")
+	var fg: CanvasLayer = g.get_node("ForegroundLayer")
+	_ok(
+		item_layer.layer < fg.layer and fg.layer < g._hud.layer, "field: below hands/needle and HUD"
+	)
+	var p: PlayerController = g._player
+	var fwd: Vector2 = Vector2.from_angle(p.heading)
+	var rgt: Vector2 = Vector2(-fwd.y, fwd.x)
+	var pc := PresentationController
+	f.set_state({"pos": p.position + fwd * 200.0, "heading": p.heading, "arrived": false})
+	var m: Dictionary = f.marker()
+	var depth: float = 200.0 + pc.CAM_BACK
+	var want: Vector2 = Vector2(640.0, (pc.HORIZON + pc.DEPTH_SCALE / depth) * 720.0)
+	_ok(
+		bool(m["visible"]) and (m["ground"] as Vector2).distance_to(want) < 0.5,
+		"field: ahead projection %s" % m["ground"]
+	)
+	_ok(
+		absf(float(m["scale"]) - GhostFieldLayer.SCALE * pc.CAM_BACK / depth) < 1e-4,
+		"field: scale ∝ 1/depth"
+	)
+	_ok(
+		absf(float(m["alpha"]) - GhostFieldLayer.BASE_ALPHA) < 1e-3,
+		"field: full ghost alpha at 200"
+	)
+	f.set_state({"pos": p.position + fwd * 200.0 + rgt * 120.0, "heading": p.heading})
+	_ok((f.marker()["ground"] as Vector2).x > 700.0, "field: side offset projects right")
+	f.set_state({"pos": p.position - fwd * 60.0, "heading": p.heading})
+	_ok(not bool(f.marker()["visible"]), "field: behind player hidden")
+	f.set_state({"pos": p.position + fwd * 30.0, "heading": p.heading})
+	_ok(not bool(f.marker()["visible"]), "field: overlapping player hidden (<40)")
+	f.set_state({"pos": p.position + fwd * 65.0, "heading": p.heading})
+	var mid: float = float(f.marker()["alpha"])
+	_ok(mid > 0.0 and mid < GhostFieldLayer.BASE_ALPHA, "field: near player faded (%.2f)" % mid)
+	f.set_state({"pos": p.position + fwd * 6000.0, "heading": p.heading})
+	_ok(not bool(f.marker()["visible"]), "field: near horizon clipped")
+	var arr: Dictionary = {"pos": p.position + fwd * 200.0, "heading": p.heading, "arrived": true}
+	arr["since_finish_ms"] = 1000.0
+	f.set_state(arr)
+	_ok(bool(f.marker()["visible"]), "field: arrived ghost stays at finish briefly")
+	arr["since_finish_ms"] = 1800.0
+	f.set_state(arr.duplicate())
+	_ok(float(f.marker()["alpha"]) < GhostFieldLayer.BASE_ALPHA, "field: arrival fades out")
+	arr["since_finish_ms"] = 2500.0
+	f.set_state(arr.duplicate())
+	_ok(not bool(f.marker()["visible"]), "field: arrived ghost disappears")
+	# 실제 주행: 레이어 상태 = 같은 물리 시각의 state_at, 렌더 프레임이 지나도 마커 불변.
+	_drive(g, 90)
+	var expect: Dictionary = g.ghost_playback().state_at(g._elapsed * 1000.0)
+	_ok(f._state == expect, "field: state = state_at(physics elapsed), same as minimap")
+	_ok(g._hud._minimap._ghost == expect, "field: minimap got the same state")
+	var m0: Dictionary = f.marker()
+	await _frames(3)
+	_ok(f.marker() == m0, "field: render frames do not move marker (FPS independent)")
+	await _free_game(g)
+	_done.append("field_ghost")

@@ -19,7 +19,7 @@
 
 - 이 폴더에는 `.gdignore`가 있어 Godot가 원본을 import하거나 내보내지 않는다. 원본은 소스로만 보관한다.
 - 런타임 타일은 `make_tileable.py`가 만든 `../fabrics/fabric_<id>.png`(1024², 이음매 처리본)이다. `FabricSurface.FABRIC_DIR`가 이 폴더를 가리키며, felt/satin/wool/leather도 이제 전용 타일을 쓴다. 절차적 바닥은 타일 파일이 없을 때만 그린다.
-- import는 무손실 압축, 밉맵 생성, `size_limit=512`이다. 텍스처 해상도와 월드 반복 크기는 분리했으며, 반복 크기는 `FabricSurface.TILE_WORLD`(기본 512, 데님 768, 새틴 640)에 있다. 128 월드 단위로 비교했을 때 조직이 1px 안팎으로 뭉개져 이 값으로 정했다.
+- import는 무손실 압축, 밉맵 생성, `size_limit=512`이다. 텍스처 해상도와 월드 반복 크기는 분리했으며, 반복 크기는 `FabricSurface.TILE_WORLD`(기본 128, 데님 192, 새틴 160)에 있다. 바닥 SubViewport를 2048(모바일 1024)로 올리고 깊이 기반 밉맵 셰이더(`shaders/fabric_surface.gdshader`)를 더해, 근경 조직은 선명하게 보이고 원경 모아레는 줄었다.
 - `FabricSurface.FABRIC_BASE`는 가공한 타일의 sRGB 평균색으로 갱신했다. 수평선 위 원경 폴백색과 스와치 배경색이 이 값을 쓴다. 드리프트 주름은 바닥 SubViewport 텍스처를 직접 샘플하므로 `FABRIC_BASE`를 참조하지 않는다.
 - 트랙 선택 화면과 트랙 에디터의 견본은 같은 타일에서 바닥 월드 70px에 해당하는 중앙 영역을 잘라 쓴다. 공유 허브는 원단을 글자로만 표시한다.
 - 재질별 주행 물리 값은 바꾸지 않았다. 웹 빌드와 실기기 화면은 아직 확인하지 않았다.
