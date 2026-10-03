@@ -269,6 +269,11 @@ static func status_text(r: Dictionary) -> String:
 	return text
 
 
+## 상세 메타 둘째 줄의 원단 주행 특성 문구(FabricProfile.describe). 허용 목록 밖 값은 면 특성 안내.
+static func fabric_note(fabric: String) -> String:
+	return "원단 주행 특성: " + FabricProfile.describe(fabric)
+
+
 ## "2026-09-30T09:36:36.772183+00:00" → "2026-09-30 09:36 UTC". 형식이 다르면 앞 16자.
 static func fmt_date(iso: String) -> String:
 	if iso.length() >= 16 and iso[10] == "T":

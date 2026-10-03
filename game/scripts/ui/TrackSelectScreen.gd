@@ -24,6 +24,10 @@ extends Control
 ## 터치 기기(MenuTouch.active)에서는 두 열(왼쪽 미리보기·트랙 정보, 오른쪽 버튼)로 다시 배치해 모든 버튼을
 ## 손가락 크기(논리 높이 84)로 키우고, 만들기·불러오기 같은 작은 버튼 줄은 한 줄에 두 개씩 줄을 바꾼다.
 ## 긴 트랙 이름은 말줄임으로 자른다. 데스크톱 배치는 그대로다.
+##
+## 개인 고스트(v2.3.0): Best 줄 아래에 고스트 줄(GhostSelectRow: 켜기/끄기 토글·상태 문구·기준 안내)을
+## 동적으로 붙인다. Best는 이 트랙·난이도의 개인 최고(RecordStore.best_for)이며, 개발용 튜닝이 켜져
+## 있으면 연습 기록을 "연습 Best"로 보인다.
 
 const DEFAULT_TRACK: String = "cotton_01"
 const MAIN_SCENE: String = "res://scenes/Main.tscn"
@@ -95,6 +99,8 @@ var _web_bridge: WebFileBridge
 # 데스크톱 내보내기 다이얼로그가 열려 있는 동안 캐러셀이 움직여도 대상이 흔들리지 않게 캡처.
 var _export_id: String = ""
 var _export_disp: String = ""
+# 개인 고스트 줄(v2.3.0, _ready에서 Best 줄 아래에 붙인다).
+var _ghost_row: GhostSelectRow
 
 @onready var _header_label: Label = $Panel/HeaderLabel
 @onready var _preview: Control = $Panel/Preview
@@ -140,6 +146,8 @@ func _ready() -> void:
 		# AtlasTexture 크롭 영역이 스와치보다 커서(중앙 크롭 확대), 최소 크기가 텍스처를
 		# 따라가지 않게 한다 — 아니면 Control.set_size가 최소 크기로 다시 클램프해 버린다.
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		# 큰 원단 타일 크롭을 작은 스와치로 축소하므로 밉맵 필터로 조직이 깨지지 않게 한다.
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		_swatch_row.add_child(tr)
 		_swatch_texture_rects.append(tr)
 	_prev_button.pressed.connect(_cycle.bind(-1))
@@ -168,6 +176,9 @@ func _ready() -> void:
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(_do_delete)
 	add_child(_confirm)
+	_ghost_row = GhostSelectRow.new()
+	$Panel.add_child(_ghost_row)
+	$Panel.move_child(_ghost_row, _best_time_label.get_index() + 1)
 	_apply_skin()
 	_apply_touch_layout()
 	_apply_mode()
@@ -243,7 +254,10 @@ func _apply_touch_layout() -> void:
 	MenuTouch.set_box(panel, Vector2(606.0, 346.0))
 	var left: Array = [_preview, _empty_label, _selector, _info_label, _fabric_row, _best_time_label]
 	left.append(_hint_label)
-	MenuTouch.columns(panel, 1, left, [$Panel/PlayRow, _action_row, _hub_row, _back_button], 32)
+	# 고스트 줄은 토글 버튼이 손가락 크기로 커지므로 버튼 열(오른쪽)의 Play 줄 아래에 둔다.
+	var right: Array = [$Panel/PlayRow, _ghost_row, _action_row, _hub_row, _back_button]
+	MenuTouch.columns(panel, 1, left, right, 32)
+	_ghost_row.apply_touch()
 	_preview.custom_minimum_size = Vector2(560.0, 250.0)
 	_empty_label.custom_minimum_size = Vector2(560.0, 250.0)
 	MenuTouch.text(_empty_label, 26)
@@ -411,18 +425,25 @@ func _refresh() -> void:
 ## 유저 모드 빈 목록: 미리보기·셀렉터·정보 줄·Play를 숨기고 안내 문구를 보인다.
 func _set_empty_state(empty: bool) -> void:
 	_empty_label.visible = empty
-	for c in [_preview, _selector, _info_label, _best_time_label, _hint_label, _play_button]:
+	var rows: Array = [_preview, _selector, _info_label, _best_time_label, _hint_label]
+	for c in rows + [_play_button, _ghost_row]:
 		(c as Control).visible = not empty
 	if empty:
 		_fabric_row.visible = false
 
 
+## Best: 이 트랙·난이도의 개인 최고(등급 우선, 같은 등급이면 빠른 시간)를 "Best: S 00:13.950"처럼 등급과
+## 함께 보인다. 개발용 튜닝(연습)이면 연습 기록을 표시한다.
 func _update_best(id: String, diff: String) -> void:
 	var best: Dictionary = RecordStore.best_for(id, diff)
-	if best.is_empty():
-		_best_time_label.text = "Best: --:--.---"
-	else:
-		_best_time_label.text = "Best: " + _format_ms(int(best.get("final_time_ms", 0)))
+	var head: String = "연습 Best: " if RecordStore.is_practice() else "Best: "
+	var text: String = head + "--:--.---"
+	if not best.is_empty():
+		var grade: String = RecordStore.grade_of(best)
+		var g: String = grade + " " if not grade.is_empty() else ""
+		text = head + g + _format_ms(int(best.get("final_time_ms", 0)))
+	_best_time_label.text = text
+	_ghost_row.refresh(id, diff)
 
 
 # --- 액션 ---
@@ -511,7 +532,7 @@ func _remember_current() -> void:
 	LeaderboardClient.remember_last_track(_current_id())
 
 
-## 삭제 확인 → 파일 삭제 + 로컬 기록 정리 + 목록 재구성(§7.4).
+## 삭제 확인 → 로컬 기록·고스트 정리 → 파일 삭제 → 목록 재구성(§7.4).
 func _on_delete_pressed() -> void:
 	if _tracks.is_empty():
 		return
@@ -527,10 +548,15 @@ func _do_delete() -> void:
 		return
 	var entry: Dictionary = _tracks[_index]
 	var id: String = str(entry.get("track_id", ""))
+	# 기록·고스트 정리를 먼저 한다. 정리(저장)에 실패하면 트랙을 지우지 않아 같은 화면에서 다시 시도할
+	# 수 있다(트랙을 먼저 지우면 남은 기록이 고스트를 계속 참조하고 재시도할 트랙도 사라진다).
+	if not RecordStore.purge_for_delete(id):
+		_info_label.text = "삭제 실패"
+		_toast.push("기록을 정리하지 못해 트랙을 삭제하지 않았습니다. 다시 시도해 주세요")
+		return
 	if not TrackLoader.delete_custom_track(id):
 		_info_label.text = "삭제 실패"
 		return
-	RecordStore.purge(id)
 	_rebuild_tracks()
 	_index = clampi(_index, 0, maxi(_tracks.size() - 1, 0))
 	_refresh()
@@ -723,7 +749,12 @@ func _update_fabric_row(fabric_value: Variant) -> void:
 		_swatch_tokens = PackedStringArray()
 		_hide_swatch_textures()
 		return
-	_fabric_text_label.text = _fabric_label(tokens)
+	# 원단 주행 특성(FabricProfile, v2.3.0): 단일 원단이면 그 원단, 혼합 값이면 원문 그대로 넘겨 면 fallback 안내를
+	# 받는다(물리 적용 판정과 같은 기준). 툴팁에는 배율 수치를 보인다.
+	var fabric_key: String = tokens[0] if tokens.size() == 1 else str(fabric_value)
+	_fabric_text_label.text = "%s · %s" % [_fabric_label(tokens), FabricProfile.describe(fabric_key)]
+	_fabric_text_label.tooltip_text = FabricProfile.detail(fabric_key)
+	_fabric_text_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_swatch_tokens = tokens
 	var count: int = mini(tokens.size(), _SWATCH_MAX_COUNT)
 	var width: float = float(count) * _SWATCH_SIZE + float(maxi(count - 1, 0)) * _SWATCH_GAP
@@ -758,11 +789,10 @@ func _layout_swatch_textures(tokens: PackedStringArray, count: int) -> void:
 		var x: float = float(i) * (_SWATCH_SIZE + _SWATCH_GAP)
 		tr.position = Vector2(x + inset, inset)
 		tr.size = Vector2(_SWATCH_SIZE, _SWATCH_SIZE) - Vector2(inset, inset) * 2.0
-		var tex_size: Vector2 = tex.get_size()
-		var crop: float = minf(tex_size.x, tex_size.y) * 0.55
+		# 크롭 영역은 FabricSurface가 월드 반복 크기 기준으로 정한다(바닥과 같은 조직 크기).
 		var atlas: AtlasTexture = AtlasTexture.new()
 		atlas.atlas = tex
-		atlas.region = Rect2((tex_size - Vector2(crop, crop)) * 0.5, Vector2(crop, crop))
+		atlas.region = src.get("region", Rect2(Vector2.ZERO, tex.get_size()))
 		tr.texture = atlas
 		tr.visible = true
 

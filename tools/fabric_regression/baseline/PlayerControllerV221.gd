@@ -1,0 +1,334 @@
+class_name PlayerControllerV221
+extends Node2D
+## [fabric_regression 기준본] v2.2.1(8d6099c) PlayerController.gd를 class_name만 바꿔 그대로 둔 사본이다.
+## 면(cotton) 프로필이 원단 도입 전 물리와 틱마다 비트 단위로 같은지 나란히 구동해 비교한다. 수정 금지.
+## 노루발(플레이어) 운동학 상태와 시뮬레이션 (기획서 §7, 아키텍처 §6).
+##
+## 자체 _physics_process를 두지 않는다. RaceDirector가 매 물리 틱마다
+## simulate(input, delta)를 정해진 순서로 호출한다. 노드 본체의 rotation은
+## 항상 0으로 두고 heading은 자식 NeedleVisual에만 반영한다(카메라 회전 방지).
+
+# 골무 활성 중 risk 상한(부상 봉인). _update_risk와 골무 획득 시 pending 해제 경로가 같은 값을 쓴다.
+const THIMBLE_RISK_CAP: float = 0.95
+# pending 소진 판정 허용치. 0.20 - 12*(1/60)이 부동소수 오차로 0보다 아주 약간 커져 한 틱 늦게
+# 부상하는 것을 막는다(틱 길이보다 충분히 작아 실제 타이밍에는 영향 없음).
+const CUT_PENDING_EPSILON: float = 1e-6
+
+var heading: float = 0.0
+var speed: float = 80.0
+var speed_index: int = 1  # 1..5
+var target_steer: float = 0.0
+var actual_steer: float = 0.0
+var risk: float = 0.0
+var stun_timer: float = 0.0
+# 맵 이탈 소프트 리셋 후 조작 잠금 타이머(초). >0이면 스턴과 동일하게 조작을 잠근다
+# (RaceDirector가 off_fabric_reset로 세팅). 부상(cut)과 별개라 _just_cut은 건드리지 않는다.
+var offfabric_timer: float = 0.0
+
+# 피벗 드리프트 상태(v1.0.1). is_drifting은 이번 틱에 드리프트가 실제로 걸렸는지(입력 눌림 +
+# 스턴/이탈 잠금 아님), drift_dir은 그때의 조향 방향(actual_steer, 아니면 0.0)이다. 표현·리플레이
+# 계층이 소비하는 읽기 전용 계약 — 시뮬은 이 두 값을 매 틱 simulate()에서 확정한다.
+var is_drifting: bool = false
+var drift_dir: float = 0.0
+
+# 필드 아이템 상태(v1.1.0). thimble_timer>0이면 부상(cut)이 봉인되고 risk는 0.95 상한으로 눌린다.
+# autopilot_timer>0이면 simulate가 정상 경로를 우회해 _autopilot_update로 중심선 타깃에 스냅한다.
+# autopilot_target_pos/heading은 RaceDirector가 매 틱 simulate 전에 주입한다(시뮬 결정론 유지).
+var thimble_timer: float = 0.0
+var autopilot_timer: float = 0.0
+var autopilot_target_pos: Vector2 = Vector2.ZERO
+var autopilot_target_heading: float = 0.0
+
+# 부상 사전 연출(windup) pending 상태. risk가 1.0에 도달한 틱에 Tuning.cut_windup_duration으로
+# 세팅되고 매 물리 틱 delta만큼 감소해, 0에 닿는 틱에 기존 _trigger_cut()이 한 번 실행된다.
+# >0이면 pending 중이며 이 동안 risk는 1.0으로 고정된다. 표현 계층(손 미끄러짐·놀란 눈)이 읽는
+# 읽기 전용 계약 — 물리 틱(simulate)과 해제 경로(골무·엄마찬스·이탈 리셋·reset_state)에서만 바뀐다.
+var cut_pending_timer: float = 0.0
+
+var _just_cut: bool = false
+
+@onready var _needle_visual: Polygon2D = $NeedleVisual
+
+
+func reset_state(start_pos: Vector2, start_heading: float) -> void:
+	position = start_pos
+	heading = start_heading
+	speed_index = 1
+	speed = Tuning.speed_table[0]
+	target_steer = 0.0
+	actual_steer = 0.0
+	risk = 0.0
+	stun_timer = 0.0
+	offfabric_timer = 0.0
+	is_drifting = false
+	drift_dir = 0.0
+	thimble_timer = 0.0
+	autopilot_timer = 0.0
+	autopilot_target_pos = Vector2.ZERO
+	autopilot_target_heading = 0.0
+	cut_pending_timer = 0.0
+	_just_cut = false
+	if _needle_visual != null:
+		_needle_visual.rotation = heading
+
+
+## 부상 사전 연출(pending) 중인가(표현 계층 소비용 읽기 전용).
+func is_cut_pending() -> bool:
+	return cut_pending_timer > 0.0
+
+
+## 부상 사전 연출 경과 비율. pending이 아니면 0.0, pending 중에는 시작 틱 0에서 부상 직전 틱까지
+## 단조 증가한다(1.0을 넘지 않음). 부상이 실행되는 틱에는 pending이 해제되어 다시 0.0이 된다.
+func cut_pending_progress() -> float:
+	if cut_pending_timer <= 0.0 or Tuning.cut_windup_duration <= 0.0:
+		return 0.0
+	return clampf(1.0 - cut_pending_timer / Tuning.cut_windup_duration, 0.0, 1.0)
+
+
+## RaceDirector가 매 물리 틱에 호출하는 시뮬레이션 진입점.
+func simulate(input: InputFrame, delta: float) -> void:
+	# 골무 타이머는 항상 감소한다(정상·오토파일럿 경로 모두). 활성 중 부상 봉인·risk 상한(0.95)은
+	# _update_risk가 처리한다.
+	if thimble_timer > 0.0:
+		thimble_timer -= delta
+		if thimble_timer < 0.0:
+			thimble_timer = 0.0
+	# 엄마찬스(오토파일럿) 활성 중에는 정상 시뮬 경로를 통째로 우회한다. 타깃은 RaceDirector가
+	# 이번 틱 simulate 전에 주입해 둔 값이다(온-레일 결정론 구간). 부상 pending은 grant_autopilot이
+	# 이미 해제하므로 이 경로에서 멈춘 채 남지 않는다.
+	if autopilot_timer > 0.0:
+		_autopilot_update(delta)
+		return
+	# 드리프트 판정은 스턴/이탈 타이머가 이번 틱에 감소하기 전 값으로 확정한다(_update_steering이
+	# 두 타이머를 깎으므로 반드시 최상단에서). 눌림 + 잠금 아님일 때만 드리프트가 걸린다.
+	is_drifting = input.drift and stun_timer <= 0.0 and offfabric_timer <= 0.0
+	_apply_speed_change(input.speed_delta)
+	_update_steering(input, delta)
+	_update_movement(delta)
+	_update_risk(delta)
+	# 이번 틱 드리프트 방향(표현·리플레이 소비용). 드리프트가 아니면 0.0.
+	drift_dir = actual_steer if is_drifting else 0.0
+
+
+## 엄마찬스(오토파일럿) 자동주행 갱신. RaceDirector가 주입한 중심선 타깃으로 position/heading을
+## 스냅하고, risk를 회복시키며(부상 방지), 드리프트 상태를 해제하고 타이머를 감소시킨다. 조향 입력·
+## 속도 변경·위험 누적은 전부 우회한다(자동주행 창은 완전 결정론적 온-레일 구간).
+func _autopilot_update(delta: float) -> void:
+	position = autopilot_target_pos
+	heading = autopilot_target_heading
+	if _needle_visual != null:
+		_needle_visual.rotation = heading
+	risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
+	is_drifting = false
+	drift_dir = 0.0
+	autopilot_timer -= delta
+	if autopilot_timer < 0.0:
+		autopilot_timer = 0.0
+
+
+## RaceDirector가 이번 틱의 부상 발생 여부를 소비한다(집계용).
+func consume_just_cut() -> bool:
+	var value: bool = _just_cut
+	_just_cut = false
+	return value
+
+
+func _apply_speed_change(delta_step: int) -> void:
+	# 부상(스턴)·맵 이탈 리셋 잠금 중에는 조작 잠금(기획서 §7.5): 속도 증감 입력을 무시한다.
+	# 강제 1단 하락은 _trigger_cut()/off_fabric_reset()이 별도로 수행한다.
+	if delta_step == 0 or stun_timer > 0.0 or offfabric_timer > 0.0:
+		return
+	speed_index = clampi(speed_index + delta_step, 1, Tuning.speed_step_count)
+	speed = Tuning.speed_table[speed_index - 1]
+
+
+func _update_steering(input: InputFrame, delta: float) -> void:
+	if stun_timer > 0.0 or offfabric_timer > 0.0:
+		# 부상(스턴)·맵 이탈 리셋 잠금: 두 타이머를 각각 감소시키고, 입력을 무시한 채
+		# 조향을 0으로 복귀한다(두 게이트는 별개 원인이라 독립적으로 감소).
+		if stun_timer > 0.0:
+			stun_timer -= delta
+			if stun_timer < 0.0:
+				stun_timer = 0.0
+		if offfabric_timer > 0.0:
+			offfabric_timer -= delta
+			if offfabric_timer < 0.0:
+				offfabric_timer = 0.0
+		target_steer = move_toward(target_steer, 0.0, Tuning.stun_steer_return_rate * delta)
+	elif input.steer != 0.0:
+		# 반전 부스트(§4.3 "누적" 유지 + 반전만 민첩): 입력 부호가 현재 target 부호와
+		# 반대일 때만 충전을 가속해, 잠긴 방향을 빠르게 풀고 새 방향은 평소 속도로 쌓는다.
+		var rate: float = Tuning.steer_charge_rate
+		if input.steer * target_steer < 0.0:
+			rate *= Tuning.steer_reversal_boost
+		target_steer += signf(input.steer) * rate * delta
+	else:
+		target_steer = move_toward(target_steer, 0.0, Tuning.steer_return_rate * delta)
+	target_steer = clampf(target_steer, -1.0, 1.0)
+	# 지연 추종: 지수 평활(갭 비례 속도)로 actual이 target을 부드럽게 따라간다.
+	# steer_tau가 랙의 질감(≈시간지연)을 정한다. move_toward(선형 고정 속도) 대비
+	# 반전 같은 큰 갭에서 즉시 빠르게 움직이고 목표 근처에서 부드럽게 수렴한다(§4.3 지연 유지).
+	# 60Hz 고정 스텝에서 follow_alpha는 상수라 결정론 불변.
+	var follow_alpha: float = 1.0 - exp(-delta / Tuning.steer_tau)
+	actual_steer += (target_steer - actual_steer) * follow_alpha
+
+
+func _update_movement(delta: float) -> void:
+	# 조향 회전율(각속도)은 저속에서도 유지되도록 speed_factor에 하한(steer_speed_floor)을 둔다.
+	# floor=1.0이면 회전각속도가 속도와 무관 → 회전반경 ∝ 속도(저속=급회전, 고속=완만한 큰 호).
+	# 이는 저속에서도 코너를 못 도는 구(舊) "전 속도 동일 최소반경(≈136px)" 문제를 해소한다.
+	# 조향 지연(steer_tau 지수 추종)이라는 핵심 기믹(§4.3)은 그대로 살아 있다.
+	var turn_speed_factor: float = maxf(speed / Tuning.max_speed, Tuning.steer_speed_floor)
+	# 드리프트 중에는 조향 각속도에 drift_turn_mult를 곱해 회전반경을 1/배율로 줄인다(피벗 드리프트).
+	# 각속도만 스케일하므로 조향 입력/지연(target/actual_steer)과 속도는 불변 — 반경만 작아진다.
+	var drift_mult: float = Tuning.drift_turn_mult if is_drifting else 1.0
+	# heading 출력에만 expo 완화 곡선을 적용한다(서브맥시멀 조향만 부드럽게). _expo(±1)=±1
+	# 항등이라 풀락 회전 기하는 불변이고, target/actual_steer·위험도 입력은 여기서 건드리지 않는다.
+	heading += _expo(actual_steer) * Tuning.turn_power * turn_speed_factor * drift_mult * delta
+	var forward: Vector2 = Vector2(cos(heading), sin(heading))
+	position += forward * speed * delta
+	if _needle_visual != null:
+		_needle_visual.rotation = heading  # 시각만 회전(노드 본체는 0 유지)
+
+
+## heading 출력용 국소화 완화 곡선. out = sign(a)*(m - s*m*(1-m)^p),
+## m=|a|, s=Tuning.steer_expo, p=Tuning.steer_soft_p. s<=0이면 항등(선형).
+## out(±1)=±1 항등(풀락 기하 불변) — 완화 항은 |a|=1에서 0으로 꺼지고 저·중간 |a|에서만 봉긋해져
+## 탭만 완화·중간 authority를 회복한다(3차 대비 중간 조향각을 크게 되살림).
+func _expo(a: float) -> float:
+	var s: float = Tuning.steer_expo
+	if s <= 0.0:
+		return a
+	var m: float = absf(a)
+	return signf(a) * (m - s * m * pow(1.0 - m, Tuning.steer_soft_p))
+
+
+func _update_risk(delta: float) -> void:
+	# 기획서 §7.5: 위험도 = 속도 계수 × 조향 입력량 × 조향 지연 × 바늘 근접 계수.
+	# 구(舊) 공식은 조향 입력량으로 |target_steer|를 써, 좌↔우 급반전 때 그 값이 0을 지나며
+	# gain이 죽었다(→ 최고속 급반전으로도 부상 불가). 아래로 교정한다:
+	#  - 조향 입력량 steer_mag = max(|target|,|actual|): 반전 중에도 0으로 죽지 않는다.
+	#  - 바늘 근접 proximity = base + (1-base)*steer_mag: 조향이 셀수록 손이 바늘에 접근(동적 승격).
+	#  - 조향 지연 (steer_gap + static_bias): 반전은 유지보다 gap 적분이 ~4배 → 자연히 훨씬 위험.
+	#    static_bias는 고속 "풀조향 유지"의 상시 위험을 더해 경고 UI(0.5~)가 실제로 뜨게 한다.
+	#  - 속도 계수는 pow(_, risk_speed_exp)로 저속을 강하게 억제 → 1~2단은 사실상 무해.
+	# 부상 사전 연출(pending) 중에는 위험 누적·회복을 건너뛰고 risk를 1.0으로 고정한 채 카운트다운만
+	# 진행한다(회복·재누적으로 연출이 취소·중복되지 않게). 조향·속도·이동은 앞 단계에서 평소대로 처리.
+	if cut_pending_timer > 0.0:
+		_advance_cut_pending(delta)
+		return
+	var steer_gap: float = absf(target_steer - actual_steer)
+	var speed_factor: float = inverse_lerp(Tuning.min_speed, Tuning.max_speed, speed)
+	var speed_gate: float = pow(speed_factor, Tuning.risk_speed_exp)
+	var steer_mag: float = maxf(absf(target_steer), absf(actual_steer))
+	var proximity: float = _finger_proximity(steer_mag)
+	var bias: float = Tuning.risk_static_bias
+	# 드리프트 중에는 손을 바늘에 강제로 눌러(근접 하한) 상시 바이어스를 올린다 — 유지만 해도 위험이
+	# 더 빨리 쌓여 오래 무는 드리프트가 부상으로 이어진다. speed_gate·gain_rate·recover·threshold는 불변.
+	if is_drifting:
+		proximity = maxf(proximity, Tuning.drift_proximity)
+		bias = Tuning.drift_static_bias
+	var gain: float = speed_gate * steer_mag * proximity * (steer_gap + bias)
+	if gain > Tuning.danger_threshold:
+		risk += gain * Tuning.risk_gain_rate * delta
+	else:
+		risk = move_toward(risk, 0.0, Tuning.risk_recover_rate * delta)
+	# 골무(thimble) 활성 중에는 risk를 정상 누적하되 0.95로 상한을 둔다 — 절대 1.0에 도달하지
+	# 못해 부상이 봉인된다. 창 만료 후에는 상한이 풀려 누적분이 즉시 부상 pending으로 이어질 수 있다.
+	if thimble_timer > 0.0:
+		risk = clampf(risk, 0.0, THIMBLE_RISK_CAP)
+	# 컷 게이트(스턴·골무·pending 중복)는 _request_cut 한 곳에서 판정한다.
+	if risk >= 1.0:
+		_request_cut()
+
+
+## 부상 요청의 공통 진입점. 컷 게이트(pending 중 아님·스턴 중 아님·골무 비활성)를 한 곳에서 확인하고,
+## 통과하면 사전 연출 pending을 시작한다(risk 1.0 고정). windup 길이가 0 이하이면 예전처럼 즉시 부상.
+func _request_cut() -> void:
+	if cut_pending_timer > 0.0 or stun_timer > 0.0 or thimble_timer > 0.0:
+		return
+	if Tuning.cut_windup_duration <= 0.0:
+		_trigger_cut()
+		return
+	cut_pending_timer = Tuning.cut_windup_duration
+	risk = 1.0
+
+
+## pending 카운트다운을 한 틱 진행한다. 남은 시간이 (부동소수 오차 허용치 이하로) 소진되는 틱에
+## pending을 해제하고 기존 부상 패널티를 한 번 실행한다. 60Hz에서 시작 틱 뒤 정확히 12틱째.
+func _advance_cut_pending(delta: float) -> void:
+	cut_pending_timer -= delta
+	if cut_pending_timer <= CUT_PENDING_EPSILON:
+		cut_pending_timer = 0.0
+		_trigger_cut()
+	else:
+		risk = 1.0
+
+
+## 부상 pending을 취소한다(부상 미발생). 골무·엄마찬스 획득과 이탈 리셋에서만 호출해, 예약된
+## 부상이 보호 중이나 보호 종료 직후에 뒤늦게 터지지 않게 한다. 완주는 취소가 아니라
+## resolve_cut_pending_now()로 부상을 확정한다.
+func cancel_cut_pending() -> void:
+	cut_pending_timer = 0.0
+
+
+## 진행 중인 부상 pending을 남은 시간과 무관하게 지금 확정한다(RaceDirector가 완주 틱에 호출).
+## 예전에는 RISK 1.0 도달 틱에 바로 부상했으므로, 완주 직전 창에서 부상을 면제하지 않도록 기존
+## _trigger_cut() 하나로 패널티를 실행한다. pending이 아니면 아무것도 하지 않는다(이중 부상 방지).
+## 부상 여부는 호출자가 consume_just_cut()으로 소비해 집계한다.
+func resolve_cut_pending_now() -> void:
+	if cut_pending_timer <= 0.0:
+		return
+	cut_pending_timer = 0.0
+	_trigger_cut()
+
+
+func _trigger_cut() -> void:
+	risk = 0.0
+	stun_timer = Tuning.stun_duration  # 조작 잠금
+	speed_index = 1  # 1단으로 강제 하락
+	speed = Tuning.speed_table[0]
+	_just_cut = true  # RaceDirector가 이번 틱에 소비 → cuts += 1
+
+
+## 맵(원단) 이탈 소프트 리셋: 마지막 정상 지점으로 재배치하고 조작을 잠근다(RaceDirector 호출).
+## 부상이 아니므로 _just_cut은 건드리지 않는다(부상 카운트 오발동 금지). 조향/위험도는 0으로
+## 초기화하고 1단으로 강등하며, offfabric_timer(=reset_lockout) 동안 입력을 잠근다.
+func off_fabric_reset(reset_pos: Vector2, reset_heading: float) -> void:
+	position = reset_pos
+	heading = reset_heading
+	speed_index = 1
+	speed = Tuning.speed_table[0]
+	target_steer = 0.0
+	actual_steer = 0.0
+	risk = 0.0
+	# 이탈 리셋은 별도 기믹이라 새 부상을 만들지 않는다: 진행 중인 부상 pending은 부상 없이 해제한다.
+	cancel_cut_pending()
+	offfabric_timer = Tuning.reset_lockout
+	is_drifting = false
+	drift_dir = 0.0
+	if _needle_visual != null:
+		_needle_visual.rotation = heading  # needle 시각 회전을 새 heading에 동기
+
+
+## 골무 획득: 부상 봉인 창을 refresh한다(RaceDirector가 픽업 시 호출). 부상 pending 중이었다면
+## 예약된 부상을 해제하고 risk를 골무 상한(0.95)으로 내린다 — 골무 활성 중 규칙과 같은 상태가 되어,
+## 만료 후에는 risk가 다시 1.0에 도달해야만 새 pending이 시작된다.
+func grant_thimble() -> void:
+	thimble_timer = Tuning.thimble_duration
+	if cut_pending_timer > 0.0:
+		cancel_cut_pending()
+		risk = minf(risk, THIMBLE_RISK_CAP)
+
+
+## 엄마찬스 획득: 오토파일럿(자동주행) 창을 refresh한다(RaceDirector가 픽업 시 호출). 부상 pending
+## 중이었다면 예약된 부상을 해제한다. risk는 1.0에서 _autopilot_update의 회복으로 내려간다(기존 규칙).
+func grant_autopilot() -> void:
+	autopilot_timer = Tuning.autopilot_duration
+	cancel_cut_pending()
+
+
+func _finger_proximity(steer_mag: float) -> float:
+	# 조향 편향(steer_mag)이 클수록 손이 바늘에 가까워진다 — 연출의 손↔바늘 접근 기믹과 서사 일치.
+	# 확장 시 실제 손 위치 모델로 교체하는 지점.
+	return Tuning.risk_proximity_base + (1.0 - Tuning.risk_proximity_base) * steer_mag

@@ -59,6 +59,7 @@ var _issues: Array = []  # 마지막 검증의 항목별 안내(EditorIssues.bui
 var _issues_collapsed: bool = false
 # 웹 전용 파일 브리지(업로드). 데스크톱에서는 null(FileDialog·드래그드롭을 씀).
 var _web_bridge: WebFileBridge
+var _fabric_note: Label  # 원단 견본 옆 주행 특성 문구(EditorSession.add_fabric_note)
 
 @onready var _canvas: DrawCanvas = $Canvas
 @onready var _mode_draw: Button = $Toolbar/ModeDraw
@@ -96,6 +97,8 @@ var _web_bridge: WebFileBridge
 
 func _ready() -> void:
 	EditorSession.populate_options(_diff_option, _fabric_option)
+	_fabric_note = EditorSession.add_fabric_note($MetaPanel/Row1, _fabric_option)
+	_fabric_swatch.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_item_tool = EditorItemTool.new(self)
 	_trim_tool = EditorTrimTool.new(self)
 	_erase_tool = EditorEraseTool.new(self)
@@ -841,6 +844,7 @@ func _refresh() -> void:
 	_canvas.set_items(marks)
 	_item_tool.refresh_bar()
 	_fabric_swatch.texture = EditorSession.swatch(str(_doc["fabric"]))
+	EditorSession.show_fabric_note(_fabric_note, str(_doc["fabric"]))
 	_undo_button.disabled = _undo_stack.is_empty()
 	_redo_button.disabled = _redo_stack.is_empty()
 	_length_button.disabled = path.size() < 2

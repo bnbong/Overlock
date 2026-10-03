@@ -30,6 +30,8 @@ const TOUCH_BUTTON_FONT: int = 22
 const TOUCH_TEXT_FONT: int = 22
 ## 터치 배치에서도 글자 하한 검사를 하지 않는 라벨: 키보드 단축키 안내(문구·표시 정리는 P3 항목이라 두었다).
 const TEXT_EXEMPT: Array[String] = ["HintLabel"]
+## v2.3.0 트랙 선택 화면의 개인 고스트 줄(GhostToggle) 추가는 비교에서 빼지 않고, select_official·select_user
+## 기준선을 그 코드로 다시 뽑아 desktop_baseline.json 에 반영했다(다른 상태의 기준선은 그대로).
 ## P1 설정·닉네임 저장/취소 변경으로 데스크톱 배치가 의도적으로 바뀌는 상태(비교 제외).
 const DESKTOP_REDESIGNED: Array[String] = ["nick_first", "nick_edit"]
 ## P1 리더보드 "다시 시도" 버튼 추가로 실패 상태에서만 달라지는 키.

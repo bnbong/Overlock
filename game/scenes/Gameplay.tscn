@@ -1,4 +1,4 @@
-[gd_scene load_steps=32 format=3]
+[gd_scene load_steps=33 format=3]
 
 [ext_resource type="Script" path="res://scripts/systems/RaceDirector.gd" id="1_dir"]
 [ext_resource type="Script" path="res://scripts/ui/SewingSkin.gd" id="25_skin"]
@@ -31,6 +31,7 @@
 [ext_resource type="Texture2D" uid="uid://8pidi5sr0u32" path="res://assets/gfx/face_injured.png" id="28_faceinj"]
 [ext_resource type="Script" path="res://scripts/presentation/ItemField.gd" id="29_item"]
 [ext_resource type="Script" path="res://scripts/presentation/ItemBillboardLayer.gd" id="30_bb"]
+[ext_resource type="Script" path="res://scripts/presentation/DriftFoldLayer.gd" id="31_folds"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_warp"]
 shader = ExtResource("18_shdr")
@@ -123,6 +124,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="DriftFolds" type="Node2D" parent="FabricLayer"]
+script = ExtResource("31_folds")
 
 [node name="ItemLayer" type="CanvasLayer" parent="."]
 process_mode = 1

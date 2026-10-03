@@ -27,7 +27,9 @@ from motion import W, H, FPS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-FOOT = os.path.join(ROOT, "docs", "promo", "video", "footage")
+# Footage clips are not committed (see docs/promo/video/README.md). PROMO_FOOTAGE points at the
+# encode_clips.py output directory; the default is the historical in-repo location.
+FOOT = os.environ.get("PROMO_FOOTAGE") or os.path.join(ROOT, "docs", "promo", "video", "footage")
 FONT_DIR = os.path.join(ROOT, "tools", "promo", "fonts")
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
 FRAME_BYTES = W * H * 4

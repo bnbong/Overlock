@@ -295,13 +295,19 @@
 	],
 	"select_official|BackButton": [
 		350.0,
-		570.0,
+		627.0,
 		580.0,
 		48.0
 	],
+	"select_official|GhostToggle": [
+		350.0,
+		419.0,
+		122.0,
+		28.0
+	],
 	"select_official|LeaderboardButton": [
 		350.0,
-		512.0,
+		569.0,
 		580.0,
 		48.0
 	],
@@ -313,7 +319,7 @@
 	],
 	"select_official|PlayButton": [
 		350.0,
-		446.0,
+		503.0,
 		580.0,
 		56.0
 	],
@@ -325,67 +331,73 @@
 	],
 	"select_user|BackButton": [
 		262.0,
-		628.0,
+		658.5,
 		756.0,
 		48.0
 	],
 	"select_user|CreateButton": [
 		262.0,
-		512.0,
+		542.5,
 		183.0,
 		48.0
 	],
 	"select_user|DeleteButton": [
 		835.0,
-		512.0,
+		542.5,
 		183.0,
 		48.0
 	],
 	"select_user|EditButton": [
 		262.0,
-		570.0,
+		600.5,
 		374.0,
 		48.0
 	],
 	"select_user|ExportButton": [
 		644.0,
-		512.0,
+		542.5,
 		183.0,
 		48.0
 	],
+	"select_user|GhostToggle": [
+		262.0,
+		392.5,
+		122.0,
+		28.0
+	],
 	"select_user|HubButton": [
 		645.0,
-		446.0,
+		476.5,
 		373.0,
 		56.0
 	],
 	"select_user|ImportButton": [
 		453.0,
-		512.0,
+		542.5,
 		183.0,
 		48.0
 	],
 	"select_user|NextButton": [
 		970.0,
-		267.0,
+		240.5,
 		48.0,
 		48.0
 	],
 	"select_user|PlayButton": [
 		262.0,
-		446.0,
+		476.5,
 		373.0,
 		56.0
 	],
 	"select_user|PrevButton": [
 		262.0,
-		267.0,
+		240.5,
 		48.0,
 		48.0
 	],
 	"select_user|PublishButton": [
 		644.0,
-		570.0,
+		600.5,
 		374.0,
 		48.0
 	],

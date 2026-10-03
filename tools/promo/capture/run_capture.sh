@@ -2,11 +2,13 @@
 # 홍보 촬영 실행기. prepare_copy.sh 로 만든 사본에서 PromoDriver 시나리오를 실행한다.
 # 실행 전마다 사본의 격리 설정을 확인하고, 격리 user dir 의 settings.json/records.json 을 초기화한다.
 #
-# usage: run_capture.sh <heart|tee|star> <movie|stills|headless> <출력 디렉터리> [WxH] [사본 상위]
+# usage: run_capture.sh <heart|tee|star|cat|hub> <movie|stills|headless> <출력 디렉터리> [WxH] [사본 상위]
 #   movie    : Godot Movie Maker(--write-movie <출력>/movie/f.avi, MJPEG 화질 1.0, 60fps 고정)로 녹화
 #              (MOVIE_EXT=png 이면 PNG 시퀀스지만 1080p에서 초당 1프레임 정도로 매우 느리다)
 #   stills   : --stills 로 HUD 있는/없는 스틸 PNG만 저장(--fixed-fps 60, 녹화 없음)
 #   headless : 렌더 없이 빠르게 주행만(자동 조향 품질·등급 점검용)
+# 환경변수: BASE_URL(격리 settings.json 의 서버 주소, 기본 닿지 않는 127.0.0.1:9. hub 시나리오는
+#   hub_server.sh 가 띄운 로컬 임시 서버 주소를 넘긴다), KEEP_RECORDS=1(records.json·ghosts 를 지우지 않음)
 # 창이 다른 창에 가려지면 macOS 가 그리기를 멈추므로 항상 위에 띄우고 화면 잠자기를 막는다.
 set -euo pipefail
 
@@ -16,7 +18,12 @@ SCEN="${1:?scenario}"
 MODE="${2:?mode}"
 OUT="${3:?out dir}"
 RES="${4:-1920x1080}"
-BASE="${5:-/Users/bnbong/.claude/jobs/1a61bd74/tmp/worker-v1}"
+BASE="${5:?사본 상위 디렉터리(prepare_copy.sh 인자와 같은 경로)}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:9}"
+case "$BASE_URL" in
+	http://127.0.0.1:*) ;;
+	*) echo "BASE_URL 은 로컬(127.0.0.1) 주소만 허용합니다: $BASE_URL" >&2; exit 2 ;;
+esac
 PROJ="$BASE/game"
 UD_NAME="${PROMO_USER_DIR:-overlock_promo_capture_v1}"
 UDIR="$HOME/Library/Application Support/$UD_NAME"
@@ -53,10 +60,12 @@ mv "$PROJ/project.godot.new" "$PROJ/project.godot"
 "$HERE/check_isolation.sh" "$PROJ"
 cp "$HERE/PromoDriver.gd" "$HERE/PromoRead.gd" "$HERE/TrackProbe.gd" "$PROJ/promo_driver/"
 mkdir -p "$OUT" "$UDIR"
-rm -f "$UDIR/records.json"
-printf '%s\n' \
-	'{"base_url":"http://127.0.0.1:9","nickname":"Stitcher","tutorial_seen":true,"last_track_id":"cotton_01","volume_master":0.0}' \
-	> "$UDIR/settings.json"
+if [ "${KEEP_RECORDS:-0}" != "1" ]; then
+	rm -f "$UDIR/records.json" "$UDIR"/records.json.*
+	rm -rf "$UDIR/ghosts" "$UDIR/community" "$UDIR/tracks"
+fi
+printf '{"base_url":"%s","nickname":"Stitcher","tutorial_seen":true,"last_track_id":"cotton_01","volume_master":0.0}\n' \
+	"$BASE_URL" > "$UDIR/settings.json"
 
 set +e
 case "$MODE" in

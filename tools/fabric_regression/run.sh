@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# 원단별 주행 특성(FabricProfile) 회귀 검사 실행기.
+# 저장소의 game/ 을 임시 디렉터리에 복사한 사본에서만 실행하므로 저장소와 실제 사용자 기록
+# (~/Library/Application Support/Godot/app_userdata/Overlock/)을 건드리지 않는다.
+# 사본의 user data 디렉터리는 실행마다 고유한 이름(overlock_fabric_regression_<접미사>_<PID>)을 쓰고,
+# 종료 시 이 실행이 만든 디렉터리만 지운다.
+# 사본에 넣는 것: 검사 스크립트(check.gd·fabric_driver.gd·fabric_feel.gd), v2.2.1 기준본 컨트롤러
+# (baseline/PlayerControllerV221.gd, 면 비트 동일성 비교용), 서버 경계 fixture 트랙 1개.
+# 사본 RaceDirector.gd 에 런 시작 원단 적용 호출(set_fabric_profile)이 아직 없으면 _init_player 의
+# reset_state 다음 줄에 한 줄을 임시로 넣는다(저장소 파일은 바꾸지 않는다). 이미 있으면 그대로 둔다.
+# 환경변수: GODOT(엔진 경로), FABRIC_REGRESSION_TMP(임시 작업 디렉터리 상위 경로),
+#   FABRIC_REGRESSION_TIMEOUT(검사 제한 초, 기본 900), IMPORT_TIMEOUT(headless import 제한 초, 기본 300).
+# 검사가 quit()에 닿지 못하면 이 스크립트가 띄운 Godot PID 만 제한 시간 뒤 종료시키고 실패(124)로 처리한다.
+# 종료 코드가 0이어도 요약 줄("fabric regression: N passed, 0 failed")이 없으면 실패(3)로 본다.
+set -euo pipefail
+
+GODOT="${GODOT:-/Users/bnbong/Downloads/Godot.app/Contents/MacOS/Godot}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
+TMP_BASE="${FABRIC_REGRESSION_TMP:-${TMPDIR:-/tmp}}"
+CHECK_TIMEOUT="${FABRIC_REGRESSION_TIMEOUT:-900}"
+IMPORT_LIMIT="${IMPORT_TIMEOUT:-300}"
+FIXTURE="$REPO/server/tests/fixtures/community_tracks/accept_boundary_radius_offset.json"
+for v in "$CHECK_TIMEOUT" "$IMPORT_LIMIT"; do
+	if ! [[ "$v" =~ ^[1-9][0-9]*$ ]]; then
+		echo "제한 시간은 1 이상의 정수(초)여야 합니다: '$v'" >&2
+		exit 2
+	fi
+done
+if [ ! -x "$GODOT" ]; then
+	echo "Godot 실행 파일을 찾을 수 없습니다: $GODOT (환경변수 GODOT 로 지정)" >&2
+	exit 2
+fi
+if [ ! -f "$FIXTURE" ]; then
+	echo "서버 경계 fixture 를 찾을 수 없습니다: $FIXTURE" >&2
+	exit 2
+fi
+if [ -z "${HOME:-}" ] || [ "$HOME" = "/" ]; then
+	echo "HOME 이 비어 있거나 / 입니다" >&2
+	exit 2
+fi
+case "$(uname -s)" in
+	Darwin) USERDATA_ROOT="$HOME/Library/Application Support" ;;
+	*) USERDATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+esac
+USERDIR_PREFIX="overlock_fabric_regression_"
+USERDIR_NAME=""
+USERDATA_DIR=""
+USERDATA_OWNED=0
+
+remove_userdata() {
+	[ "$USERDATA_OWNED" = "1" ] || return 0
+	[ -n "$USERDIR_NAME" ] && [ -n "$USERDATA_ROOT" ] && [ -n "$USERDATA_DIR" ] || return 0
+	[[ "$USERDIR_NAME" =~ ^overlock_fabric_regression_[A-Za-z0-9]+_[0-9]+$ ]] || return 0
+	[ "$USERDATA_DIR" = "$USERDATA_ROOT/$USERDIR_NAME" ] || return 0
+	[ "$(basename -- "$USERDATA_DIR")" = "$USERDIR_NAME" ] || return 0
+	[ "$(dirname -- "$USERDATA_DIR")" = "$USERDATA_ROOT" ] || return 0
+	[ -d "$USERDATA_DIR" ] && [ ! -L "$USERDATA_DIR" ] || return 0
+	rm -rf -- "$USERDATA_DIR"
+}
+
+GODOT_PID=""
+stop_godot() {
+	local pid="$GODOT_PID"
+	[ -n "$pid" ] || return 0
+	if kill -0 "$pid" 2>/dev/null; then
+		kill -TERM "$pid" 2>/dev/null || true
+		local i=0
+		while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+			sleep 0.1
+			i=$((i + 1))
+		done
+		if kill -0 "$pid" 2>/dev/null; then
+			kill -KILL "$pid" 2>/dev/null || true
+		fi
+	fi
+	wait "$pid" 2>/dev/null || true
+	GODOT_PID=""
+}
+
+cleanup() {
+	stop_godot
+	remove_userdata
+	if [ -n "${WORK:-}" ] && [ -d "$WORK" ]; then
+		rm -rf -- "$WORK"
+	fi
+}
+
+mkdir -p "$TMP_BASE"
+WORK="$(mktemp -d "$TMP_BASE/fabric_regression.XXXXXX")"
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+PROJ="$WORK/game"
+
+USERDIR_NAME="${USERDIR_PREFIX}${WORK##*.}_$$"
+USERDATA_DIR="$USERDATA_ROOT/$USERDIR_NAME"
+if [ -e "$USERDATA_DIR" ] || [ -L "$USERDATA_DIR" ]; then
+	echo "user data 디렉터리가 이미 있습니다(건드리지 않음): $USERDATA_DIR" >&2
+	exit 2
+fi
+USERDATA_OWNED=1
+
+# 1) game/ 사본 (.godot 캐시는 사본에서 새로 만든다).
+mkdir -p "$PROJ"
+(cd "$REPO/game" && tar --exclude='./.godot' -cf - .) | (cd "$PROJ" && tar -xf -)
+
+# 2) 사본 project.godot 의 [application] 에 격리 user dir 설정을 추가한다(CRLF 유지).
+awk -v userdir="$USERDIR_NAME" '
+	{
+		line = $0
+		cr = ""
+		if (sub(/\r$/, "", line)) cr = "\r"
+		print
+	}
+	line == "[application]" && !done {
+		print "config/use_custom_user_dir=true" cr
+		print "config/custom_user_dir_name=\"" userdir "\"" cr
+		done = 1
+	}
+	END { if (!done) exit 1 }
+' "$PROJ/project.godot" > "$PROJ/project.godot.new" || {
+	echo "project.godot 에 [application] 섹션이 없습니다" >&2
+	exit 2
+}
+mv "$PROJ/project.godot.new" "$PROJ/project.godot"
+
+# 3) 사본 RaceDirector 에 런 시작 원단 적용 한 줄(없을 때만).
+RD="$PROJ/scripts/systems/RaceDirector.gd"
+if grep -q "set_fabric_profile" "$RD"; then
+	echo "RaceDirector: set_fabric_profile 호출이 이미 있어 그대로 씁니다"
+else
+	awk '
+		{
+			line = $0
+			cr = ""
+			if (sub(/\r$/, "", line)) cr = "\r"
+			print
+		}
+		line ~ /^\t_player\.reset_state\(start_pos, _track\.start_heading\(\)\)$/ && !done {
+			print "\t_player.set_fabric_profile(FabricProfile.for_fabric(_track.fabric))" cr
+			done = 1
+		}
+		END { if (!done) exit 1 }
+	' "$RD" > "$RD.new" || {
+		echo "RaceDirector 의 reset_state 호출 줄을 찾지 못해 원단 적용 줄을 넣지 못했습니다" >&2
+		exit 2
+	}
+	mv "$RD.new" "$RD"
+	echo "RaceDirector: 사본에 set_fabric_profile 한 줄을 임시로 넣었습니다"
+fi
+
+# 4) 검사 스크립트·기준본·fixture 복사.
+mkdir -p "$PROJ/fabric_regression/fixtures"
+cp "$HERE/check.gd" "$HERE/check.tscn" "$HERE/fabric_driver.gd" "$HERE/fabric_feel.gd" \
+	"$HERE/baseline/PlayerControllerV221.gd" "$PROJ/fabric_regression/"
+cp "$FIXTURE" "$PROJ/fabric_regression/fixtures/"
+
+SHOWN=0
+flush_log() {
+	local log="$1" size
+	size="$(wc -c <"$log" | tr -d ' ')"
+	if [ "$size" -gt "$SHOWN" ]; then
+		tail -c +"$((SHOWN + 1))" "$log" | head -c "$((size - SHOWN))"
+		SHOWN="$size"
+	fi
+}
+
+RUN_CODE=0
+run_godot() {
+	local limit="$1" log="$2" show="$3"
+	shift 3
+	: >"$log"
+	SHOWN=0
+	"$GODOT" "$@" >"$log" 2>&1 &
+	GODOT_PID=$!
+	local start=$SECONDS timed_out=0
+	while kill -0 "$GODOT_PID" 2>/dev/null; do
+		[ "$show" = "1" ] && flush_log "$log"
+		if [ $((SECONDS - start)) -ge "$limit" ]; then
+			timed_out=1
+			break
+		fi
+		sleep 1
+	done
+	if [ "$timed_out" = "1" ]; then
+		local pid="$GODOT_PID"
+		stop_godot
+		[ "$show" = "1" ] && flush_log "$log"
+		echo "시간 초과: ${limit}초 안에 끝나지 않아 Godot(PID $pid)를 종료했습니다: $*" >&2
+		RUN_CODE=124
+		return 0
+	fi
+	RUN_CODE=0
+	wait "$GODOT_PID" || RUN_CODE=$?
+	GODOT_PID=""
+	[ "$show" = "1" ] && flush_log "$log"
+	return 0
+}
+
+# 5) headless import 후 검사 실행.
+run_godot "$IMPORT_LIMIT" "$WORK/import.log" 0 --headless --path "$PROJ" --import
+if [ "$RUN_CODE" -ne 0 ]; then
+	echo "import 실패(exit=$RUN_CODE):" >&2
+	cat "$WORK/import.log" >&2
+	exit 2
+fi
+run_godot "$CHECK_TIMEOUT" "$WORK/check.log" 1 --headless --path "$PROJ" \
+	res://fabric_regression/check.tscn
+code=$RUN_CODE
+if [ "$code" -eq 0 ] && ! grep -Eq "^fabric regression: [0-9]+ passed, 0 failed$" "$WORK/check.log"; then
+	echo "'fabric regression: N passed, 0 failed' 요약 줄이 출력되지 않았습니다" >&2
+	code=3
+fi
+if [ -n "${FABRIC_REGRESSION_LOG:-}" ]; then
+	cp "$WORK/check.log" "$FABRIC_REGRESSION_LOG"
+fi
+echo "fabric check exit=$code"
+exit "$code"

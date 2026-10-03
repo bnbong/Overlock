@@ -33,6 +33,8 @@ var _autopilot_card: EffectTimerCard = null
 
 # 아이템 슬롯 2칸 위젯(v2.2.1). RISK 패널 오른쪽에 붙고, 터치 모드에서는 RISK와 함께 위로 옮긴다.
 var _item_slots: ItemSlots = null
+# 개인 고스트 출발 안내 배너(v2.3.0, 화면 위 가운데). 재생할 고스트가 없을 때의 사유만 잠시 보인다.
+var _ghost_banner: GhostNoticeBanner = null
 # 자동 일시정지 안내 라벨(일시정지 오버레이 제목 아래). 자동 정지일 때만 보인다.
 var _auto_pause_label: Label = null
 
@@ -59,6 +61,7 @@ func _ready() -> void:
 	_apply_skin()
 	_build_effect_cards()
 	_build_item_slots()
+	_build_ghost_banner()
 	_build_touch_controls()
 	_build_auto_pause_label()
 	_apply_editor_test_pause()
@@ -106,6 +109,33 @@ func _build_item_slots() -> void:
 	move_child(_item_slots, _pause_overlay.get_index())
 
 
+## 화면 위 가운데 고스트 출발 안내 배너(GhostNoticeBanner.RECT)를 동적 생성한다. 일시정지 딤 아래에 그린다.
+func _build_ghost_banner() -> void:
+	_ghost_banner = GhostNoticeBanner.new()
+	add_child(_ghost_banner)
+	move_child(_ghost_banner, _pause_overlay.get_index())
+
+
+# --- 개인 고스트 (v2.3.0) ---
+
+
+## 런 시작 시 RaceDirector가 부른다. active=false면 미니맵 마커를 숨긴다.
+func setup_ghost(active: bool) -> void:
+	if not active:
+		_minimap.set_ghost({})
+
+
+## 고스트 재생 상태(GhostRun.state_at)를 미니맵에 넘긴다. update_frame 전에 같은 틱에서 부른다.
+func set_ghost_state(state: Dictionary) -> void:
+	_minimap.set_ghost(state)
+
+
+## 고스트를 재생하지 못하는 사유를 출발 때 한 줄로 안내한다(주행 중 구간 시간차 팝업은 없다).
+func show_ghost_notice(text: String) -> void:
+	if _ghost_banner != null:
+		_ghost_banner.show_notice(text)
+
+
 ## 일시정지 오버레이 제목(PAUSED) 아래에 자동 정지 안내 라벨을 붙인다(평소 숨김).
 func _build_auto_pause_label() -> void:
 	_auto_pause_label = Label.new()
@@ -144,6 +174,13 @@ func setup(track: TrackData) -> void:
 	_progress.set_progress(0.0)
 	_reset_audio_run()
 	_play_bgm("gameplay")
+
+
+## 카운트다운(주행 전)에도 미니맵이 출발 위치·방향과 같은 변환으로 그리게 플레이어 상태를 넘긴다.
+## update_frame은 주행 틱에서만 불리므로, 이 호출이 없으면 미니맵이 기본값(원점·heading 0)으로 그려
+## 원점이 아닌 곳에서 출발하는 트랙의 경로가 마커에서 떨어져 보인다(HEAD 8d6099c부터 있던 문제).
+func sync_minimap(player: PlayerController, progress_s: float) -> void:
+	_minimap.update_view(player.position, player.heading, progress_s, player.speed)
 
 
 func show_countdown(value: int) -> void:

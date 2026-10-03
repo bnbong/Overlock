@@ -16,6 +16,13 @@ const DEPTH_SCALE: float = 28.0
 const CAM_BACK: float = 140.0
 const SPREAD: float = 0.9
 const COVERAGE: float = 600.0
+## 바닥 SubViewport 한 변(px). Mode 7 근경은 월드 1px이 화면 가로 10~29px로 크게 확대되므로, 씬 기본값
+## 512(0.85 px/월드)로는 원단 조직이 뭉개진다. 2048(3.41 px/월드)로 올려 조직 한 주기가 뷰포트 3.5px
+## 이상 담기게 한다. 원경 모아레는 FabricSurface의 깊이 기반 밉맵이 거른다.
+const SOURCE_SIZE: int = 2048
+## 모바일 기기(네이티브·모바일 웹)는 렌더 타깃 채움 비용과 메모리(2048² RGBA 16MiB)를 줄이려고 절반을
+## 쓴다. 이때 조직이 뷰포트 해상도보다 촘촘한 부분은 FabricSurface 밉맵이 흐리게 걸러 모아레를 막는다.
+const SOURCE_SIZE_MOBILE: int = 1024
 
 # --- 수평선-원단 이음새 상수 (단일 소스, 셰이더 uniform으로 전달) ---
 # HORIZON_FADE: 수평선 근처를 원단 대표색으로 흐리는 대역(원경 앨리어싱 완화).
@@ -37,6 +44,9 @@ const MOVE_HOLD: float = 0.1
 # 엄마 찬스 스와이프 진행 속도(1/s). 0→1 전환에 ~0.35s(사용자 확정 연출). 오토파일럿 상승엣지에
 # 목표 1로, 하강엣지에 목표 0으로 잡아 이 속도로 프레임 보간한다(표현 전용, 시뮬 무관).
 const MOM_SWIPE_RATE: float = 1.0 / 0.35
+# 드리프트 주름 스트로크를 끊는 프레임 간 순간이동 거리(px). 60Hz 최고속(300px/s)에서 렌더 프레임이
+# 물리 8틱을 몰아 처리해도(약 40px) 넘지 않고, 원단 이탈 복귀(수백 px)는 확실히 넘는다.
+const FOLD_TELEPORT: float = 64.0
 
 const ToastScene := preload("res://scenes/Toast.tscn")
 ## 원단 이탈 페널티 알림에만 쓰는 엄마 꾸중 초상화(Toast 말풍선 스타일). 다른 토스트는 초상화 없음.
@@ -77,6 +87,9 @@ const _BASE_THIMBLE_TEX := preload("res://assets/gfx/palm_contact/hand_thimble_f
 	preload("res://assets/gfx/palm_contact/handcut3_thimble_flat.png"),
 ]
 
+## 드리프트 원단 주름 연출 ON/OFF(표현 전용). 끄면 주름 데이터도 쌓지 않는다(회귀 비교용).
+var drift_folds_enabled: bool = true
+
 var _mat: ShaderMaterial = null
 var _injury_shake: float = 0.0
 var _prev_stun_active: bool = false
@@ -113,6 +126,10 @@ var _line_rng: RandomNumberGenerator = null
 var _forced_line: int = -1
 # 완주 줌아웃 진입 엣지(표현 전용). 진입 프레임에 남은 알림을 정리하고 이후 부상 대사는 띄우지 않는다.
 var _prev_finish: bool = false
+# 주행 표현 시계(초). 이 노드는 일시정지에서 _process가 멈추므로 시계도 함께 멈춘다.
+var _fx_time: float = 0.0
+# 직전 프레임에 주름 스트로크에 샘플을 넣었는가(드리프트 하강엣지에서 스트로크를 끊는다).
+var _prev_fold_push: bool = false
 
 @onready var _viewport: SubViewport = get_node_or_null("../SimHost/FabricSource")
 @onready var _warp: ColorRect = get_node_or_null("../FabricLayer/FabricWarp")
@@ -124,6 +141,7 @@ var _prev_finish: bool = false
 @onready var _stitch: StitchTrail = get_node_or_null("../SimHost/FabricSource/World/StitchTrail")
 @onready var _skid: DriftSkid = get_node_or_null("../SimHost/FabricSource/World/DriftSkid")
 @onready var _item_field: ItemField = get_node_or_null("../SimHost/FabricSource/World/ItemField")
+@onready var _folds: DriftFoldLayer = get_node_or_null("../FabricLayer/DriftFolds")
 # 완주 줌아웃 오버레이. 빌보드 숨김 판단에 가시성만 읽는다(다른 소유 파일이라 변경 없음).
 @onready var _finish_view: CanvasItem = get_node_or_null("../FinishViewLayer/FinishView")
 @onready var _needle: NeedleView = get_node_or_null("../ForegroundLayer/NeedleView")
@@ -148,6 +166,8 @@ func _ready() -> void:
 	_setup_projection()
 	_setup_fabric()
 	_place_needle()
+	if _folds != null and _skid != null and _viewport != null:
+		_folds.setup(_skid, _viewport.get_texture())
 	# 맵 이탈 안내용 토스트(재사용 컴포넌트). CanvasLayer라 이 노드 아래 붙어도 화면 최상단에 뜬다.
 	_toast = ToastScene.instantiate()
 	add_child(_toast)
@@ -194,11 +214,19 @@ func _setup_projection() -> void:
 		_mat.set_shader_parameter("horizon_fade", HORIZON_FADE)
 		_mat.set_shader_parameter("edge_width", EDGE_WIDTH)
 		_mat.set_shader_parameter("edge_darkness", EDGE_DARKNESS)
-	# 소스가 coverage 월드 px를 512 텍셀에 담도록 카메라를 축소(zoom<1).
+	# 소스가 coverage 월드 px를 SOURCE_SIZE 텍셀에 담도록 카메라를 축소(zoom<1).
+	if _viewport != null:
+		var n: int = SOURCE_SIZE_MOBILE if _is_mobile_device() else SOURCE_SIZE
+		_viewport.size = Vector2i(n, n)
 	if _camera != null and _viewport != null:
 		var vp_w: float = float(_viewport.size.x)
 		var z: float = vp_w / COVERAGE
 		_camera.zoom = Vector2(z, z)
+
+
+## 모바일 기기 여부(네이티브 Android·iOS, 모바일 브라우저의 웹 빌드). 바닥 SubViewport 크기에만 쓴다.
+static func _is_mobile_device() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
 
 
 ## 노루발 오버레이를 v_needle 행에 정렬(셰이더와 동일 상수에서 유도).
@@ -247,12 +275,13 @@ func _process(delta: float) -> void:
 		_move_hold_t = maxf(_move_hold_t - delta, 0.0)
 	var running: bool = _move_hold_t > 0.0
 
-	# 3) 스티치 샘플링(호길이 기반). 드리프트 중이면 원단 융기 스키드 자국도 함께 남긴다
-	#    (표현 전용, dir=drift_dir 부호=밀린 방향 / intensity=|drift_dir|=길이·오프셋 스케일).
+	# 3) 스티치 샘플링(호길이 기반). 드리프트 중이면 원단 주름 데이터도 함께 남긴다
+	#    (표현 전용, dir=drift_dir 부호=밀린 방향 / intensity=|drift_dir|=크기·높이 스케일).
 	if _stitch != null:
 		_stitch.push_if_moved(pos)
-	if _player.is_drifting and _skid != null:
-		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir))
+	var finished: bool = _finish_view != null and _finish_view.visible
+	_fx_time += maxf(delta, 0.0)
+	_update_drift_folds(pos, heading, moved, offfabric_active, finished)
 
 	# 4) 바늘 왕복 = f(speed). 정지·카운트다운·완주 판정은 위 이동 히스테리시스(running)를
 	#    그대로 넘겨, 고주사율에서 물리 틱 없는 프레임에 바늘이 멈칫하지 않게 한다.
@@ -284,7 +313,6 @@ func _process(delta: float) -> void:
 	# 6b) 완주 줌아웃 진입: 떠 있던 알림(부상 대사·엄마 꾸중·아이템)은 짧게 걷어 결과 오버레이와
 	#     "아무 키나 누르세요" 안내를 가리지 않게 한다. 완주 틱에 확정된 pending 부상도 이 뒤로는
 	#     집계·셰이크·밴드만 반영하고 대사는 띄우지 않는다(줌아웃 화면에서는 손·얼굴이 보이지 않는다).
-	var finished: bool = _finish_view != null and _finish_view.visible
 	if finished and not _prev_finish and _toast != null:
 		_toast.dismiss()
 	_prev_finish = finished
@@ -328,6 +356,55 @@ func _process(delta: float) -> void:
 	_prev_drifting = _player.is_drifting
 	_prev_autopilot = autopilot_active
 	_prev_thimble = thimble_active
+
+
+## 드리프트 원단 주름(표현 전용). 주행 중(RUNNING, 완주 줌아웃 아님)에 드리프트할 때만 샘플을 넣고,
+## 드리프트 종료·원단 이탈 강제 복귀·순간이동·완주에서 스트로크를 끊는다. 시계는 _fx_time(일시정지 정지).
+func _update_drift_folds(
+	pos: Vector2, heading: float, moved: float, offfabric_active: bool, finished: bool
+) -> void:
+	if _skid == null or not drift_folds_enabled:
+		if _folds != null:
+			_folds.enabled = false
+			_folds.update_view(_fx_time, pos, heading)
+		return
+	var racing: bool = not finished and _race_running()
+	var drifting: bool = racing and _player.is_drifting
+	var jumped: bool = moved > FOLD_TELEPORT
+	var reset_edge: bool = offfabric_active and not _prev_offfabric
+	if _prev_fold_push and (not drifting or jumped or reset_edge):
+		_skid.end_stroke(_fx_time)
+	if drifting and not jumped and not reset_edge:
+		var tip: Vector2 = _fold_tip_world(_player.drift_dir, pos, heading)
+		_skid.push(pos, _player.drift_dir, absf(_player.drift_dir), _fx_time, heading, tip)
+		_prev_fold_push = true
+	else:
+		_prev_fold_push = false
+	_skid.tick(_fx_time)
+	if _folds != null:
+		_folds.enabled = true
+		_folds.update_view(_fx_time, pos, heading)
+
+
+## 드리프트 쪽(누르는) 손의 접촉 손끝 화면 위치를 바닥 월드로 역투영한다(주름 기준점). 손끝은 조향·드리프트
+## 누름·미끄러짐에 따라 움직이므로 매 프레임 HandView가 그리는 위치를 그대로 쓴다. 손이 없으면 NAN.
+func _fold_tip_world(dir: float, pos: Vector2, heading: float) -> Vector2:
+	var hand: HandView = _right_hand if dir > 0.0 else _left_hand
+	if hand == null:
+		return Vector2(NAN, NAN)
+	# HandView는 이 작업에서 바꾸지 않으므로, 회귀 검사가 쓰는 읽기 전용 손끝 위치(_slip_tip_local)를 읽는다.
+	var tip_screen: Vector2 = hand.position + hand._slip_tip_local()
+	var screen: Vector2 = get_viewport().get_visible_rect().size
+	return DriftFoldLayer.screen_to_world(tip_screen, pos, heading, screen)
+
+
+## RaceDirector가 주행 틱(RUNNING) 중인가(카운트다운·완주 줌아웃·결과 전환이면 false). 부모가 다른 씬
+## (단독 검사 등)이라 is_racing이 없으면 플레이어 상태만으로 판단한다.
+func _race_running() -> bool:
+	var director: Node = get_parent()
+	if director != null and director.has_method("is_racing"):
+		return director.is_racing()
+	return true
 
 
 func _update_shake(delta: float, risk: float) -> void:

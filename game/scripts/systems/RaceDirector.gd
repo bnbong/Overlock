@@ -20,6 +20,13 @@ extends Node2D
 ## 가장 먼저 담긴 아이템의 기존 효과(_apply_item)를 낸다. 슬롯이 가득 차면 밟은 아이템은 획득하지
 ## 않고 필드에 그대로 남는다. 한 틱 안의 순서는 사용(시뮬 전) → 시뮬 → 트랙 질의 → 획득이다.
 
+## 개인 고스트(v2.3.0, docs/architecture.md §3.3): 주행 틱마다 GhostRun이 위치 스냅샷과 10구간 통과를
+## 기록하고(일시정지·튜토리얼·카운트다운·완주 줌아웃 제외), 완주 시 RecordStore.submit_run이 최고 기록과
+## 고스트를 함께 저장한다. 재생은 시작 시 읽은 개인 최고 고스트를 같은 주행 경과 시간으로 미니맵과 필드
+## (GhostFieldLayer)에 그린다. 구간 통과는 고스트 데이터(splits)로만 기록하고 화면에는 보이지 않는다.
+## 고스트는 시뮬레이션 상태를 읽기만 하므로 충돌·아이템·RISK·기록에 영향을 주지 않는다.
+## 에디터 테스트 플레이·중도 포기·재시작은 저장하지 않는다(완주 경로가 아니거나 editor_test 분기).
+
 ## 자동 일시정지(v2.2.1, docs/mobile.md §4.4): 카운트다운·주행 중 세로 전환(OrientationGuard)이나
 ## 창·앱 포커스 상실 때 수동 일시정지와 같은 정지를 걸고 입력을 뗀다. 복귀해도 자동으로 풀지 않고
 ## "계속"(pause 액션)을 눌러야 재개한다. 이미 정지(수동) 중이면 아무것도 바꾸지 않는다.
@@ -73,6 +80,8 @@ var _offfabric_dwell: float = 0.0
 # 곡률 연장에 이미 소비한 시간(초, autopilot_handoff_max_grace 상한). 전부 고정 틱에서만 갱신(결정론).
 var _items: Array = []
 var _collected: Array = []
+# 획득 판정 순회 순서(ItemOrder 정규 순서의 원래 인덱스 배열). 배열 순서만 다른 같은 트랙이 같은 결과를 낸다.
+var _item_order: Array = []
 var _autopilot_s: float = 0.0
 var _autopilot_grace_used: float = 0.0
 
@@ -82,6 +91,16 @@ var _autopilot_grace_used: float = 0.0
 var _slots: Array[String] = []
 var _full_touch: Array = []
 var _last_s: float = 0.0
+
+# 개인 고스트(v2.3.0). _ghost_rec는 이번 런 기록기(항상 기록), _ghost_play는 재생할 개인 최고 고스트
+# (꺼짐·없음·손상이면 null), _ghost_notice는 고스트를 못 쓰는 사유 안내(출발 때 HUD에 잠깐 표시).
+var _ghost_rec: GhostRun = null
+var _ghost_play: GhostRun = null
+var _ghost_notice: String = ""
+# 필드 위 고스트 마커(ItemLayer 안, 재생할 고스트가 있을 때만 만든다).
+var _ghost_field: GhostFieldLayer = null
+# 이번 런의 원단 주행 특성 id(_apply_fabric_profile이 TrackData.fabric으로 정한다).
+var _fabric_id: String = ""
 
 # 자동 일시정지(세로 전환·포커스 상실)로 멈춘 상태인가. 수동 일시정지와 구분해 안내 문구만 바꾼다.
 var _auto_paused: bool = false
@@ -121,8 +140,10 @@ func _ready() -> void:
 	_place_finish_line()
 	_init_player()
 	_hud.setup(_track)
+	_hud.sync_minimap(_player, 0.0)
 	_hud.set_pause_visible(false)
 	_hud.set_item_slots(_slots)
+	_setup_ghost()
 	var guard: Node = get_node_or_null("/root/OrientationGuard")
 	if guard != null and guard.has_signal("portrait_changed"):
 		guard.portrait_changed.connect(_on_portrait_changed)
@@ -231,6 +252,12 @@ func request_auto_pause() -> bool:
 ## 자동 일시정지로 멈춰 있는가(수동 일시정지·비정지면 false).
 func is_auto_paused() -> bool:
 	return _auto_paused and is_inside_tree() and get_tree().paused
+
+
+## 주행 틱(RUNNING) 중인가. 표현 계층(드리프트 주름)이 카운트다운·완주 줌아웃·결과 전환 동안 새
+## 연출을 만들지 않도록 읽기만 한다(시뮬 상태 불변).
+func is_racing() -> bool:
+	return _state == State.RUNNING
 
 
 ## 눌린 게임 입력 액션을 떼고, 아직 소비하지 않은 이산 입력을 모두 버린다(속도·아이템 사용과 일시정지·
@@ -367,6 +394,9 @@ func _tick_countdown(delta: float) -> void:
 	else:
 		_hud.show_go()
 		_state = State.RUNNING
+		_ghost_rec.begin(_player.position, _player.heading)
+		if not _ghost_notice.is_empty():
+			_hud.show_ghost_notice(_ghost_notice)
 
 
 func _tick_running(delta: float) -> void:
@@ -407,6 +437,14 @@ func _tick_running(delta: float) -> void:
 	else:
 		_offfabric_dwell = 0.0
 	_stats.accumulate(delta, _player.speed_index, band, err, just_cut)
+	# 구간 통과는 고스트 데이터(splits)로만 기록한다(주행 중·결과 화면 모두 표시하지 않음).
+	_ghost_rec.on_tick(_elapsed, _player.position, _player.heading, _last_s, _stats.penalty_time)
+	if _ghost_play != null:
+		# 미니맵과 필드 마커가 같은 물리 시각의 고스트 상태를 쓴다.
+		var gs: Dictionary = _ghost_play.state_at(_elapsed * 1000.0)
+		_hud.set_ghost_state(gs)
+		if _ghost_field != null:
+			_ghost_field.set_state(gs)
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
 	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
 		_finish()
@@ -442,13 +480,14 @@ func _advance_autopilot(delta: float) -> void:
 ## 거리가 item_pickup_radius 이하이면 획득 처리: 슬롯 맨 뒤에 담고 표현 노드에 통지한다(null-safe).
 ## 슬롯이 가득 차 있으면 획득하지 않고 아이템을 필드에 그대로 둔다. 이때 반경에 들어온 첫 틱에만
 ## HUD에 "가득 참" 피드백을 보내고(_full_touch 래치), 반경을 벗어나면 래치를 푼다. 반경 안에 있는
-## 동안 슬롯이 비면 다음 틱에 정상 획득한다. 한 틱에 여러 개가 겹치면 인덱스 순서로 담는다.
+## 동안 슬롯이 비면 다음 틱에 정상 획득한다. 한 틱에 여러 개가 겹치면 ItemOrder 정규 순서(s→type→lat→
+## 인덱스)로 담는다(기록 지문과 같은 순서라 배열 순서만 다른 트랙도 같은 결과).
 func _check_item_pickups() -> void:
 	if _items.is_empty():
 		return
 	var ppos: Vector2 = _player.position
 	var changed: bool = false
-	for i in _items.size():
+	for i in _item_order:
 		if bool(_collected[i]):
 			continue
 		var item: Dictionary = _items[i]
@@ -516,11 +555,18 @@ func _soft_reset_off_fabric() -> void:
 	var reset_pos: Vector2 = Vector2.ZERO
 	if _track.points.size() > _last_good_hint:
 		reset_pos = _track.points[_last_good_hint]
+	var pre_pos: Vector2 = _player.position
+	var pre_heading: float = _player.heading
+	var pre_s: float = _last_s
 	_player.off_fabric_reset(reset_pos, _heading_at(_last_good_hint))
 	_hint = _last_good_hint
 	_last_s = _last_good_s
 	_stats.add_reset_penalty()
 	_offfabric_dwell = 0.0
+	# 고스트 기록: 복귀 전후를 같은 시각의 두 샘플로 남겨 재생이 트랙을 가로질러 보간하지 않게 한다.
+	_ghost_rec.on_reset(
+		_elapsed, pre_pos, pre_heading, pre_s, _player.position, _player.heading, _last_good_s
+	)
 
 
 ## 폴리라인 인덱스 idx에서의 진행(접선) 방향 각도. 세그먼트가 없으면 0.
@@ -568,13 +614,17 @@ func _finish() -> void:
 	var result: Dictionary = _stats.finalize(
 		_elapsed, _track.safe, GameState.track_id, GameState.difficulty
 	)
-	# 에디터 테스트 플레이는 결과 통계만 보여 주고 개인 최고 기록을 갱신하지 않는다(서버 제출도
+	# 기록 메타(docs/architecture.md §3.2): 연습(개발용 튜닝) 여부는 기록 키를, 트랙 지문은 고스트 유효성을 정한다.
+	result["practice"] = RecordStore.is_practice()
+	result["track_fingerprint"] = RecordStore.fingerprint_for(GameState.track_id)
+	_ghost_rec.on_finish(result, _player.position, _player.heading, _last_s)
+	# 에디터 테스트 플레이는 결과 통계만 보여 주고 개인 최고 기록·고스트를 갱신하지 않는다(서버 제출도
 	# 결과 화면이 editor_test 표시로 막는다). 일반 플레이는 기존대로 즉시 기록한다.
 	var is_best: bool = false
 	if GameState.is_editor_test():
 		result["editor_test"] = true
 	else:
-		is_best = RecordStore.submit(result)
+		is_best = _submit_record(result)
 	result["is_new_record"] = is_best
 	_pending_result = result
 	_state = State.FINISH_VIEW
@@ -612,6 +662,7 @@ func _init_player() -> void:
 	var start_pos: Vector2 = Vector2.ZERO
 	if _track.points.size() > 0:
 		start_pos = _track.points[0]
+	_apply_fabric_profile()
 	_player.reset_state(start_pos, _track.start_heading())
 	_hint = 0
 	_last_good_hint = 0
@@ -620,6 +671,7 @@ func _init_player() -> void:
 	# 필드 아이템 로드·초기화(씬 재로드 시 여기서 전부 리셋된다). ItemField 표현 노드가 있으면
 	# 셋업을 통지한다(null-safe). 표현 노드는 track.items로 시각을 구성한다.
 	_items = _track.items
+	_item_order = ItemOrder.indices(_items)
 	_collected.clear()
 	_full_touch.clear()
 	for _i in _items.size():
@@ -641,3 +693,99 @@ func _place_finish_line() -> void:
 		_finish_line.position = last
 		_finish_line.rotation = (last - prev).angle()
 		_finish_line.setup(_track.fail)
+
+
+# --- 원단 주행 특성 연결 지점 ---
+
+
+## 런 시작 시 트랙 원단(TrackData.fabric)으로 이번 런의 주행 특성(FabricProfile)을 정해 PlayerController에
+## 고정 전달한다. 빈 값·지원하지 않는 값·혼합 원단의 면(cotton) fallback 판정은 FabricProfile 한 곳에서 한다
+## (계획서 §2 "물리 연결"). reset_state보다 먼저 불려 속도 대입이 같은 계수를 쓰게 한다. 엄마 찬스 자동주행
+## 거리(_advance_autopilot)는 이미 effective 속도인 _player.speed를 쓴다.
+func _apply_fabric_profile() -> void:
+	var profile: Dictionary = FabricProfile.for_fabric(_track.fabric)
+	_player.set_fabric_profile(profile)
+	_fabric_id = str(profile["fabric"])
+
+
+func fabric_id() -> String:
+	return _fabric_id
+
+
+# --- 개인 고스트 (v2.3.0) ---
+
+
+## 기록기를 준비하고, 고스트 표시가 켜져 있고 일반 플레이면 개인 최고 기록의 고스트를 읽는다. 기록 당시와
+## 트랙 지문이 다르거나 파일이 손상되면 재생 없이 진행하고 사유를 출발 때 안내한다.
+func _setup_ghost() -> void:
+	_ghost_rec = GhostRun.new()
+	_ghost_rec.setup(_track.length)
+	_ghost_play = null
+	_ghost_notice = ""
+	if GameState.is_editor_test() or not RecordStore.ghost_enabled():
+		_hud.setup_ghost(false)
+		return
+	var loaded: Dictionary = RecordStore.load_ghost(GameState.track_id, GameState.difficulty)
+	if bool(loaded["ok"]):
+		_ghost_play = loaded["run"]
+		_build_ghost_field()
+	else:
+		_ghost_notice = ghost_notice_text(str(loaded["reason"]))
+	_hud.setup_ghost(_ghost_play != null)
+
+
+## 필드 위 고스트 마커 레이어를 ItemLayer 맨 아래(아이템 빌보드보다 먼저)에 붙인다. 손·노루발·바늘
+## (ForegroundLayer)과 HUD는 그 위에 그려진다. ItemLayer가 없는 씬이면 만들지 않는다(null-safe).
+func _build_ghost_field() -> void:
+	var layer: Node = get_node_or_null("ItemLayer")
+	if layer == null:
+		return
+	_ghost_field = GhostFieldLayer.new()
+	layer.add_child(_ghost_field)
+	layer.move_child(_ghost_field, 0)
+	_ghost_field.setup(_player)
+
+
+## 필드 고스트 마커(없으면 null). 회귀 검사용 읽기 전용.
+func ghost_field() -> GhostFieldLayer:
+	return _ghost_field
+
+
+## 고스트를 재생하지 못한 사유 → 출발 한 줄 안내(안내가 필요 없는 사유는 빈 문자열, GhostNoticeBanner).
+static func ghost_notice_text(reason: String) -> String:
+	match reason:
+		RecordStore.STATE_NO_RECORD, RecordStore.STATE_NO_GHOST:
+			return ""
+		RecordStore.STATE_TRACK_CHANGED:
+			return "트랙이 바뀌어 고스트를 쓸 수 없습니다"
+		GhostStore.R_MISSING:
+			return "고스트 파일이 없어 고스트 없이 달립니다"
+		GhostStore.R_MISMATCH:
+			return "고스트가 트랙과 맞지 않아 쓰지 않습니다"
+	return "고스트 파일을 읽지 못해 고스트 없이 달립니다"
+
+
+## 재생 중인 고스트(없으면 null). HUD·회귀 검사용 읽기 전용.
+func ghost_playback() -> GhostRun:
+	return _ghost_play
+
+
+## 완주 결과와 고스트를 저장하고 결과 화면용 메타를 채운다. 반환: 신기록(저장 성공) 여부.
+func _submit_record(result: Dictionary) -> bool:
+	var id: String = GameState.track_id
+	var diff: String = GameState.difficulty
+	var prev: Dictionary = RecordStore.best_for(id, diff)
+	var track_changed: bool = RecordStore.track_changed_since_best(id, diff)
+	var meta: Dictionary = {
+		"steer_expo": Tuning.steer_expo,
+		"game_version": LeaderboardClient.GAME_VERSION,
+		"fabric": _fabric_id,
+	}
+	var ghost: Dictionary = _ghost_rec.to_ghost(result, meta)
+	var outcome: Dictionary = RecordStore.submit_run(result, ghost, _ghost_rec.skip_reason())
+	result["ghost_status"] = outcome["ghost_status"]
+	result["ghost_reason"] = outcome["ghost_reason"]
+	result["prev_best_ms"] = int(prev.get("final_time_ms", -1)) if not prev.is_empty() else -1
+	result["ghost_track_changed"] = track_changed
+	result["prev_best_grade"] = RecordStore.grade_of(prev) if not prev.is_empty() else ""
+	return bool(outcome["is_best"])

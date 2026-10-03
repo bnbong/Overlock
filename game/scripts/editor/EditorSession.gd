@@ -72,6 +72,11 @@ static func populate_options(diff: OptionButton, fabric: OptionButton) -> void:
 		diff.add_item("%s (%s)" % [str(DIFF_KO.get(str(d["id"]), d["name"])), str(d["name"])], i)
 	fabric.add_theme_constant_override("icon_max_width", 24)
 	fabric.get_popup().add_theme_constant_override("icon_max_width", 32)
+	# 견본 아이콘은 큰 원단 타일 크롭을 축소한 것이라 밉맵 필터로 그린다(조직 깨짐 방지).
+	fabric.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	fabric.get_popup().canvas_item_default_texture_filter = (
+		Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	)
 	for i in range(EditorDoc.FABRICS.size()):
 		var id: String = str(EditorDoc.FABRICS[i])
 		var icon: Texture2D = swatch(id)
@@ -80,19 +85,41 @@ static func populate_options(diff: OptionButton, fabric: OptionButton) -> void:
 			fabric.add_icon_item(icon, label, i)
 		else:
 			fabric.add_item(label, i)
-		fabric.set_item_tooltip(i, "%s (%s)" % [label, id])
+		fabric.set_item_tooltip(i, "%s (%s) · %s" % [label, id, FabricProfile.describe(id)])
 
 
 static func fabric_name(id: String) -> String:
 	return str(SelectScript.FABRIC_LABELS.get(id, id))
 
 
+## 원단 견본 옆 주행 특성 문구 Label을 속성 줄(FabricOption 바로 뒤)에 만든다. 장면 파일은 그대로 두고
+## 코드로 붙인다(EditorSkin 크기 조정 전에 호출). 문구·툴팁은 show_fabric_note가 채운다.
+static func add_fabric_note(row: Control, after: Control) -> Label:
+	var l: Label = Label.new()
+	l.name = "FabricNoteLabel"
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	l.add_theme_color_override("font_color", Color(0.72, 0.66, 0.56, 1))
+	l.add_theme_font_size_override("font_size", 14)
+	row.add_child(l)
+	row.move_child(l, after.get_index() + 1)
+	return l
+
+
+## 원단 주행 특성 문구(FabricProfile.describe)와 배율 수치 툴팁을 Label에 채운다. 재질 물리를 과장하지
+## 않고 배율 차이만 짧게 말한다.
+static func show_fabric_note(l: Label, id: String) -> void:
+	l.text = "주행: " + FabricProfile.describe(id)
+	l.tooltip_text = FabricProfile.detail(id)
+
+
 static func diff_name(id: String) -> String:
 	return str(DIFF_KO.get(id, id))
 
 
-## 원단 견본(타일 텍스처 가운데를 잘라 낸 AtlasTexture). 전용 타일이 없는 원단(felt·satin·wool·leather)은
-## 게임 바닥이 쓰는 대표색 단색 견본을 만든다(트랙 선택 화면의 색 패치 폴백과 같은 기준). 미지 재질은 null.
+## 원단 견본(타일 텍스처 가운데를 FabricSurface.swatch_source의 region만큼 잘라 낸 AtlasTexture). 타일
+## 파일이 없는 원단은 게임 바닥이 쓰는 대표색 단색 견본을 만든다(트랙 선택 화면의 색 패치 폴백과 같은
+## 기준). 미지 재질은 null.
 static func swatch(id: String) -> Texture2D:
 	var src: Dictionary = FabricSurface.swatch_source(id)
 	if not bool(src.get("known", false)):
@@ -102,11 +129,9 @@ static func swatch(id: String) -> Texture2D:
 		var img: Image = Image.create(32, 32, false, Image.FORMAT_RGBA8)
 		img.fill(src["color"])
 		return ImageTexture.create_from_image(img)
-	var sz: Vector2 = tex.get_size()
-	var crop: float = minf(sz.x, sz.y) * 0.55
 	var atlas: AtlasTexture = AtlasTexture.new()
 	atlas.atlas = tex
-	atlas.region = Rect2((sz - Vector2(crop, crop)) * 0.5, Vector2(crop, crop))
+	atlas.region = src.get("region", Rect2(Vector2.ZERO, tex.get_size()))
 	return atlas
 
 

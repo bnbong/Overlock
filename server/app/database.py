@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 from fastapi import Request
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
@@ -30,8 +31,15 @@ def build_sessionmaker(engine: Engine) -> sessionmaker[Session]:
 
 
 def init_db(engine: Engine) -> None:
-    """테이블·인덱스를 생성한다(이미 있으면 무시)."""
-    Base.metadata.create_all(engine)
+    """테이블·인덱스를 생성한다(이미 있으면 무시).
+
+    create_all 은 "있는지 확인 → CREATE" 를 따로 수행하므로, 두 프로세스가 동시에 기동하면 늦은
+    쪽이 "already exists" 로 실패할 수 있다. 이때는 한 번 더 실행해 이미 만들어진 테이블을 건너뛴다.
+    """
+    try:
+        Base.metadata.create_all(engine)
+    except OperationalError:
+        Base.metadata.create_all(engine)
 
 
 def get_session(request: Request) -> Iterator[Session]:

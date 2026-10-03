@@ -6,6 +6,12 @@ extends Control
 ## preview = speed*4.0, back = speed*1.5 구간의 베이크 점만 사용한다.
 ## 리스타일: 베이지 패널 + 스티치풍 대시 테두리 + 지나온 궤적(회색 대시) /
 ## 앞으로 갈 길(보라 실선) 분리(로직 골격은 불변).
+##
+## 개인 고스트(v2.3.0): set_ghost로 받은 고스트 월드 위치를 플레이어와 같은 좌표 변환(플레이어 중심·
+## 진행 방향 위·같은 축척)으로 옮겨 반투명 속 빈 마름모와 "고스트" 라벨로 그린다. 플레이어는 채운 점과
+## 방향 화살표라 모양과 라벨로 구분한다(색만으로 구분하지 않음). 부분 미니맵 밖이면 테두리 안쪽에
+## 고스트 방향을 가리키는 작은 삼각형만 그린다. 고스트가 먼저 완주하면 결승 위치에 멈춘 채
+## ARRIVED_LABEL_MS 동안 "고스트 도착" 라벨을 보인다.
 
 const PATH_COLOR: Color = Color(0.55, 0.35, 0.85, 1.0)  # 앞으로 갈 길(보라 실선)
 const PAST_COLOR: Color = Color(0.47, 0.40, 0.33, 0.85)  # 지나온 길(웜톤 회갈색 대시)
@@ -20,6 +26,12 @@ const DASH_GAP: float = 4.0
 # 표시 줌 추종 시정수(초). 속도 단계가 바뀔 때 표시 범위(preview/back/scale)가
 # 계단식으로 튀지 않게 하는 표시 전용 보간 상수 — 시뮬레이션에는 절대 개입하지 않는다.
 const SPEED_SMOOTH_TAU: float = 0.5
+const GHOST_COLOR: Color = Color(0.20, 0.16, 0.14, 0.55)
+const GHOST_FILL: Color = Color(0.97, 0.93, 0.85, 0.45)
+const GHOST_SIZE: float = 6.0
+# 고스트 마커가 들어갈 안쪽 영역 여백(박음질 테두리·모서리 단추 안쪽).
+const GHOST_INSET: float = 16.0
+const ARRIVED_LABEL_MS: float = 3000.0
 
 var _track: TrackData
 var _player_pos: Vector2 = Vector2.ZERO
@@ -30,6 +42,8 @@ var _speed: float = 80.0
 # _process에서 지수 보간한다. _draw는 이 값만 쓴다.
 var _display_speed: float = 80.0
 var _display_inited: bool = false
+# 개인 고스트 재생 상태(GhostRun.state_at 결과, 빈 dict면 표시 안 함).
+var _ghost: Dictionary = {}
 
 
 func _ready() -> void:
@@ -50,6 +64,38 @@ func update_view(player_pos: Vector2, heading: float, progress_s: float, speed: 
 		_display_speed = speed  # 시작 시 램프 방지: 첫 프레임은 즉시 정합.
 		_display_inited = true
 	queue_redraw()
+
+
+## 고스트 상태 주입(빈 dict면 숨김). update_view 전에 같은 물리 틱에서 부른다.
+func set_ghost(state: Dictionary) -> void:
+	_ghost = state
+	queue_redraw()
+
+
+## 현재 고스트 마커 배치 {visible, inside, pos(로컬), label}. _draw와 회귀 검사가 같은 계산을 쓴다.
+func ghost_marker() -> Dictionary:
+	if _ghost.is_empty() or _track == null:
+		return {"visible": false, "inside": false, "pos": Vector2.ZERO, "label": ""}
+	var preview: float = maxf(_display_speed * 4.0, 1.0)
+	var scale_factor: float = (size.x * 0.5) / preview
+	var center: Vector2 = size * 0.5
+	var rot: float = -_heading - PI * 0.5
+	var gpos: Vector2 = _ghost.get("pos", Vector2.ZERO)
+	var local: Vector2 = center + (gpos - _player_pos).rotated(rot) * scale_factor
+	var inner: Rect2 = Rect2(Vector2.ONE * GHOST_INSET, size - Vector2.ONE * GHOST_INSET * 2.0)
+	var arrived: bool = bool(_ghost.get("arrived", false))
+	var label: String = "고스트"
+	if arrived and float(_ghost.get("since_finish_ms", 0.0)) < ARRIVED_LABEL_MS:
+		label = "고스트 도착"
+	if inner.has_point(local):
+		return {"visible": true, "inside": true, "pos": local, "label": label}
+	# 밖: 중심에서 고스트 방향으로 안쪽 영역 경계에 붙인다.
+	var dir: Vector2 = (local - center)
+	if dir.length() < 0.001:
+		dir = Vector2.UP
+	var half: Vector2 = inner.size * 0.5
+	var k: float = minf(half.x / maxf(absf(dir.x), 0.001), half.y / maxf(absf(dir.y), 0.001))
+	return {"visible": true, "inside": false, "pos": center + dir * k, "label": label}
 
 
 func _process(delta: float) -> void:
@@ -92,6 +138,7 @@ func _draw_route() -> void:
 	if ahead.size() >= 2:
 		draw_polyline(ahead, PATH_COLOR, 2.5)
 	_draw_finish_marker(preview, rot, scale_factor, center)
+	_draw_ghost()
 	draw_circle(center, 3.0, PLAYER_COLOR)
 	draw_line(center, center + Vector2(0.0, -8.0), ARROW_COLOR, 2.5)
 
@@ -140,3 +187,33 @@ func _draw_finish_marker(preview: float, rot: float, scale_factor: float, center
 	var finish_pos: Vector2 = _track.points[count - 1]
 	var rel: Vector2 = (finish_pos - _player_pos).rotated(rot) * scale_factor
 	draw_circle(center + rel, 4.0, FINISH_COLOR)
+
+
+## 고스트 마커: 안쪽이면 속 빈 마름모 + 라벨, 밖이면 경계의 방향 삼각형.
+func _draw_ghost() -> void:
+	var m: Dictionary = ghost_marker()
+	if not bool(m["visible"]):
+		return
+	var p: Vector2 = m["pos"]
+	var font: Font = get_theme_default_font()
+	if bool(m["inside"]):
+		var d: float = GHOST_SIZE
+		var diamond: PackedVector2Array = PackedVector2Array(
+			[p + Vector2(0, -d), p + Vector2(d, 0), p + Vector2(0, d), p + Vector2(-d, 0)]
+		)
+		draw_colored_polygon(diamond, GHOST_FILL)
+		diamond.append(diamond[0])
+		draw_polyline(diamond, GHOST_COLOR, 2.0)
+	else:
+		var dir: Vector2 = (p - size * 0.5).normalized()
+		var tip: Vector2 = p + dir * 4.0
+		var side: Vector2 = dir.orthogonal() * 5.0
+		draw_colored_polygon(
+			PackedVector2Array([tip, p - dir * 5.0 + side, p - dir * 5.0 - side]), GHOST_COLOR
+		)
+	var label: String = str(m["label"])
+	var w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	var lp: Vector2 = p + Vector2(-w * 0.5, -GHOST_SIZE - 4.0)
+	lp.x = clampf(lp.x, GHOST_INSET * 0.5, size.x - GHOST_INSET * 0.5 - w)
+	lp.y = clampf(lp.y, GHOST_INSET + 8.0, size.y - GHOST_INSET * 0.5)
+	draw_string(font, lp, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, GHOST_COLOR)
