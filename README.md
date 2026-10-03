@@ -7,6 +7,9 @@
 <p align="center">
 <img src="https://img.shields.io/badge/GODOT-%23FFFFFF?style=flat&logo=godot-engine" alt="Godot Engine"/>
 <img src="https://img.shields.io/badge/FastAPI-%23009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI"/>
+<a href="https://bnbong.itch.io/overlock" target="_blank">
+    <img src="https://img.shields.io/badge/Itch-%23FF0B34.svg?style=flat&logo=Itch.io&logoColor=white" alt="Itch.io download page">
+</a>
 </p>
 
 ---
