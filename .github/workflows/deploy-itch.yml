@@ -140,8 +140,19 @@ jobs:
           fi
           # butler 실행에 필요한 7z.so 등 동봉 파일과 함께 압축을 푼다.
           unzip -o /tmp/butler.zip -d ~/butler
-          chmod +x ~/butler/butler
-          ~/butler/butler -V
+          # zip 구조가 판마다 다르다(GitHub Releases: linux-amd64/ 하위 폴더, broth: 루트).
+          # 바이너리 위치를 고정하지 않고 찾아, 7z.so·libc7zip.so 가 같은 디렉터리에 있도록 그 디렉터리를 PATH 에 둔다.
+          butler_bin="$(find ~/butler -type f -name butler | head -n1)"
+          if [ -z "${butler_bin}" ]; then
+            echo "::error::압축 해제 후 butler 바이너리를 찾지 못했습니다. zip 내용:"
+            unzip -l /tmp/butler.zip
+            exit 1
+          fi
+          BUTLER_DIR="$(dirname "${butler_bin}")"
+          echo "butler directory: ${BUTLER_DIR}"
+          chmod +x "${BUTLER_DIR}/butler"
+          "${BUTLER_DIR}/butler" -V
+          echo "${BUTLER_DIR}" >> "$GITHUB_PATH"
 
       - name: Push to itch.io (butler push)
         env:
@@ -149,7 +160,7 @@ jobs:
           ITCH_TARGET: ${{ secrets.ITCH_TARGET }}
         run: |
           set -eu
-          export PATH="$HOME/butler:$PATH"
+          # butler 는 이전 단계에서 GITHUB_PATH 로 PATH 에 등록됨.
           # 실행 회차 기반 유저 버전(itch 페이지에 표시). 예: 2026.08.23-r42
           userversion="$(date -u +%Y.%m.%d)-r${GITHUB_RUN_NUMBER}"
           echo "Pushing build/web → ${ITCH_TARGET} (userversion ${userversion})"
