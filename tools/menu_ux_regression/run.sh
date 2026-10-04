@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 메뉴 UX 회귀 검사 실행기(v2.2.1 P1: 메뉴 터치 배치, 설정 자동 저장·닉네임 저장/취소, 리더보드 오래된 응답).
+# 메뉴 UX 회귀 검사 실행기(v2.2.1 P1: 메뉴 터치 배치, 설정 자동 저장·닉네임 저장/취소, 리더보드 오래된 응답,
+# v2.3.1 닉네임 입력 가상 키보드).
 # 저장소의 game/ 을 임시 디렉터리에 복사한 사본에서만 실행하므로 저장소와 실제 사용자 기록
 # (~/Library/Application Support/Godot/app_userdata/Overlock/)을 건드리지 않는다. 사본은 실행마다 고유한
 # custom user dir(overlock_menu_ux_regression_<접미사>_<PID>)을 쓰고, 종료 시 이 실행이 만든 디렉터리만 지운다.
@@ -10,7 +11,7 @@
 # 환경변수:
 #   GODOT(엔진 경로), MENU_UX_TMP(임시 작업 디렉터리 상위 경로), MENU_UX_TIMEOUT(검사 제한 초, 기본 300),
 #   IMPORT_TIMEOUT(import 제한 초, 기본 300), GAME_DIR(검사할 game 디렉터리, 기본 저장소 game/),
-#   ONLY(한 구역만: touch 는 터치 배치 검사만, layout|prefs|nick|lb 는 데스크톱 검사의 그 구역만),
+#   ONLY(한 구역만: touch 는 터치 배치·키보드 검사만, layout|prefs|nick|kbd|lb 는 데스크톱 검사의 그 구역만),
 #   DUMP(경로: 데스크톱 버튼 사각형을 이 JSON 으로 뽑고 끝낸다. 기준 갱신용),
 #   CAPTURE_OUT(디렉터리: 검사 뒤 창을 띄워 844x390·932x430 터치, 1280x720 데스크톱 캡처를 남긴다).
 # 종료 코드가 0이어도 "menu ux regression (...): N passed, 0 failed" 요약 줄이 없으면 실패(3)로 본다.
@@ -116,7 +117,7 @@ tr -d '\r' <"$PROJ/project.godot" | awk -v userdir="$USERDIR_NAME" '
 }
 mv "$PROJ/project.godot.new" "$PROJ/project.godot"
 mkdir -p "$PROJ/menu_ux_regression"
-for f in check.gd check_base.gd check_layout.gd check_prefs.gd check.tscn capture.gd capture.tscn; do
+for f in check.gd check_base.gd check_layout.gd check_prefs.gd check_keyboard.gd check.tscn capture.gd capture.tscn; do
 	tr -d '\r' <"$HERE/$f" >"$PROJ/menu_ux_regression/$f"
 done
 

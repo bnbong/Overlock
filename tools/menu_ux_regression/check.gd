@@ -1,13 +1,13 @@
-extends "res://menu_ux_regression/check_prefs.gd"
+extends "res://menu_ux_regression/check_keyboard.gd"
 ## 메뉴 UX 회귀 검사(v2.2.1 P1: 모바일 메뉴 터치 배치, 설정 저장/취소, 리더보드 오래된 응답,
-## v2.3.0 리더보드 "내 기록" 행의 연습 기록 표시·연습 기록 미제출).
+## v2.3.0 리더보드 "내 기록" 행의 연습 기록 표시·연습 기록 미제출, v2.3.1 닉네임 입력 가상 키보드).
 ## run.sh 가 사본 프로젝트에서 두 번 실행한다: 데스크톱(배치 불변·설정·닉네임·리더보드)과
 ## `-- --touch-controls`(터치 배치). 리더보드는 127.0.0.1 지연 스텁(stub_server.py)에만 요청한다.
-## 인자: --stub=<URL> --baseline=<desktop_baseline.json> [--only=lb|prefs|nick|layout]
+## 인자: --stub=<URL> --baseline=<desktop_baseline.json> [--only=lb|prefs|nick|layout|kbd]
 ##   [--dump-layout=<path>]
 ## 실패한 assertion이 하나라도 있으면 종료 코드 1, 모두 통과하면 0.
 
-const SECTIONS_DESKTOP: Array[String] = ["layout", "prefs", "nick", "lb"]
+const SECTIONS_DESKTOP: Array[String] = ["layout", "prefs", "nick", "kbd", "lb"]
 
 var _driver: bool = false
 var _done: Array[String] = []
@@ -33,6 +33,8 @@ func _ready() -> void:
 	if touch:
 		await _check_layout_touch()
 		_done.append("layout")
+		await _check_touch_keyboard()
+		_done.append("kbd")
 	else:
 		for sec in SECTIONS_DESKTOP:
 			if only.is_empty() or only == sec:
@@ -52,6 +54,8 @@ func _run_section(sec: String) -> void:
 			await _check_settings_nickname()
 		"nick":
 			await _check_nickname_dialog()
+		"kbd":
+			await _check_keyboard_desktop()
 		"lb":
 			await _check_leaderboard()
 
