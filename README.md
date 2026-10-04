@@ -18,8 +18,6 @@
 
 ---
 
-원단 위에서 벌어지는 손떨리는 레이싱, 삐끗하면 아야해요
-
 https://github.com/user-attachments/assets/3fb57be5-73e7-49c7-ae5a-fc2c9d0eaff7
 
 <p align="center">
