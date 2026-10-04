@@ -16,7 +16,9 @@ extends Control
 ##  - 닉네임은 명시 저장이다. "닉네임 저장"(또는 Enter)만 저장하고, 저장하지 않은 수정은 화면을 떠나면
 ##    취소된다. 저장 실패는 상태 줄에 알리고 이전 닉네임을 유지한다(LeaderboardClient.save_nickname).
 ## 마스터/효과음 슬라이더는 조작 종료 시 효과음을 1회 미리듣기해 체감을 확인시킨다(배경음은 제외).
-## 터치 기기에서는 MenuTouch 두 열 배치(왼쪽 닉네임, 오른쪽 슬라이더)를 쓴다.
+## 터치 기기에서는 MenuTouch 두 열 배치(왼쪽 닉네임, 오른쪽 슬라이더)를 쓰고, 닉네임 칸에 처음부터
+## 포커스를 주지 않는다. 포커스를 받으면 웹 가상 키보드가 떠서 슬라이더를 가릴 수 있기 때문이다.
+## 칸을 탭하면 포커스와 함께 키보드가 뜬다(docs/mobile.md §5.1.1).
 
 const MAIN_SCENE: String = "res://scenes/Main.tscn"
 ## 자동 저장 지연(초). 키보드 연타·휠·드래그 중 값 변화를 이 간격 뒤 한 번의 디스크 쓰기로 모은다.
@@ -84,7 +86,8 @@ func _ready() -> void:
 	_status_label.text = ""
 	# 상태 문구가 길어도 패널 폭을 밀지 않게 줄을 바꾼다(짧은 문구는 전과 같은 한 줄).
 	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_nick_edit.grab_focus()
+	if not MenuTouch.active():
+		_nick_edit.grab_focus()
 
 
 ## 화면이 사라지거나 창을 닫거나 앱이 백그라운드로 가면 대기 중인 자동 저장을 즉시 쓴다.
