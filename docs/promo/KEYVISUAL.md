@@ -149,3 +149,7 @@ cd tools/promo/keyvisual
 python make_itch_cover.py --stills <스틸 폴더> --final
 python make_itch_cover.py --stills <스틸 폴더> --variant B --size 630 --out alt_b.png
 ```
+
+## itch.io 페이지 에셋
+
+itch.io 게임 페이지를 꾸미는 배너, 배경 타일, 구분선, 조작법 블록, 특징 아이콘, 섹션 제목 띠, GIF는 `docs/promo/itch/`에 따로 모아 두었습니다. 배너는 이 문서에서 설명한 키 비주얼의 로고와 부제 띠를 그대로 사용하고, 글자 없는 판(`overlock_key_visual_16x9_3840_clean.png`)의 원단 부분을 배경 띠로 깔았습니다. 파일마다 테마 에디터의 어느 칸에 올리는지와 테마 색 설정값, 다시 만드는 방법은 [itch.io 페이지 에셋 문서](itch/README.md)에 정리했습니다. 모든 파일은 작업 트리 루트에서 `tools/promo/itch/build.sh`를 실행하면 다시 만들어집니다.
