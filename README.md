@@ -37,27 +37,27 @@ Overlock은 재봉틀 노루발을 레이싱 머신처럼 몰아 원단 위 재�
 
 <table>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_controls.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_controls.png" width="48" alt=""></td>
     <td>조작은 속도 단계와 방향, 두 가지뿐입니다. 꼭짓점에서는 Shift로 드리프트하고, 손끝 앞에서 원단이 접혀 올라옵니다.</td>
   </tr>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_rank.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_rank.png" width="48" alt=""></td>
     <td>재봉선을 얼마나 정직하게 따라갔는지가 등급(S~D)을 정합니다.</td>
   </tr>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_item.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_item.png" width="48" alt=""></td>
     <td>골무와 엄마 찬스를 슬롯에 담아 두었다가 Space로 사용합니다.</td>
   </tr>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_fabric.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_fabric.png" width="48" alt=""></td>
     <td>원단 8종마다 주행감이 다릅니다. 실크는 빠르지만 예민하고, 데님은 느리지만 안정적입니다.</td>
   </tr>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_ghost.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_ghost.png" width="48" alt=""></td>
     <td>내 최고 기록이 고스트로 함께 달립니다.</td>
   </tr>
   <tr>
-    <td width="40" align="center"><img src="./docs/promo/itch/icon_editor.png" width="24" alt=""></td>
+    <td width="100" align="center"><img src="./docs/promo/itch/icon_editor.png" width="48" alt=""></td>
     <td>트랙 에디터로 코스를 직접 그리고, 공유 허브에서 올리고 내려받습니다. 공식 트랙 15개와 온라인 리더보드가 있습니다.</td>
   </tr>
 </table>
