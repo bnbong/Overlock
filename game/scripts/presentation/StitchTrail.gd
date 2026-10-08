@@ -10,12 +10,16 @@ extends Node2D
 ## 주행 중 렌더는 링버퍼(_points, MAX_STITCHES 상한)로 근경 윈도만 그린다. 완주
 ## 줌아웃 연출(presentation.md §13)은 전체 궤적이 필요하므로 상한 없는 _full_points에
 ## 같은 샘플을 함께 쌓는다(트랙 3200px대 → 수백 점, 수 KB로 메모리 무해).
+## 끝이 없는 주행(감도 체험 데모의 랩 되감기)은 keep_full = false로 전체 궤적을 쌓지 않는다.
 
 const STITCH_SPACING: float = 10.0
 const MAX_STITCHES: int = 96
 const STITCH_HALF_LEN: float = 3.0  # 진행 방향 대시 반길이(px) → 총 6px 대시, 4px 간격
 const STITCH_COLOR: Color = Color(0.85, 0.15, 0.15, 1.0)
 const STITCH_WIDTH: float = 2.0
+
+## false면 _full_points에 쌓지 않는다(줌아웃 연출이 없는 무한 주행용). 근경 링버퍼는 그대로 돈다.
+var keep_full: bool = true
 
 var _points: PackedVector2Array = PackedVector2Array()
 var _full_points: PackedVector2Array = PackedVector2Array()  # 상한 없는 전체 궤적(줌아웃용)
@@ -28,7 +32,8 @@ func push_if_moved(pos: Vector2) -> void:
 		_points.append(pos)
 		if _points.size() > MAX_STITCHES:
 			_points.remove_at(0)
-		_full_points.append(pos)  # 링버퍼와 같은 샘플을 전체 궤적에도 보존.
+		if keep_full:
+			_full_points.append(pos)  # 링버퍼와 같은 샘플을 전체 궤적에도 보존.
 		_last = pos
 		queue_redraw()
 

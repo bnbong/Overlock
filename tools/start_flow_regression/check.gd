@@ -10,6 +10,7 @@ const MAIN: String = "res://scenes/Main.tscn"
 const KIND: String = "res://scenes/TrackKindSelect.tscn"
 const SELECT: String = "res://scenes/TrackSelect.tscn"
 const HUB: String = "res://scenes/CommunityHub.tscn"
+const GAMEPLAY: String = "res://scenes/Gameplay.tscn"
 const RESULT: String = "res://scenes/Result.tscn"
 const EDITOR: String = "res://scenes/TrackEditor.tscn"
 const TrackSelectScript = preload("res://scripts/ui/TrackSelectScreen.gd")
@@ -25,6 +26,11 @@ const SECTIONS: Array[String] = [
 	"user_empty",
 	"user_back",
 	"hub_back",
+	"calibration_first_start",
+	"calibration_panel",
+	"calibration_reenter_and_lap",
+	"calibration_menu_exit",
+	"calibration_existing_install",
 	"user_tracks",
 	"user_import_drop",
 	"result_return_custom",
@@ -33,7 +39,7 @@ const SECTIONS: Array[String] = [
 	"editor_return",
 	"layout_fit",
 ]
-const MIN_PASSED: int = 120
+const MIN_PASSED: int = 335
 
 var _passed: int = 0
 var _failed: int = 0
@@ -75,6 +81,12 @@ func _run() -> void:
 	await _check_user_empty()
 	await _check_user_back()
 	await _check_hub_back()
+	# 감도 체험 섹션은 기록·고스트 파일이 아직 없는 이 시점(일반 플레이 결과 섹션 앞)에 돌린다.
+	await _check_calibration_first_start()
+	await _check_calibration_panel()
+	await _check_calibration_reenter_and_lap()
+	await _check_calibration_menu_exit()
+	await _check_calibration_existing_install()
 	_make_tracks()
 	await _check_user_tracks()
 	await _check_user_import_drop()
@@ -202,6 +214,232 @@ func _font_px(c: Control) -> int:
 	return c.get_theme_font_size("font_size")
 
 
+# --- 조향 감도 체험(데모) ---
+
+
+func _read_settings() -> Dictionary:
+	var parsed: Variant = JSON.parse_string(_read_text("user://settings.json"))
+	return parsed if parsed is Dictionary else {}
+
+
+func _find_tutorial() -> Node:
+	var hud: Node = _scene().get_node_or_null("HUD")
+	if hud == null:
+		return null
+	for c in hud.get_children():
+		if c is TutorialDialog and not c.is_queued_for_deletion():
+			return c
+	return null
+
+
+func _find_nickname_dialog() -> Node:
+	for c in _scene().get_children():
+		if c is NicknameDialog and not c.is_queued_for_deletion():
+			return c
+	return null
+
+
+func _close_tutorial() -> void:
+	var t: Node = _find_tutorial()
+	if t != null:
+		(t.get_node("CloseButton") as Button).emit_signal("pressed")
+	await _frames(3)
+
+
+func _panel() -> Node:
+	return _scene().get_node_or_null("HUD/SteerCalibrationPanel")
+
+
+func _check_calibration_first_start() -> void:
+	LeaderboardClient.nickname = ""
+	LeaderboardClient.calibration_intro_pending = false
+	_ok(await _goto(MAIN), "calibration: main loads without nickname")
+	await _frames(3)
+	var dlg: Node = _find_nickname_dialog()
+	_ok(dlg != null, "calibration: nickname dialog shown on first run")
+	if dlg != null:
+		(dlg.get("_edit") as LineEdit).text = "tester"
+		(dlg.get("_confirm") as Button).emit_signal("pressed")
+	await _frames(3)
+	_ok(LeaderboardClient.nickname == "tester", "calibration: nickname saved")
+	_ok(_find_nickname_dialog() == null, "calibration: nickname dialog closed")
+	_ok(LeaderboardClient.calibration_intro_pending, "calibration: intro pending set after first nickname")
+	_ok(_read_settings().get("calibration_intro_pending", null) == true, "calibration: pending persisted true")
+	await _click(_scene().get_node("Menu/StartButton"))
+	_ok(await _wait_scene(GAMEPLAY, 120), "calibration: first Start goes to gameplay")
+	_ok(GameState.is_calibration(), "calibration: source is calibration")
+	_ok(GameState.track_id == "steer_calibration", "calibration: track id")
+	_ok(not LeaderboardClient.calibration_intro_pending, "calibration: pending consumed in memory")
+	_ok(_read_settings().get("calibration_intro_pending", null) == false, "calibration: pending persisted false")
+	var tut: Node = _find_tutorial()
+	_ok(tut != null, "calibration: tutorial shown although tutorial_seen")
+	_ok(tut != null and bool(tut.get("demo_mode")), "calibration: tutorial demo_mode")
+	await _close_tutorial()
+	_ok(_find_tutorial() == null, "calibration: tutorial closed")
+	_ok(_panel() != null, "calibration: panel exists under HUD")
+	_done.append("calibration_first_start")
+
+
+func _check_calibration_panel() -> void:
+	# 종류 선택의 기본 포커스는 마지막 모드를 따른다(앞 섹션이 유저 모드로 끝났으므로 공식으로 되돌린다).
+	TrackSelectScript.last_mode = TrackSelectScript.MODE_OFFICIAL
+	var panel: Node = _panel()
+	if panel == null:
+		_ok(false, "calibration panel: missing")
+		return
+	var Panel = panel.get_script()
+	var pct0: float = roundf(Panel.expo_to_percent(Tuning.steer_expo))
+	panel.call("nudge", 3)
+	_ok(
+		is_equal_approx(Tuning.steer_expo, Panel.percent_to_expo(pct0 + 3.0)),
+		"calibration panel: nudge +3 -> expo for %d%%" % int(pct0 + 3.0)
+	)
+	await _key(KEY_BRACKETRIGHT)
+	_ok(is_equal_approx(Tuning.steer_expo, Panel.percent_to_expo(pct0 + 4.0)), "calibration panel: ] is +1%")
+	await _key(KEY_BRACKETLEFT)
+	_ok(is_equal_approx(Tuning.steer_expo, Panel.percent_to_expo(pct0 + 3.0)), "calibration panel: [ is -1%")
+	var writes: int = LeaderboardClient.settings_writes
+	_ok(panel.call("flush_save") == true, "calibration panel: flush_save succeeds")
+	_ok(LeaderboardClient.settings_writes == writes + 1, "calibration panel: one write per flush")
+	_ok(
+		is_equal_approx(float(_read_settings().get("steer_expo", -1.0)), Tuning.steer_expo),
+		"calibration panel: settings.json steer_expo matches Tuning"
+	)
+	panel.call("flush_save")
+	_ok(LeaderboardClient.settings_writes == writes + 1, "calibration panel: clean flush writes nothing")
+	# 레이아웃: 패치가 캔버스 안, 미니맵·TIME 패널과 겹치지 않는다.
+	var patch: Control = panel.get("_patch")
+	var rect: Rect2 = patch.get_global_rect()
+	_ok(patch.is_visible_in_tree() and _viewport_rect().grow(0.5).encloses(rect), "calibration panel: inside 1280x720 " + str(rect))
+	for n in ["HUD/MiniMap", "HUD/TimePanel"]:
+		var other: Control = _scene().get_node_or_null(n)
+		_ok(other != null and not rect.intersects(other.get_global_rect()), "calibration panel: no overlap with " + n)
+	var nodes: Array = panel.find_children("*", "Button", true, false)
+	nodes.append_array(panel.find_children("*", "HSlider", true, false))
+	_ok(nodes.size() >= 3, "calibration panel: has buttons and slider (%d)" % nodes.size())
+	for c in nodes:
+		_ok((c as Control).focus_mode == Control.FOCUS_NONE, "calibration panel: no focus on " + str(c.name))
+	var finish: Button = null
+	for b in panel.find_children("*", "Button", true, false):
+		if (b as Button).text == "나가기":
+			finish = b
+	_ok(finish != null, "calibration panel: finish button found")
+	if finish != null:
+		finish.emit_signal("pressed")
+	_ok(await _wait_scene(KIND, 120), "calibration panel: finish returns to kind select")
+	_ok(_focus_owner() == _scene().get("_official_card"), "calibration panel: kind select focuses official card")
+	_ok(not GameState.is_calibration(), "calibration panel: source cleared")
+	_done.append("calibration_panel")
+
+
+func _physics_ticks(n: int) -> void:
+	for _i in range(n):
+		await get_tree().physics_frame
+
+
+func _check_calibration_reenter_and_lap() -> void:
+	var before_result: Dictionary = GameState.last_result.duplicate(true)
+	var cal: Button = _scene().get("_calibration_button")
+	_ok(cal != null, "calibration reenter: button exists")
+	cal.emit_signal("pressed")
+	_ok(await _wait_scene(GAMEPLAY, 120), "calibration reenter: button enters gameplay")
+	_ok(GameState.is_calibration(), "calibration reenter: source calibration")
+	_ok(_find_tutorial() != null, "calibration reenter: tutorial shown again")
+	await _close_tutorial()
+	# R 재시작: 출처 유지, 튜토리얼 재표시 없음(의도).
+	await _key(KEY_R)
+	await _frames(10)
+	_ok(await _wait_scene(GAMEPLAY, 120), "calibration restart: still gameplay")
+	_ok(GameState.is_calibration(), "calibration restart: source kept")
+	_ok(_find_tutorial() == null, "calibration restart: tutorial not shown again")
+	_ok(_panel() != null, "calibration restart: panel rebuilt")
+	await _frames(5)
+	# 무한 주행(랩 되감기): 데모 트랙은 닫힌 순환 코스, 전체 궤적·고스트 녹화 없음.
+	var rd: Node = _scene()
+	var track: TrackData = rd.get("_track")
+	var stitch: StitchTrail = rd.get("_stitch")
+	_ok(track != null and stitch != null, "calibration lap: track and stitch exist")
+	_ok(not stitch.keep_full, "calibration lap: stitch keep_full off")
+	_ok(
+		track.points[0].distance_to(track.points[track.points.size() - 1]) < 1.0,
+		"calibration lap: demo track is closed"
+	)
+	rd.set("_countdown_time", 0.01)
+	await _physics_ticks(60)
+	_ok(int(rd.get("_state")) == rd.State.RUNNING, "calibration lap: running after countdown")
+	_ok(stitch.get_full_points().size() == 0, "calibration lap: no full trail accumulated")
+	_ok((rd.get("_ghost_rec") as GhostRun).samples.size() / GhostRun.STRIDE <= 1, "calibration lap: ghost not recorded")
+	# 결승 직전으로 옮겨 한 틱 돌리면 랩이 되감긴다.
+	var player: Node2D = rd.get("_player")
+	var s_near: float = track.length - 0.5
+	player.position = track.point_at_s(s_near)
+	player.heading = track.tangent_at_s(s_near).angle()
+	rd.set("_hint", track.points.size() - 2)
+	var before_laps: int = int(rd.get("_calib_laps"))
+	rd.call("_tick_running", 1.0 / 60.0)
+	_ok(int(rd.get("_calib_laps")) == before_laps + 1 and before_laps == 0, "calibration lap: laps == 1")
+	_ok(int(rd.get("_hint")) == 0, "calibration lap: hint reset")
+	_ok(float(rd.get("_last_s")) == 0.0, "calibration lap: last_s reset")
+	_ok(int(rd.get("_state")) == rd.State.RUNNING, "calibration lap: still running")
+	_ok(_scene_path() == GAMEPLAY, "calibration lap: still gameplay after rewind")
+	var bar: Node = (rd.get("_hud") as Node).get("_progress")
+	_ok(bar != null and is_zero_approx(float(bar.get("_progress"))), "calibration lap: HUD progress bar 0")
+	# 실제 물리로 더 진행해도 이중 되감기·재로컬라이즈 튐이 없다.
+	await _physics_ticks(10)
+	_ok(_scene_path() == GAMEPLAY, "calibration lap: gameplay after 10 more ticks")
+	_ok(int(rd.get("_calib_laps")) == 1, "calibration lap: no double rewind")
+	_ok(float(rd.get("_last_s")) < 200.0, "calibration lap: no relocalize jump (s=%s)" % str(rd.get("_last_s")))
+	# 패널의 나가기로만 끝난다.
+	var finish: Button = null
+	for b in _panel().find_children("*", "Button", true, false):
+		if (b as Button).text == "나가기":
+			finish = b
+	_ok(finish != null, "calibration lap: exit button found")
+	if finish != null:
+		finish.emit_signal("pressed")
+	_ok(await _wait_scene(KIND, 120), "calibration exit: returns to kind select, not result")
+	_ok(not GameState.is_calibration(), "calibration exit: source cleared")
+	_ok(not FileAccess.file_exists("user://records.json"), "calibration exit: no records file")
+	_ok(not DirAccess.dir_exists_absolute("user://ghosts/"), "calibration exit: no ghosts dir")
+	_ok(GameState.last_result == before_result, "calibration exit: last_result untouched")
+	_done.append("calibration_reenter_and_lap")
+
+
+func _check_calibration_menu_exit() -> void:
+	GameState.start_calibration()
+	_ok(await _wait_scene(GAMEPLAY, 120), "calibration menu: enter gameplay")
+	await _close_tutorial()
+	await _key(KEY_ESCAPE)
+	await _frames(3)
+	_ok(get_tree().paused, "calibration menu: Esc pauses")
+	await _key(KEY_M)
+	_ok(await _wait_scene(KIND, 120), "calibration menu: M returns to kind select")
+	_ok(not get_tree().paused, "calibration menu: tree unpaused")
+	_ok(not GameState.is_calibration(), "calibration menu: source cleared")
+	_done.append("calibration_menu_exit")
+
+
+func _check_calibration_existing_install() -> void:
+	var f: FileAccess = FileAccess.open("user://settings.json", FileAccess.WRITE)
+	f.store_string(JSON.stringify({"nickname": "old"}))
+	f.close()
+	LeaderboardClient.calibration_intro_pending = true
+	LeaderboardClient.call("_load_settings")
+	_ok(not LeaderboardClient.calibration_intro_pending, "existing install: missing key -> false")
+	_ok(LeaderboardClient.nickname == "old", "existing install: nickname loaded")
+	_ok(await _goto(MAIN), "existing install: main loads")
+	_ok(_find_nickname_dialog() == null, "existing install: no nickname dialog")
+	await _click(_scene().get_node("Menu/StartButton"))
+	_ok(await _wait_scene(KIND), "existing install: Start goes to kind select")
+	_ok(not GameState.is_calibration(), "existing install: not calibration")
+	# 드라이버 전제 상태 복원.
+	LeaderboardClient.nickname = "tester"
+	LeaderboardClient.tutorial_seen = true
+	LeaderboardClient.calibration_intro_pending = false
+	LeaderboardClient.last_track_id = ""
+	_done.append("calibration_existing_install")
+
+
 # --- 메인 → 트랙 종류 선택 ---
 
 
@@ -258,9 +496,42 @@ func _check_kind_layout() -> void:
 	await _key(KEY_LEFT)
 	_ok(_focus_owner() == off, "left arrow moves focus back to official card")
 	await _key(KEY_DOWN)
-	_ok(_focus_owner() == back, "down arrow moves focus to back button")
+	var cal: Button = s.get("_calibration_button")
+	_ok(_focus_owner() == cal, "down arrow moves focus to calibration button")
+	await _key(KEY_DOWN)
+	_ok(_focus_owner() == back, "down again moves focus to back button")
 	await _key(KEY_UP)
-	_ok(_focus_owner() == off, "up arrow returns to official card")
+	_ok(_focus_owner() == cal, "up arrow returns to calibration button")
+	await _key(KEY_UP)
+	_ok(_focus_owner() == off, "up again returns to official card")
+	# 감도 다시 맞추기 버튼 레이아웃.
+	_ok(cal != null and cal.is_visible_in_tree(), "calibration button visible")
+	_ok(cal != null and cal.text == "감도 다시 맞추기", "calibration button text")
+	_ok(_inside(cal), "calibration button inside 1280x720")
+	_ok(
+		cal.get_global_rect().position.y >= maxf(off.get_global_rect().end.y, usr.get_global_rect().end.y),
+		"calibration button below cards"
+	)
+	_ok(
+		back.get_global_rect().position.y >= cal.get_global_rect().end.y,
+		"back button below calibration button"
+	)
+	var cal_desc: Label = s.find_child("CalibrationDescLabel", true, false)
+	_ok(
+		cal_desc != null and cal_desc.is_visible_in_tree() and cal_desc.text.contains("직접 달리며 조향 감도를 조절"),
+		"calibration desc label"
+	)
+	_ok(cal_desc != null and _inside(cal_desc), "calibration desc inside 1280x720")
+	_ok(_font_px(cal) * PHONE_SCALE >= 11.0, "calibration button text readable at 844x390")
+	_ok(cal_desc != null and _font_px(cal_desc) * PHONE_SCALE >= 11.0, "calibration desc readable at 844x390")
+	_ok(
+		not TrackLoader.list_tracks().any(func(t): return str(t.get("track_id", "")) == "steer_calibration"),
+		"demo not in list_tracks"
+	)
+	_ok(
+		not TrackLoader.list_custom_tracks().any(func(t): return str(t.get("track_id", "")) == "steer_calibration"),
+		"demo not in list_custom_tracks"
+	)
 	_done.append("kind_layout")
 
 

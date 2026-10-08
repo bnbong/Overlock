@@ -31,6 +31,14 @@ extends Node2D
 ## 창·앱 포커스 상실 때 수동 일시정지와 같은 정지를 걸고 입력을 뗀다. 복귀해도 자동으로 풀지 않고
 ## "계속"(pause 액션)을 눌러야 재개한다. 이미 정지(수동) 중이면 아무것도 바꾸지 않는다.
 
+## 조향 감도 체험(데모, GameState.is_calibration()): 입장마다 tutorial_seen과 무관하게 튜토리얼(데모 안내
+## 한 줄 추가)을 띄우고, HUD 위에 SteerCalibrationPanel을 얹는다([ / ]로 ±1%). 데모는 무한 주행이다.
+## 닫힌 순환 코스의 결승(s ≥ length − FINISH_MARGIN)에 닿으면 완주 대신 랩을 되감아(_rewind_calibration_lap)
+## 진행 s·hint·복귀 기준점만 0으로 돌리고 플레이어는 그대로 달린다. 기록·고스트(녹화·재생)·결과 화면이
+## 없고, 패널의 "나가기"나 일시정지 메뉴의 M(트랙 선택)으로만 끝난다. 둘 다(다시 달리기 포함) 패널의
+## 디바운스 저장을 먼저 flush하고 재시작하거나 종류 선택으로 나간다. 무한 주행 동안 쌓이는 버퍼를 막으려고
+## 고스트 녹화를 건너뛰고 StitchTrail의 줌아웃용 전체 궤적(keep_full)을 끈다.
+
 enum State { COUNTDOWN, RUNNING, FINISH_VIEW, FINISHED }
 
 const FINISH_MARGIN: float = 1.0
@@ -117,6 +125,11 @@ var _buf_finish_skip: bool = false  # FINISH_VIEW 중 아무 키 입력(스킵) 
 # (트리 pause는 쓰지 않는다 — 플래그 홀드만). 닫히면 false가 되고 카운트다운이 시작된다.
 var _tutorial_open: bool = false
 
+# 감도 체험(데모) 패널(.tscn 없음, 데모가 아니면 null).
+var _calib_panel: SteerCalibrationPanel = null
+# 감도 체험에서 결승을 지나 되감은 랩 수(무한 주행, 표시·기록에는 쓰지 않음. 회귀 검사용).
+var _calib_laps: int = 0
+
 @onready var _player: PlayerController = $SimHost/FabricSource/World/Player
 @onready var _track_renderer: TrackRenderer = $SimHost/FabricSource/World/TrackRenderer
 @onready var _finish_line: FinishLine = $SimHost/FabricSource/World/FinishLine
@@ -150,8 +163,15 @@ func _ready() -> void:
 	# 웹 보강: 탭 숨김·창 blur는 엔진 알림으로 오지 않을 수 있어 OrientationGuard가 JS 이벤트를 신호로 전달한다.
 	if guard != null and guard.has_signal("page_focus_lost"):
 		guard.page_focus_lost.connect(_on_page_focus_lost)
+	if GameState.is_calibration():
+		_build_calibration_panel()
+		# 무한 주행: 줌아웃(완주) 연출이 없으니 전체 궤적을 무제한으로 쌓지 않는다(근경 링버퍼만).
+		if _stitch != null:
+			_stitch.keep_full = false
 	# 설치 후 첫 플레이(전역 1회)면 튜토리얼을 먼저 띄우고, 닫힌 뒤 카운트다운을 표시한다.
-	if not LeaderboardClient.tutorial_seen:
+	# 감도 체험은 입장마다(재시작 리로드 제외) 튜토리얼을 띄운다.
+	var calib_tutorial: bool = GameState.take_calibration_tutorial()
+	if calib_tutorial or not LeaderboardClient.tutorial_seen:
 		_open_tutorial()
 	else:
 		_hud.show_countdown(ceili(_countdown_time))
@@ -161,15 +181,45 @@ func _ready() -> void:
 ## 최초 1회 튜토리얼 모달을 HUD(CanvasLayer) 위에 띄우고 카운트다운을 홀드한다.
 func _open_tutorial() -> void:
 	var dlg: TutorialDialog = TutorialDialogScene.instantiate()
+	dlg.demo_mode = GameState.is_calibration()
 	_hud.add_child(dlg)
 	_tutorial_open = true
 	dlg.closed.connect(_on_tutorial_closed)
 
 
-## 튜토리얼 해제: 본 것으로 영속하고 카운트다운을 3부터 정상 시작한다.
+## 감도 체험 패널을 HUD(CanvasLayer) 위에 얹는다. 패널은 생성 시 스스로 UI를 만들고 현재 감도로 초기화한다.
+func _build_calibration_panel() -> void:
+	_calib_panel = SteerCalibrationPanel.new()
+	_calib_panel.name = "SteerCalibrationPanel"
+	_hud.add_child(_calib_panel)
+	_calib_panel.restart_requested.connect(_on_calibration_restart)
+	_calib_panel.finish_requested.connect(_exit_calibration)
+
+
+## 감도 체험 패널의 디바운스 중인 감도 저장을 즉시 수행한다(실패 안내는 패널이 직접 표시).
+func _flush_calibration() -> void:
+	if is_instance_valid(_calib_panel):
+		_calib_panel.flush_save()
+
+
+func _on_calibration_restart() -> void:
+	_restart()
+
+
+## 감도 체험을 끝내고 종류 선택 화면으로 돌아간다(패널의 나가기·일시정지 메뉴 M 공통).
+## 완주 경로(_go_to_result)도 방어적으로 여기로 오지만 데모는 랩을 되감아 도달하지 않는다.
+func _exit_calibration() -> void:
+	_flush_calibration()
+	_state = State.FINISHED
+	GameState.exit_calibration()
+
+
+## 튜토리얼 해제: 처음 본 것이면 영속하고 카운트다운을 3부터 정상 시작한다.
+## 이미 본 상태(감도 체험은 입장마다 튜토리얼을 띄운다)면 settings.json을 다시 쓰지 않는다.
 func _on_tutorial_closed() -> void:
 	_tutorial_open = false
-	LeaderboardClient.save_tutorial_seen()
+	if not LeaderboardClient.tutorial_seen:
+		LeaderboardClient.save_tutorial_seen()
 	_hud.show_countdown(ceili(_countdown_time))
 	_pause_if_unavailable()
 
@@ -284,6 +334,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_pressed() and not event.is_echo():
 			_buf_finish_skip = true
 		return
+	if _consume_calibration_key(event):
+		return
 	if event.is_action_pressed("pause"):
 		_buf_pause = true
 	elif event.is_action_pressed("restart"):
@@ -301,6 +353,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		# 쓰이지 않게). 한 틱 안의 여러 누름은 1회로 합친다.
 		if _state == State.RUNNING and not get_tree().paused:
 			_buf_use_item = true
+
+
+## 감도 체험 중 [ / ] 키로 감도를 ±1% 조절한다(홀드 echo 허용). 처리했으면 true.
+## 조향키와 겹치지 않게 InputMap 액션 없이 키코드를 직접 비교한다.
+func _consume_calibration_key(event: InputEvent) -> bool:
+	if not is_instance_valid(_calib_panel):
+		return false
+	var key: InputEventKey = event as InputEventKey
+	if key == null or not key.pressed:
+		return false
+	if key.keycode == KEY_BRACKETLEFT:
+		_calib_panel.nudge(-1)
+	elif key.keycode == KEY_BRACKETRIGHT:
+		_calib_panel.nudge(1)
+	else:
+		return false
+	get_viewport().set_input_as_handled()
+	return true
 
 
 func _physics_process(delta: float) -> void:
@@ -373,14 +443,18 @@ func _toggle_pause() -> void:
 
 
 func _restart() -> void:
+	_flush_calibration()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
 
 ## 일시정지 중 M 입력: 런을 파기하고 메인 메뉴로 돌아간다(확인창 없음, 재시작과 동일하게 즉시형).
-## 에디터 테스트 플레이면 메인 대신 편집 화면으로 돌아간다(편집 세션은 에디터가 복원).
+## 에디터 테스트 플레이면 메인 대신 편집 화면으로, 감도 체험이면 종류 선택으로 돌아간다.
 func _to_menu() -> void:
 	get_tree().paused = false
+	if GameState.is_calibration():
+		_exit_calibration()
+		return
 	if GameState.is_editor_test():
 		GameState.return_to_editor()
 		return
@@ -438,16 +512,39 @@ func _tick_running(delta: float) -> void:
 		_offfabric_dwell = 0.0
 	_stats.accumulate(delta, _player.speed_index, band, err, just_cut)
 	# 구간 통과는 고스트 데이터(splits)로만 기록한다(주행 중·결과 화면 모두 표시하지 않음).
-	_ghost_rec.on_tick(_elapsed, _player.position, _player.heading, _last_s, _stats.penalty_time)
+	# 감도 체험은 고스트를 쓰지 않고 무한 주행이라 샘플이 끝없이 쌓이므로 녹화하지 않는다.
+	if not GameState.is_calibration():
+		_ghost_rec.on_tick(
+			_elapsed, _player.position, _player.heading, _last_s, _stats.penalty_time
+		)
 	if _ghost_play != null:
 		# 미니맵과 필드 마커가 같은 물리 시각의 고스트 상태를 쓴다.
 		var gs: Dictionary = _ghost_play.state_at(_elapsed * 1000.0)
 		_hud.set_ghost_state(gs)
 		if _ghost_field != null:
 			_ghost_field.set_state(gs)
+	var at_finish: bool = float(probe["s"]) >= _track.length - FINISH_MARGIN
+	if at_finish and GameState.is_calibration():
+		_rewind_calibration_lap()
+		_hud.update_frame(_elapsed, _player, _track, 0.0, band)
+		return
 	_hud.update_frame(_elapsed, _player, _track, float(probe["s"]), band)
-	if float(probe["s"]) >= _track.length - FINISH_MARGIN:
+	if at_finish:
 		_finish()
+
+
+## 감도 체험 랩 되감기(무한 주행): 결승에 닿으면 진행 s·hint·복귀 기준점·이탈 체류만 0으로 돌린다.
+## 플레이어 위치·속도·heading은 그대로다(닫힌 코스라 결승 = 출발점, 주행이 끊기지 않는다).
+## 다음 틱 query(pos, 0)는 창 [0, FWD_WIN]에서만 최근접을 찾는다. 바늘은 이음새(points[0] 근처)에 있으니
+## 세그먼트 0 부근이 최근접(오차는 원래 재봉선 오차 그대로)이 되어 s≈0으로 잡히고, idx가 창 앞끝(hi)이
+## 아니라 재로컬라이즈도 걸리지 않는다. 마지막 세그먼트들은 창 밖이라 s가 length 쪽으로 되튀지 않는다.
+func _rewind_calibration_lap() -> void:
+	_hint = 0
+	_last_s = 0.0
+	_last_good_hint = 0
+	_last_good_s = 0.0
+	_offfabric_dwell = 0.0
+	_calib_laps += 1
 
 
 ## 오토파일럿 자동주행 타깃 주입(simulate 전). 진행 아크길이를 전진시키고, 만료 임박 틱이면
@@ -563,6 +660,9 @@ func _soft_reset_off_fabric() -> void:
 	_last_s = _last_good_s
 	_stats.add_reset_penalty()
 	_offfabric_dwell = 0.0
+	# 감도 체험은 고스트를 녹화하지 않는다(무한 주행 누적 차단, _tick_running과 같은 규칙).
+	if GameState.is_calibration():
+		return
 	# 고스트 기록: 복귀 전후를 같은 시각의 두 샘플로 남겨 재생이 트랙을 가로질러 보간하지 않게 한다.
 	_ghost_rec.on_reset(
 		_elapsed, pre_pos, pre_heading, pre_s, _player.position, _player.heading, _last_good_s
@@ -619,9 +719,13 @@ func _finish() -> void:
 	result["track_fingerprint"] = RecordStore.fingerprint_for(GameState.track_id)
 	_ghost_rec.on_finish(result, _player.position, _player.heading, _last_s)
 	# 에디터 테스트 플레이는 결과 통계만 보여 주고 개인 최고 기록·고스트를 갱신하지 않는다(서버 제출도
-	# 결과 화면이 editor_test 표시로 막는다). 일반 플레이는 기존대로 즉시 기록한다.
+	# 결과 화면이 editor_test 표시로 막는다). 감도 체험도 기록·고스트를 남기지 않는다(결과 화면도 없음,
+	# 데모는 랩 되감기로 여기 도달하지 않는다. 방어적 분기).
+	# 일반 플레이는 기존대로 즉시 기록한다.
 	var is_best: bool = false
-	if GameState.is_editor_test():
+	if GameState.is_calibration():
+		result["calibration"] = true
+	elif GameState.is_editor_test():
 		result["editor_test"] = true
 	else:
 		is_best = _submit_record(result)
@@ -636,6 +740,12 @@ func _finish() -> void:
 	_buf_pause = false
 	_buf_to_menu = false
 	_buf_finish_skip = false
+	# 감도 체험: 도달하지 않음(랩 되감기, _rewind_calibration_lap). 방어적으로 남겨 둔다. 줌아웃 중 패널
+	# 버튼(다시 달리기·나가기)으로 리로드/전환이 끼어들지 않게 숨기고, 디바운스 중인 감도는 지금 저장한다
+	# ([ / ]는 위 FINISH_VIEW 입력 분기에서 이미 막힌다).
+	if is_instance_valid(_calib_panel):
+		_flush_calibration()
+		_calib_panel.visible = false
 	# 완주 시 슬롯에 남은 아이템은 효과 없이 사라진다(기록·점수와 무관, 위에서 결과는 이미 확정).
 	_slots.clear()
 	if _hud != null:
@@ -650,9 +760,13 @@ func _finish() -> void:
 		_finish_view.begin(_track, trail, _player.position, result, skids)
 
 
-## 확정된 결과로 Result 씬으로 전환한다(중복 호출 방지 가드).
+## 확정된 결과로 Result 씬으로 전환한다(중복 호출 방지 가드). 감도 체험은 결과 없이 종류 선택으로 간다
+## (도달하지 않음, 랩 되감기. 방어적 분기).
 func _go_to_result() -> void:
 	if _state == State.FINISHED:
+		return
+	if GameState.is_calibration():
+		_exit_calibration()
 		return
 	_state = State.FINISHED
 	GameState.to_result(_pending_result)
@@ -715,14 +829,15 @@ func fabric_id() -> String:
 # --- 개인 고스트 (v2.3.0) ---
 
 
-## 기록기를 준비하고, 고스트 표시가 켜져 있고 일반 플레이면 개인 최고 기록의 고스트를 읽는다. 기록 당시와
+## 기록기를 준비하고, 고스트 표시가 켜져 있고 일반 플레이(에디터 테스트·감도 체험 제외)면 개인 최고 기록의 고스트를 읽는다. 기록 당시와
 ## 트랙 지문이 다르거나 파일이 손상되면 재생 없이 진행하고 사유를 출발 때 안내한다.
 func _setup_ghost() -> void:
 	_ghost_rec = GhostRun.new()
 	_ghost_rec.setup(_track.length)
 	_ghost_play = null
 	_ghost_notice = ""
-	if GameState.is_editor_test() or not RecordStore.ghost_enabled():
+	var skip_ghost: bool = GameState.is_editor_test() or GameState.is_calibration()
+	if skip_ghost or not RecordStore.ghost_enabled():
 		_hud.setup_ghost(false)
 		return
 	var loaded: Dictionary = RecordStore.load_ghost(GameState.track_id, GameState.difficulty)

@@ -4,6 +4,9 @@ extends Control
 ## 진입하는 맵 선택 화면(TrackSelect)으로 이관했다(아키텍처 §2.1 갱신).
 ## Start는 먼저 트랙 종류 선택 화면(TrackKindSelect: 공식 트랙 / 유저 트랙)을 열고, 거기서 고른
 ## 모드로 TrackSelect가 열린다(유저 트랙 쪽에서 공유 허브로 바로 이어진다).
+## 단, 최초 닉네임 모달을 확정한 새 사용자는 첫 Start 1회만 조향 감도 체험 트랙으로 바로 들어간다
+## (LeaderboardClient.calibration_intro_pending, settings.json 영속 — 재실행해도 유지되고 Start에서 소비).
+## 좌상단 태그로 닉네임만 다시 설정한 기존 사용자에게는 적용하지 않는다.
 ##
 ## 키보드: ↑↓(ui_up/ui_down)로 버튼 포커스 이동, Enter(ui_accept)로 실행 — Godot
 ## 기본 GUI 포커스 순환을 그대로 쓰고 초기 포커스만 Start에 준다. 포커스 표시는
@@ -43,6 +46,8 @@ var _touch: bool = false
 var _nick_tag: Button
 var _status_label: Label
 var _profile_chip: Button
+# 이번 진입에서 최초 실행 닉네임 모달을 띄웠는지(확정 시 첫 Start 감도 체험 대기를 기록한다).
+var _first_run_nickname: bool = false
 
 @onready var _start_button: Button = $Menu/StartButton
 @onready var _settings_button: Button = $Menu/SettingsButton
@@ -73,6 +78,7 @@ func _ready() -> void:
 
 	# 최초 실행: 닉네임이 없으면 설정 모달을 띄워 항상 닉네임이 존재하도록 보장한다.
 	if not LeaderboardClient.has_nickname():
+		_first_run_nickname = true
 		_open_nickname_dialog()
 	# 백그라운드 서버 연결 확인(상태 점 갱신 + 오프라인 시 세션 1회 토스트).
 	LeaderboardClient.health_check()
@@ -146,6 +152,11 @@ func _open_nickname_dialog() -> void:
 
 func _on_nickname_confirmed(_nickname: String) -> void:
 	_refresh_nick_tag()
+	# 최초 실행 모달에서 확정했을 때만 첫 Start를 감도 체험으로 예약한다(태그로 연 재설정은 제외).
+	if _first_run_nickname:
+		_first_run_nickname = false
+		if not LeaderboardClient.save_calibration_intro_pending(true):
+			_toast.push("감도 체험 설정을 저장하지 못했습니다. 이번 Start에서는 체험 트랙으로 들어갑니다.")
 
 
 # --- 프로필 칩(우하단): 원형 아바타 + "bnbong" → 클릭 시 프로필 팝업 ---
@@ -263,7 +274,14 @@ static func _tag_box(bg: Color, border: Color) -> StyleBoxFlat:
 	return sb
 
 
+## 첫 Start 감도 체험 대기 중이면 대기를 소비하고 체험 트랙으로, 아니면 트랙 종류 선택으로 간다.
+## 소비 저장에 실패해도 진행한다(다음 실행에서 한 번 더 체험으로 들어갈 수 있을 뿐).
 func _on_start_pressed() -> void:
+	if LeaderboardClient.calibration_intro_pending:
+		if not LeaderboardClient.save_calibration_intro_pending(false):
+			push_warning("MainMenu: 감도 체험 대기 해제를 저장하지 못했습니다")
+		GameState.start_calibration()
+		return
 	get_tree().change_scene_to_file(KIND_SELECT_SCENE)
 
 

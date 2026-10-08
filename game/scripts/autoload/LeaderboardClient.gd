@@ -42,7 +42,7 @@ signal leaderboard_result(
 )
 signal health_checked(ok: bool, message: String)
 
-const GAME_VERSION: String = "2.3.1"  # §13.3 game_version. 모바일 닉네임 입력 키보드 수정.
+const GAME_VERSION: String = "2.4.0"  # §13.3 game_version. 조향 감도 체험 트랙.
 # 릴리스 기본 서버(프로덕션). UI에서 서버 URL 입력을 제거했으므로 이 상수가 데스크톱 기본값.
 # 웹 export는 _resolve_base_url이 이 값을 "기본값(미지정)" 신호로 보고, origin이 신뢰 오리진이면
 # 현재 페이지 origin으로 대체한다(그 외 오리진은 이 값으로 폴백 — _resolve_base_url 주석 참고).
@@ -104,6 +104,10 @@ var steer_expo: float = DEFAULT_STEER_EXPO
 # 최초 1회 튜토리얼 모달을 이미 봤는지(전역 1회, 트랙 무관). RaceDirector가 false일 때만 띄우고
 # 닫히면 save_tutorial_seen으로 영속한다(하위 호환: settings.json에 키 없으면 false).
 var tutorial_seen: bool = false
+
+# 최초 닉네임 저장 직후 첫 Start에서 조향 감도 체험 트랙으로 보낼지(1회성). 메인 메뉴가 최초 닉네임
+# 모달 확정 시 true로, Start에서 소비하며 false로 영속한다(하위 호환: 키 없으면 false = 기존 설치).
+var calibration_intro_pending: bool = false
 
 # user://settings.json 쓰기 시도 누적 횟수(자동 저장이 입력마다 파일을 쓰지 않는지 회귀 검사가 센다).
 var settings_writes: int = 0
@@ -186,6 +190,13 @@ func save_tutorial_seen() -> bool:
 	return _write_settings()
 
 
+## 첫 Start의 감도 체험 대기 상태를 갱신하고 settings.json에 영속한다. 저장 성공 시 true.
+## 저장에 실패해도 메모리 값은 유지한다(이번 세션의 의도는 지키고 재실행 보존만 실패).
+func save_calibration_intro_pending(value: bool) -> bool:
+	calibration_intro_pending = value
+	return _write_settings()
+
+
 ## 맵 선택 화면에서 마지막으로 고른 트랙 id를 settings.json에 기록한다(재진입 복원용).
 func remember_last_track(track_id: String) -> void:
 	last_track_id = track_id
@@ -216,6 +227,7 @@ func _settings_dict() -> Dictionary:
 		"volume_sfx": volume_sfx,
 		"steer_expo": steer_expo,
 		"tutorial_seen": tutorial_seen,
+		"calibration_intro_pending": calibration_intro_pending,
 	}
 	if _base_url_manual:
 		d["base_url"] = base_url
@@ -571,6 +583,7 @@ func _load_settings() -> void:
 	volume_sfx = DEFAULT_VOLUME_SFX
 	steer_expo = DEFAULT_STEER_EXPO
 	tutorial_seen = false
+	calibration_intro_pending = false
 	if not FileAccess.file_exists(SETTINGS_PATH):
 		return
 	var file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.READ)
@@ -605,6 +618,9 @@ func _load_settings() -> void:
 	# 하위 호환: 키가 없거나 bool이 아니면 false(= 아직 안 봄) 유지.
 	if dict.get("tutorial_seen", false) is bool:
 		tutorial_seen = dict.get("tutorial_seen", false)
+	# 하위 호환: 키가 없거나 bool이 아니면 false(기존 설치는 Start가 그대로 종류 선택으로 간다).
+	if dict.get("calibration_intro_pending", false) is bool:
+		calibration_intro_pending = dict.get("calibration_intro_pending", false)
 
 
 ## settings.json에서 선형 볼륨 키를 읽어 0..1로 클램프한다(키 없음/비수치 → 기본값 유지).
