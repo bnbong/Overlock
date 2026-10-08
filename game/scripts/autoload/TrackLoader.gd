@@ -7,6 +7,9 @@ extends Node
 
 const OFFICIAL_DIR: String = "res://tracks/official/"
 const MANIFEST_PATH: String = "res://tracks/official/index.json"
+# 감도 체험 데모 트랙: 목록 밖, 이 id만 DEMO_DIR에서 로드(GameState.CALIBRATION_TRACK_ID와 같은 값).
+const DEMO_DIR: String = "res://tracks/demo/"
+const CALIBRATION_TRACK_ID: String = "steer_calibration"
 # 커스텀(유저 자작) 트랙: 쓰기 가능한 user:// 아래. 웹(IDBFS) 포함 전 플랫폼 영속.
 # 공식 id(cotton_01…)와 custom_ 접두로 네임스페이스 완전 분리(레코드·로드 충돌 없음).
 const CUSTOM_DIR: String = "user://tracks/custom/"
@@ -91,7 +94,7 @@ func load_track(track_id: String) -> TrackData:
 	if track_id.begins_with(CUSTOM_PREFIX):
 		path = CUSTOM_DIR + track_id + ".json"
 	else:
-		path = OFFICIAL_DIR + track_id + ".json"
+		path = (DEMO_DIR if track_id == CALIBRATION_TRACK_ID else OFFICIAL_DIR) + track_id + ".json"
 	var dict: Dictionary = _read_track_dict(path)
 	if dict.is_empty():
 		return null

@@ -4,14 +4,18 @@ extends Control
 ## 허브 진입 경로가 메인에서 두 단계로 줄어든다.
 ##
 ## 선택지는 큰 카드 버튼 두 개(재봉 패치 톤: 베이지 원단 + 실 보라 테두리 + 박음질 + 모서리 단추)와
-## 뒤로 버튼이다. 아이콘은 UiSkin 시트의 기존 아이콘(트로피·바늘)을 재사용하고, 없으면 글자만 보인다.
+## 그 아래 보조 버튼 "감도 다시 맞추기"(+ 한 줄 설명), 뒤로 버튼이다. 감도 버튼은 조향 감도 체험
+## 트랙(GameState.start_calibration)으로 바로 들어가며, 카드보다 작은 글자의 일반 필 버튼이라 시각적
+## 우선순위가 낮다. 아이콘은 UiSkin 시트의 기존 아이콘(트로피·바늘)을 재사용하고, 없으면 글자만 보인다.
 ##
-## 조작: ←→(ui_left/ui_right)로 카드 이동, ↓로 뒤로 버튼, Enter(ui_accept)로 결정, Esc(ui_cancel,
-## 게임패드 B 포함)로 메인 복귀. 터치·마우스는 카드를 누르면 된다. 기본 포커스는 공식 트랙이고,
+## 조작: ←→(ui_left/ui_right)로 카드 이동, ↓로 카드 → 감도 버튼 → 뒤로 버튼, ↑는 그 역순(감도 버튼에서
+## ↑는 공식 트랙 카드). 감도 버튼과 뒤로 버튼의 ←→는 제자리에 머문다. Enter(ui_accept)로 결정, Esc(ui_cancel,
+## 게임패드 B 포함)로 메인 복귀. 터치·마우스는 카드·버튼을 누르면 된다. 기본 포커스는 공식 트랙이고,
 ## TrackSelect에서 뒤로 돌아온 경우에는 방금 쓰던 모드의 카드에 포커스를 둔다.
 ##
 ## 글자 크기는 1280×720 캔버스 기준이며, 844×390 창(canvas_items + keep, 배율 약 0.54)에서도
-## 제목 약 18px, 설명 약 12px로 읽히도록 크게 잡았다.
+## 제목 약 18px, 설명 약 12px로 읽히도록 크게 잡았다. 세로는 터치 배치(버튼 높이 84, 글자 하한 23)에서도
+## 제목·카드·감도 버튼·설명·뒤로·힌트가 720 안에 들어가도록 카드 높이와 줄 간격을 잡았다.
 
 const MAIN_SCENE: String = "res://scenes/Main.tscn"
 const TRACK_SELECT_SCENE: String = "res://scenes/TrackSelect.tscn"
@@ -23,31 +27,48 @@ const OFFICIAL_TITLE: String = "공식 트랙"
 const OFFICIAL_DESC: String = "기본으로 들어 있는 트랙입니다.\n기록을 공식 리더보드에 제출합니다."
 const USER_TITLE: String = "유저 트랙"
 const USER_DESC: String = "직접 만들거나 공유 허브에서 받은 트랙입니다.\n기록은 이 기기에만 저장됩니다."
-const HINT_TEXT: String = "← →  선택      Enter  결정      Esc  뒤로"
+const CALIBRATION_TEXT: String = "감도 다시 맞추기"
+const CALIBRATION_DESC: String = "직접 달리며 조향 감도를 조절"
+const HINT_TEXT: String = "← → ↑ ↓  이동      Enter  결정      Esc  뒤로"
 
-const CARD_SIZE: Vector2 = Vector2(470.0, 330.0)
-const TOUCH_CARD_SIZE: Vector2 = Vector2(580.0, 330.0)
+const CARD_SIZE: Vector2 = Vector2(470.0, 300.0)
+const TOUCH_CARD_SIZE: Vector2 = Vector2(580.0, 300.0)
 const CARD_GAP: int = 44
 const CARD_RADIUS: int = 18
 const TITLE_FONT: int = 34
 const CARD_TITLE_FONT: int = 36
 const CARD_DESC_FONT: int = 22
 const BACK_FONT: int = 22
+# 감도 버튼·설명은 뒤로 버튼보다 한 단계 작게(844×390에서 약 11.4px, 읽기 하한 11px 이상).
+const CALIBRATION_FONT: int = 21
+const CALIBRATION_W: float = 320.0
+const CALIBRATION_DESC_FONT: int = 21
+const ROOT_GAP: int = 18
+const CALIBRATION_GAP: int = 4
 const HINT_FONT: int = 17
 
 const _INK: Color = Color(0.278, 0.203, 0.153)
 const _INK_SOFT: Color = Color(0.36, 0.27, 0.21)
 const _CREAM: Color = Color(0.968, 0.929, 0.847)
 
+## 다음 _ready 1회만 공식 트랙 카드에 포커스를 준다(소비형). 감도 체험에서 돌아올 때
+## GameState.exit_calibration이 켠다. 데모 뒤에는 공식 트랙으로 바로 이어 달리게 하려는 것이며
+## (docs/sensitivity-calibration-plan.md), TrackSelectScript.last_mode는 그대로 둔다.
+static var focus_official_once: bool = false
+
 var _official_card: Button
 var _user_card: Button
+var _calibration_button: Button
 var _back_button: Button
 
 
 func _ready() -> void:
 	_build_ui()
 	_apply_touch_layout()
-	if TrackSelectScript.last_mode == TrackSelectScript.MODE_USER:
+	if focus_official_once:
+		focus_official_once = false
+		_official_card.grab_focus()
+	elif TrackSelectScript.last_mode == TrackSelectScript.MODE_USER:
 		_user_card.grab_focus()
 	else:
 		_official_card.grab_focus()
@@ -71,7 +92,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _build_ui() -> void:
-	var root: VBoxContainer = W.vbox(26)
+	var root: VBoxContainer = W.vbox(ROOT_GAP)
 	root.name = "Content"
 	root.alignment = BoxContainer.ALIGNMENT_CENTER
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -97,6 +118,26 @@ func _build_ui() -> void:
 	_user_card.pressed.connect(_choose.bind(TrackSelectScript.MODE_USER))
 	cards.add_child(_user_card)
 
+	# 감도 다시 맞추기: 버튼 + 바로 아래 한 줄 설명을 한 묶음으로 둔다(묶음 안 간격은 좁게).
+	var calibration_box: VBoxContainer = W.vbox(CALIBRATION_GAP)
+	calibration_box.name = "Calibration"
+	root.add_child(calibration_box)
+	var calibration_row: HBoxContainer = W.hbox(0)
+	calibration_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	calibration_box.add_child(calibration_row)
+	_calibration_button = W.button(CALIBRATION_TEXT, CALIBRATION_FONT, CALIBRATION_W)
+	_calibration_button.name = "CalibrationButton"
+	_calibration_button.pressed.connect(_on_calibration_pressed)
+	calibration_row.add_child(_calibration_button)
+	var calibration_desc: Label = W.label(
+		CALIBRATION_DESC, CALIBRATION_DESC_FONT, Color(0.93, 0.88, 0.94)
+	)
+	calibration_desc.name = "CalibrationDescLabel"
+	calibration_desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	calibration_desc.add_theme_color_override("font_outline_color", _INK)
+	calibration_desc.add_theme_constant_override("outline_size", 4)
+	calibration_box.add_child(calibration_desc)
+
 	var back_row: HBoxContainer = W.hbox(0)
 	back_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	root.add_child(back_row)
@@ -117,9 +158,16 @@ func _build_ui() -> void:
 	_official_card.focus_neighbor_left = _user_card.get_path()
 	_user_card.focus_neighbor_left = _official_card.get_path()
 	_user_card.focus_neighbor_right = _official_card.get_path()
-	_official_card.focus_neighbor_bottom = _back_button.get_path()
-	_user_card.focus_neighbor_bottom = _back_button.get_path()
-	_back_button.focus_neighbor_top = _official_card.get_path()
+	_official_card.focus_neighbor_bottom = _calibration_button.get_path()
+	_user_card.focus_neighbor_bottom = _calibration_button.get_path()
+	_calibration_button.focus_neighbor_top = _official_card.get_path()
+	_calibration_button.focus_neighbor_bottom = _back_button.get_path()
+	# 감도·뒤로 버튼의 ←→는 제자리(기본 탐색이 위쪽 버튼·카드로 튀지 않게 자기 자신을 이웃으로 둔다).
+	_calibration_button.focus_neighbor_left = _calibration_button.get_path()
+	_calibration_button.focus_neighbor_right = _calibration_button.get_path()
+	_back_button.focus_neighbor_top = _calibration_button.get_path()
+	_back_button.focus_neighbor_left = _back_button.get_path()
+	_back_button.focus_neighbor_right = _back_button.get_path()
 
 
 ## 선택 카드: Button(텍스트 없음) 위에 아이콘·제목·설명을 쌓는다. 자식은 마우스를 통과시켜
@@ -221,6 +269,11 @@ static func _focus_box() -> StyleBoxFlat:
 func _choose(mode: String) -> void:
 	TrackSelectScript.pending_mode = mode
 	get_tree().change_scene_to_file(TRACK_SELECT_SCENE)
+
+
+## 조향 감도 체험 트랙으로 바로 들어간다. 맵 선택 모드(pending_mode)는 건드리지 않는다.
+func _on_calibration_pressed() -> void:
+	GameState.start_calibration()
 
 
 func _on_back_pressed() -> void:

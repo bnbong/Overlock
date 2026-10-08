@@ -65,6 +65,7 @@ func _ready() -> void:
 	_build_touch_controls()
 	_build_auto_pause_label()
 	_apply_editor_test_pause()
+	_apply_calibration_pause()
 
 
 ## 좌하단 RISK 패널(offset_top=-186) 바로 위에 효과 타이머 카드 VBox를 동적 생성한다(씬 미수정 —
@@ -385,8 +386,10 @@ func _build_pause_touch_buttons() -> void:
 	row.offset_top = 6.0
 	row.offset_bottom = 86.0
 	_pause_overlay.add_child(row)
-	# 에디터 테스트 플레이면 to_menu는 편집 화면 복귀다(RaceDirector._to_menu 분기).
+	# 에디터 테스트 플레이면 to_menu는 편집 화면 복귀, 감도 체험이면 종류 선택 복귀다(RaceDirector._to_menu).
 	var menu_label: String = "편집" if GameState.is_editor_test() else "메인"
+	if GameState.is_calibration():
+		menu_label = "트랙 선택"
 	var defs: Array = [["계속", &"pause"], ["재시작", &"restart"], [menu_label, &"to_menu"]]
 	for d in defs:
 		var btn: Button = Button.new()
@@ -396,6 +399,15 @@ func _build_pause_touch_buttons() -> void:
 		_style_touch_button(btn)
 		btn.pressed.connect(_tap_action.bind(d[1]))
 		row.add_child(btn)
+
+
+## 감도 체험의 일시정지 안내: M은 메인 대신 트랙 종류 선택으로 돌아간다(RaceDirector._to_menu 분기).
+## 터치 모드는 터치 버튼 줄의 "트랙 선택"이 같은 역할이다.
+func _apply_calibration_pause() -> void:
+	if not GameState.is_calibration():
+		return
+	var hint: Label = $PauseOverlay/PauseHint
+	hint.text = "[Esc] 계속      [R] 다시 달리기      [M] 트랙 선택으로"
 
 
 ## 에디터 테스트 플레이의 일시정지 안내: 키 힌트를 "편집으로"로 바꾸고, 키보드 모드에는 마우스로 누를
@@ -458,6 +470,9 @@ func _tap_action(action: StringName) -> void:
 
 func _on_child_entered(node: Node) -> void:
 	if node == _touch or not (node is Control):
+		return
+	# 감도 패널은 주행 중 상주하는 HUD 패널이라 모달이 아니다(터치 버튼을 숨기거나 막지 않는다).
+	if node is SteerCalibrationPanel:
 		return
 	if node is TutorialDialog:
 		_tutorial_count += 1

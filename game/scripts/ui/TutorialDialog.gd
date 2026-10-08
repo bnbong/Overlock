@@ -15,6 +15,8 @@ extends Control
 ## - 딤·컷아웃·화살표·라벨 배경은 _draw, 글은 Label 노드. 루트 Control이 mouse_filter STOP으로
 ##   아래 HUD 클릭을 막는다(터치 버튼은 HUD가 입력만 막고 보이게 둔다 — HUD._refresh_touch_block).
 ## - 순수 UI — 게임 값·판정과 무관. 카운트다운 홀드는 RaceDirector가 담당한다.
+## - 조향 감도 체험(데모)에서는 RaceDirector가 입장마다 띄우고 demo_mode를 켠다. 이때 안내 글 끝에
+##   감도 맞추기 안내 한 줄(NOTE_DEMO)만 덧붙이고 나머지 코치마크는 그대로 둔다.
 
 signal closed
 
@@ -26,6 +28,8 @@ const TEXT_SLOTS_KEYS: String = "먹은 아이템은 2칸에 보관\nSpace로 �
 const TEXT_SLOTS_TOUCH: String = "먹은 아이템은 2칸에 보관"
 const TEXT_USE_TOUCH: String = "USE 버튼으로 아이템 사용\n(먼저 먹은 것부터)"
 const NOTE_KEYS: String = "R 재시작 · Esc 일시정지"
+const NOTE_DEMO_HEAD: String = "이 코스는 계속 이어집니다. 좌우 코너와 드리프트를 시험하며 감도를 맞추고,"
+const NOTE_DEMO: String = NOTE_DEMO_HEAD + " 다 되면 나가기를 누르세요. 설정에서도 언제든 변경할 수 있어요."
 const TEXT_NEEDLE_KEYS: String = "보라색 재봉선을 따라 바늘을 움직이세요.\n← → (A/D) 조향"
 const TEXT_NEEDLE_TOUCH: String = "보라색 재봉선을 따라 바늘을 움직이세요."
 const TEXT_STEER_TOUCH: String = "◀ ▶ 버튼으로 조향"
@@ -69,6 +73,8 @@ const BUTTON_GAP: float = 16.0
 const _INK: Color = Color(0.278, 0.203, 0.153)
 const _INK_HOVER: Color = Color(0.2, 0.14, 0.1)
 
+## 감도 체험(데모) 입장이면 true. RaceDirector가 add_child 전에 설정한다.
+var demo_mode: bool = false
 ## 배치가 끝난 콜아웃: {hole: Rect2, box: Rect2, side: Side}.
 var _callouts: Array = []
 ## 제목·안내 박스(배치 전에는 빈 사각형).
@@ -241,6 +247,8 @@ static func _merge(a: Variant, b: Rect2) -> Rect2:
 func _build_header(is_touch: bool) -> void:
 	var title: Label = _make_label(TITLE_TEXT, TITLE_FONT, SewingSkin.INK, HEADER_MAX_W)
 	var note_text: String = NOTE_ITEMS if is_touch else NOTE_ITEMS + "\n" + NOTE_KEYS
+	if demo_mode:
+		note_text += "\n" + NOTE_DEMO
 	var note: Label = _make_label(note_text, NOTE_FONT, SewingSkin.INK_SOFT, HEADER_MAX_W)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

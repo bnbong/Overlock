@@ -121,21 +121,27 @@
 	],
 	"kind|BackButton": [
 		520.0,
-		524.0,
+		553.0,
 		240.0,
+		48.0
+	],
+	"kind|CalibrationButton": [
+		480.0,
+		457.0,
+		320.0,
 		48.0
 	],
 	"kind|OfficialCard": [
 		148.0,
-		168.0,
+		139.0,
 		470.0,
-		330.0
+		300.0
 	],
 	"kind|UserCard": [
 		662.0,
-		168.0,
+		139.0,
 		470.0,
-		330.0
+		300.0
 	],
 	"leaderboard_fail|BackButton": [
 		378.0,
