@@ -39,7 +39,7 @@ const SECTIONS: Array[String] = [
 	"editor_return",
 	"layout_fit",
 ]
-const MIN_PASSED: int = 335
+const MIN_PASSED: int = 366
 
 var _passed: int = 0
 var _failed: int = 0
@@ -239,6 +239,32 @@ func _find_nickname_dialog() -> Node:
 	return null
 
 
+func _find_calibration_prompts() -> Array:
+	var out: Array = []
+	for c in _scene().get_children():
+		if c is CalibrationPromptDialog and not c.is_queued_for_deletion():
+			out.append(c)
+	return out
+
+
+func _find_calibration_prompt() -> Node:
+	var found: Array = _find_calibration_prompts()
+	return found[0] if not found.is_empty() else null
+
+
+## 대기를 다시 세운 채 메인에서 Start를 눌러 감도 체험 확인 대화상자를 띄운다(tag는 라벨 접두어).
+func _open_calibration_prompt(tag: String) -> Node:
+	LeaderboardClient.calibration_intro_pending = true
+	_ok(await _goto(MAIN), tag + ": main loads")
+	await _click(_scene().get_node("Menu/StartButton"))
+	await _frames(3)
+	_ok(_scene_path() == MAIN, tag + ": Start stays on main while asking")
+	var dlg: Node = _find_calibration_prompt()
+	_ok(dlg != null, tag + ": calibration prompt shown")
+	_ok(not LeaderboardClient.calibration_intro_pending, tag + ": pending consumed before answer")
+	return dlg
+
+
 func _close_tutorial() -> void:
 	var t: Node = _find_tutorial()
 	if t != null:
@@ -265,8 +291,58 @@ func _check_calibration_first_start() -> void:
 	_ok(_find_nickname_dialog() == null, "calibration: nickname dialog closed")
 	_ok(LeaderboardClient.calibration_intro_pending, "calibration: intro pending set after first nickname")
 	_ok(_read_settings().get("calibration_intro_pending", null) == true, "calibration: pending persisted true")
+	# 첫 Start: 바로 체험으로 가지 않고 대기를 소비한 뒤 체험 여부를 묻는다.
 	await _click(_scene().get_node("Menu/StartButton"))
-	_ok(await _wait_scene(GAMEPLAY, 120), "calibration: first Start goes to gameplay")
+	await _frames(3)
+	_ok(_scene_path() == MAIN, "calibration: first Start stays on main")
+	var prompt: Node = _find_calibration_prompt()
+	_ok(prompt != null, "calibration: prompt dialog shown on first Start")
+	_ok(not LeaderboardClient.calibration_intro_pending, "calibration: pending consumed before answer")
+	var persisted: Variant = _read_settings().get("calibration_intro_pending", null)
+	_ok(persisted == false, "calibration: pending persisted false before answer")
+	var accept: Button = prompt.get("_accept") if prompt != null else null
+	var decline: Button = prompt.get("_decline") if prompt != null else null
+	_ok(accept != null and _focus_owner() == accept, "calibration prompt: default focus on accept")
+	_ok(accept != null and accept.text == "체험하기", "calibration prompt: accept label")
+	_ok(decline != null and decline.text == "나중에", "calibration prompt: decline label")
+	for c in ([accept, decline] if accept != null else []):
+		_ok(_inside(c), "calibration prompt: inside 1280x720 " + str(c.name))
+	await _key(KEY_RIGHT)
+	_ok(decline != null and _focus_owner() == decline, "calibration prompt: right -> decline")
+	await _key(KEY_TAB)
+	_ok(accept != null and _focus_owner() == accept, "calibration prompt: tab -> accept")
+	await _key(KEY_LEFT)
+	_ok(decline != null and _focus_owner() == decline, "calibration prompt: left -> decline")
+	await _key(KEY_UP)
+	_ok(decline != null and _focus_owner() == decline, "calibration prompt: up stays inside dialog")
+	# 대화상자가 떠 있는 동안 Start를 다시 눌러도 중복 생성·씬 전환이 없다.
+	_scene().call("_on_start_pressed")
+	await _frames(3)
+	_ok(_scene_path() == MAIN, "calibration prompt: Start again does not leave main")
+	_ok(_find_calibration_prompts().size() == 1, "calibration prompt: no duplicate dialog")
+	# "나중에" → 트랙 종류 선택(체험 아님).
+	if decline != null:
+		decline.emit_signal("pressed")
+	_ok(await _wait_scene(KIND, 120), "calibration prompt: decline goes to kind select")
+	_ok(not GameState.is_calibration(), "calibration prompt: decline is not calibration")
+	# 소비됐으므로 다음 Start는 묻지 않고 종류 선택으로 간다.
+	_ok(await _goto(MAIN), "calibration: main loads after decline")
+	await _click(_scene().get_node("Menu/StartButton"))
+	await _frames(1)
+	_ok(_find_calibration_prompt() == null, "calibration: second Start does not ask again")
+	_ok(await _wait_scene(KIND), "calibration: second Start goes to kind select")
+	_ok(not GameState.is_calibration(), "calibration: second Start is not calibration")
+	# Esc는 "나중에"와 같다.
+	var esc_dlg: Node = await _open_calibration_prompt("calibration esc")
+	if esc_dlg != null:
+		await _key(KEY_ESCAPE)
+	_ok(await _wait_scene(KIND, 120), "calibration esc: Esc goes to kind select")
+	_ok(not GameState.is_calibration(), "calibration esc: not calibration")
+	# 대기를 다시 세우고 "체험하기" → 체험 트랙.
+	var acc_dlg: Node = await _open_calibration_prompt("calibration accept")
+	if acc_dlg != null:
+		(acc_dlg.get("_accept") as Button).emit_signal("pressed")
+	_ok(await _wait_scene(GAMEPLAY, 120), "calibration: accept goes to gameplay")
 	_ok(GameState.is_calibration(), "calibration: source is calibration")
 	_ok(GameState.track_id == "steer_calibration", "calibration: track id")
 	_ok(not LeaderboardClient.calibration_intro_pending, "calibration: pending consumed in memory")

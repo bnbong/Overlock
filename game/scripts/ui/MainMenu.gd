@@ -4,8 +4,10 @@ extends Control
 ## 진입하는 맵 선택 화면(TrackSelect)으로 이관했다(아키텍처 §2.1 갱신).
 ## Start는 먼저 트랙 종류 선택 화면(TrackKindSelect: 공식 트랙 / 유저 트랙)을 열고, 거기서 고른
 ## 모드로 TrackSelect가 열린다(유저 트랙 쪽에서 공유 허브로 바로 이어진다).
-## 단, 최초 닉네임 모달을 확정한 새 사용자는 첫 Start 1회만 조향 감도 체험 트랙으로 바로 들어간다
-## (LeaderboardClient.calibration_intro_pending, settings.json 영속 — 재실행해도 유지되고 Start에서 소비).
+## 단, 최초 닉네임 모달을 확정한 새 사용자의 첫 Start는 감도 체험 여부를 먼저 묻는다
+## (CalibrationPromptDialog: "체험하기"면 조향 감도 체험 트랙, "나중에"·Esc면 트랙 종류 선택).
+## 대기 상태는 LeaderboardClient.calibration_intro_pending(settings.json 영속 — 재실행해도 유지)이고,
+## 대화상자를 띄우기 전에 소비하므로 어느 쪽을 골라도 다시 묻지 않는다.
 ## 좌상단 태그로 닉네임만 다시 설정한 기존 사용자에게는 적용하지 않는다.
 ##
 ## 키보드: ↑↓(ui_up/ui_down)로 버튼 포커스 이동, Enter(ui_accept)로 실행 — Godot
@@ -32,6 +34,7 @@ const LeaderboardScreenScript = preload("res://scripts/ui/LeaderboardScreen.gd")
 const ToastScene = preload("res://scenes/Toast.tscn")
 const NicknameDialogScene = preload("res://scenes/NicknameDialog.tscn")
 const ProfileDialogScene = preload("res://scenes/ProfileDialog.tscn")
+const CalibrationPromptScene = preload("res://scenes/CalibrationPromptDialog.tscn")
 const DEV_PROFILE_TEX: String = "res://assets/gfx/dev_profile.png"
 
 const _OFFLINE_MSG: String = "서버에 연결할 수 없어 기록이 온라인 리더보드에 제출되지 않습니다." + " 로컬 최고 기록은 계속 저장됩니다."
@@ -48,6 +51,8 @@ var _status_label: Label
 var _profile_chip: Button
 # 이번 진입에서 최초 실행 닉네임 모달을 띄웠는지(확정 시 첫 Start 감도 체험 대기를 기록한다).
 var _first_run_nickname: bool = false
+# 떠 있는 첫 Start 감도 체험 확인 대화상자(없으면 null). Start 재입력으로 중복 생성하지 않는다.
+var _calibration_prompt: CalibrationPromptDialog
 
 @onready var _start_button: Button = $Menu/StartButton
 @onready var _settings_button: Button = $Menu/SettingsButton
@@ -156,7 +161,7 @@ func _on_nickname_confirmed(_nickname: String) -> void:
 	if _first_run_nickname:
 		_first_run_nickname = false
 		if not LeaderboardClient.save_calibration_intro_pending(true):
-			_toast.push("감도 체험 설정을 저장하지 못했습니다. 이번 Start에서는 체험 트랙으로 들어갑니다.")
+			_toast.push("감도 체험 설정을 저장하지 못했습니다. 이번 Start에서 감도 체험 여부를 묻습니다.")
 
 
 # --- 프로필 칩(우하단): 원형 아바타 + "bnbong" → 클릭 시 프로필 팝업 ---
@@ -274,14 +279,33 @@ static func _tag_box(bg: Color, border: Color) -> StyleBoxFlat:
 	return sb
 
 
-## 첫 Start 감도 체험 대기 중이면 대기를 소비하고 체험 트랙으로, 아니면 트랙 종류 선택으로 간다.
-## 소비 저장에 실패해도 진행한다(다음 실행에서 한 번 더 체험으로 들어갈 수 있을 뿐).
+## 첫 Start 감도 체험 대기 중이면 대기를 먼저 소비하고 체험 여부를 묻는 대화상자를 띄운다.
+## 아니면 트랙 종류 선택으로 간다. 소비 저장에 실패해도 진행한다(다음 실행에서 한 번 더 물을 수 있을 뿐).
 func _on_start_pressed() -> void:
+	if is_instance_valid(_calibration_prompt):
+		return
 	if LeaderboardClient.calibration_intro_pending:
 		if not LeaderboardClient.save_calibration_intro_pending(false):
 			push_warning("MainMenu: 감도 체험 대기 해제를 저장하지 못했습니다")
-		GameState.start_calibration()
+		_open_calibration_prompt()
 		return
+	get_tree().change_scene_to_file(KIND_SELECT_SCENE)
+
+
+func _open_calibration_prompt() -> void:
+	_calibration_prompt = CalibrationPromptScene.instantiate()
+	add_child(_calibration_prompt)
+	_calibration_prompt.accepted.connect(_on_calibration_accepted)
+	_calibration_prompt.declined.connect(_on_calibration_declined)
+	# 닫힌 뒤 메인에 남으면(씬 전환 전) 키보드 포커스를 Start로 되돌린다.
+	_calibration_prompt.tree_exited.connect(_on_profile_closed)
+
+
+func _on_calibration_accepted() -> void:
+	GameState.start_calibration()
+
+
+func _on_calibration_declined() -> void:
 	get_tree().change_scene_to_file(KIND_SELECT_SCENE)
 
 

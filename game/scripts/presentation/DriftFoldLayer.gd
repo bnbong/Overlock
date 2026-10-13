@@ -26,6 +26,12 @@ extends Node2D
 ## 표면은 먼 패치부터 그리고, 패치 안의 셀도 카메라에서 먼 쪽부터 그린다(인덱스 순서). 화면에서 실제로
 ## 솟아 보이는 패치만 MAX_ACTIVE개까지 메시로 그리고, 나머지(원경·완화가 끝난 흔적)는 DriftSkid가 바닥에
 ## 칠한 음영으로만 남는다. 시간은 PresentationController의 주행 표현 시계를 받는다(일시정지에서 멈춤).
+##
+## 셰이더 예열: 슬롯 아이템은 모두 숨겨진 채 만들어지므로 렌더러(특히 Compatibility)는 첫 주름 패치가
+## 보이는 프레임에야 drift_fold.gdshader를 동기 컴파일하고, 그 프레임이 멈칫한다(첫 드리프트 스톨).
+## setup()이 보이지 않는 예열 아이템(퇴화 삼각형 하나, 표면 알파·그림자 가중치 0)을 표면 재질로 한 번
+## 그리게 해 컴파일 비용을 레이스 시작(카운트다운 첫 프레임)으로 옮기고, 한 프레임 이상 그려진 뒤
+## update_view()가 아이템을 해제한다. 예열 아이템은 슬롯이 아니므로 슬롯 배정·통계와 무관하다.
 
 ## 활성 입체 패치 상한(모바일 기준).
 ## 긴 드리프트에서 겹친 패치(간격 16)가 근경까지 이어지도록 12에서 16으로 늘렸다.
@@ -76,6 +82,8 @@ const RELAX_SPREAD: float = 0.45
 ## 그림자가 광원 반대쪽으로 밀리는 길이(높이 배수).
 const SHADOW_LEN: float = 0.5
 const SHADER_PATH: String = "res://shaders/drift_fold.gdshader"
+## 슬롯·예열 아이템의 사용자 지정 사각형. 정점이 월드 좌표라 엔진 컬링을 사실상 끈다.
+const CULL_RECT: Rect2 = Rect2(-100000.0, -100000.0, 200000.0, 200000.0)
 ## 전 슬롯 공통 값을 담는 전역 셰이더 uniform(런타임 등록, project.godot 변경 없음).
 const G_PLAYER: StringName = &"fold_player_pos"
 const G_HEADING: StringName = &"fold_heading"
@@ -102,6 +110,9 @@ var _heading: float = 0.0
 var _slots: Array = []
 var _stats: Dictionary = {"active": 0, "candidates": 0, "uploads": 0, "usec": 0, "params": 0}
 var _param_calls: int = 0
+## 셰이더 예열용 캔버스 아이템과 그것을 만든 시점의 그려진 프레임 수(헤더 참고).
+var _warm_item: RID = RID()
+var _warm_frame: int = -1
 
 
 ## PresentationController가 _ready에서 1회 연결한다(데이터 소스 + 바닥 SubViewport 텍스처).
@@ -112,6 +123,7 @@ func setup(skid: DriftSkid, source_tex: Texture2D) -> void:
 	_register_globals()
 	if _slots.is_empty():
 		_create_slots()
+	_prewarm_shader()
 
 
 ## 전역 uniform을 등록한다(프로세스에서 처음 한 번). 셰이더가 컴파일되기 전에 있어야 하므로 셰이더는
@@ -130,20 +142,45 @@ static func _register_globals() -> void:
 
 func _create_slots() -> void:
 	var parent: RID = get_canvas_item()
-	var big: Rect2 = Rect2(-100000.0, -100000.0, 200000.0, 200000.0)
 	for i in range(MAX_ACTIVE):
 		var slot: Dictionary = {"rec": {}, "order": -1}
 		for key in ["shad", "surf"]:
 			var item: RID = RenderingServer.canvas_item_create()
 			RenderingServer.canvas_item_set_parent(item, parent)
 			# 정점은 월드 좌표라 엔진의 사각형 컬링이 틀린다. 컬링을 끄고 화면 판정은 _select가 한다.
-			RenderingServer.canvas_item_set_custom_rect(item, true, big)
+			RenderingServer.canvas_item_set_custom_rect(item, true, CULL_RECT)
 			RenderingServer.canvas_item_set_visible(item, false)
 			var mat: ShaderMaterial = _make_material(key == "shad")
 			RenderingServer.canvas_item_set_material(item, mat.get_rid())
 			slot[key] = item
 			slot["hmat" if key == "shad" else "smat"] = mat
 		_slots.append(slot)
+
+
+## 보이지 않는 퇴화 삼각형 하나를 표면 재질로 그려 셰이더 컴파일을 미리 일으킨다. 색의 b(표면 알파)와
+## a(그림자 가중치)가 0이고 세 정점이 한 점이라 화면에 아무것도 남지 않는다. _upload와 같은 형식으로 올린다.
+func _prewarm_shader() -> void:
+	if _warm_item.is_valid() or _slots.is_empty():
+		return
+	_warm_item = RenderingServer.canvas_item_create()
+	RenderingServer.canvas_item_set_parent(_warm_item, get_canvas_item())
+	RenderingServer.canvas_item_set_custom_rect(_warm_item, true, CULL_RECT)
+	var mat: ShaderMaterial = _slots[0]["smat"]
+	RenderingServer.canvas_item_set_material(_warm_item, mat.get_rid())
+	var pts: PackedVector2Array = PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+	var col: Color = Color(0.5, 0.5, 0.0, 0.0)
+	var cols: PackedColorArray = PackedColorArray([col, col, col])
+	var uvs: PackedVector2Array = PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+	RenderingServer.canvas_item_add_triangle_array(
+		_warm_item, PackedInt32Array([0, 1, 2]), pts, cols, uvs
+	)
+	_warm_frame = Engine.get_frames_drawn()
+
+
+func _free_warm_item() -> void:
+	if _warm_item.is_valid():
+		RenderingServer.free_rid(_warm_item)
+		_warm_item = RID()
 
 
 func _make_material(shadow: bool) -> ShaderMaterial:
@@ -179,6 +216,7 @@ func _make_material(shadow: bool) -> ShaderMaterial:
 
 
 func _exit_tree() -> void:
+	_free_warm_item()
 	for slot in _slots:
 		RenderingServer.free_rid(slot["surf"])
 		RenderingServer.free_rid(slot["shad"])
@@ -190,6 +228,9 @@ func update_view(now: float, ppos: Vector2, heading: float) -> void:
 	_now = now
 	_ppos = ppos
 	_heading = heading
+	# 예열 아이템은 최소 한 프레임 그려진 뒤 해제한다(헤더 참고).
+	if _warm_item.is_valid() and Engine.get_frames_drawn() > _warm_frame:
+		_free_warm_item()
 	var t0: int = Time.get_ticks_usec()
 	_param_calls = 0
 	# 전 슬롯 공통 값은 전역 uniform 세 개로 한 번만 바꾼다(높이 진행은 셰이더가 시각으로 계산).
